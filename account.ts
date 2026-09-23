@@ -1,5 +1,5 @@
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
-import { cleanText, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
+import { cleanText, MISSAV_LOCALE, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
 export type MissAVAccountSnapshot = { state: MissAVAccountState; domain: string; accountLabel?: string; accountEmail?: string; updatedAt?: number }
@@ -72,17 +72,22 @@ export async function loginMissAV(email: string, password: string): Promise<Miss
   } finally { controller.dispose() }
 }
 
-export async function openMissAVSiteVerification(): Promise<boolean> {
+export type MissAVSiteVerificationResult = "accessible" | "incomplete" | "unavailable"
+
+export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
   const controller = new WebViewController()
   try {
-    await clearNonValidationMissAVCookies(controller)
-    await controller.loadURL(`${origin()}/`)
+    // Probe the same localized listing route used by Browse, and preserve the
+    // WebView's language and Cloudflare cookies instead of clearing them.
+    const probeURL = new URL(`/${MISSAV_LOCALE}/new`, `${origin()}/`).toString()
+    // Always present the WebView, even when navigation reports failure. A
+    // failed load can still leave a useful Cloudflare/error page to inspect.
+    await controller.loadURL(probeURL)
+    await controller.waitForLoad()
     await controller.present({ fullscreen: true, navigationTitle: "验证访问线路" })
     const html = await controller.getHTML()
-    await clearNonValidationMissAVCookies(controller)
-    const stored = readStoredCookies()
-    for (const cookie of stored) await setStoredCookie(controller, cookie)
-    return Boolean(html && !isCloudflareHTML(html))
+    if (isCloudflareHTML(html || "")) return "incomplete"
+    return isLikelyMissAVPageHTML(html || "") ? "accessible" : "unavailable"
   } finally { controller.dispose() }
 }
 
@@ -226,7 +231,8 @@ function isAuthenticatedHTML(html: string): boolean {
   return positive || savedContent
 }
 function extractAccountLabel(html: string): string | undefined { return cleanText(firstMatch(html, /(?:data-user-name|data-username)=['"]([^'"]+)/i)) || cleanText(firstMatch(html, /<meta\b[^>]*name=['"]user['"][^>]*content=['"]([^'"]+)/i)) || undefined }
-function isCloudflareHTML(html: string): boolean { return /cf-mitigated|just a moment|challenge-platform|cf-chl-|人机验证/i.test(html) }
+function isCloudflareHTML(html: string): boolean { return /cf-mitigated|cf_chl_|cf-chl-|__cf_chl|challenge-platform|cf-turnstile|challenges\.cloudflare\.com|just a moment|checking (?:your )?browser|verify you are human|human verification|performing security verification|attention required|cloudflare.{0,40}(?:challenge|verify)|(?:challenge|verify).{0,40}cloudflare|正在进行安全验证|验证您不是自动程序|请验证您是真人|人机验证/i.test(html) }
+function isLikelyMissAVPageHTML(html: string): boolean { return Boolean(html && /missav/i.test(html) && /<(?:html|body|main|video|meta)\b/i.test(html) && html.length > 500) }
 function hasNextPage(html: string, page: number): boolean { return [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)].some(match => { try { return Number(new URL(match[1], `${origin()}/`).searchParams.get("page")) === page + 1 } catch { return false } }) }
 function parseMeta(value: string | null): { state?: MissAVAccountState; accountLabel?: string; accountEmail?: string; updatedAt?: number } | null { try { return value ? JSON.parse(value) : null } catch { return null } }
 function firstMatch(value: string, regex: RegExp): string { return regex.exec(value)?.[1] || "" }

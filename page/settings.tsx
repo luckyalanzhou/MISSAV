@@ -49,8 +49,8 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccountChan
     setAccountBusy(true)
     setAccountMessage(null)
     try {
-      const ready = await openMissAVSiteVerification()
-      setAccountMessage(ready ? "访问线路验证已完成，请重新提交邮箱和密码。" : "访问线路验证尚未完成，请重试或切换线路。")
+      const result = await openMissAVSiteVerification()
+      setAccountMessage(result === "accessible" ? "当前所选域名页面可访问，无需 Cloudflare 验证；可以继续操作。" : result === "incomplete" ? "Cloudflare 验证尚未完成，请重新打开验证线路，完成挑战后再关闭窗口。" : "无法确认当前域名页面状态，请检查网络或切换线路后重试。")
     } catch (reason) {
       setAccountMessage(reason instanceof Error ? reason.message : "访问线路验证窗口当前无法打开。")
     } finally { setAccountBusy(false) }
