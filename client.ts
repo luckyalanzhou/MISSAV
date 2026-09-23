@@ -2,7 +2,7 @@ import { fetch } from "scripting"
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
 
 export const MISSAV_BASE_URL = () => getMissAVBaseURL()
-export const MISSAV_LOCALE = "cn"
+export const MISSAV_LOCALE = "ja"
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
 export type MissAVCollection = "new" | "release" | "uncensored-leak" | "english-subtitle" | "fc2" | "today-hot" | "weekly-hot" | "monthly-hot"
@@ -114,7 +114,7 @@ class MissAVClient {
     }
   }
 
-  private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8", ...(referer ? { Referer: referer } : {}) } }
+  private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ja,en;q=0.8", ...(referer ? { Referer: referer } : {}) } }
 }
 
 function isCloudflareChallengeHTML(html: string | null): boolean {
