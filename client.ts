@@ -118,8 +118,21 @@ class MissAVClient {
   private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ja,en;q=0.8", ...(referer ? { Referer: referer } : {}) } }
 }
 
-function isCloudflareChallengeHTML(html: string | null): boolean {
-  return Boolean(html && /cf-mitigated|cf_chl_|cf-chl-|__cf_chl|challenge-platform|cf-turnstile|challenges\.cloudflare\.com|just a moment|checking (?:your )?browser|verify you are human|human verification|performing security verification|attention required|cloudflare.{0,40}(?:challenge|verify)|(?:challenge|verify).{0,40}cloudflare|正在进行安全验证|验证您不是自动程序|请验证您是真人|人机验证/i.test(html))
+export function isCloudflareChallengeHTML(html: string | null): boolean {
+  if (!html) return false
+  const title = firstMatch(html, /<title\b[^>]*>([\s\S]*?)<\/title>/i)
+  const visibleText = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&(?:nbsp|amp|lt|gt|quot);/gi, " ")
+    .replace(/\s+/g, " ")
+  const challengeMeta = /<meta\b[^>]*(?:cf-mitigated|cf_chl|cf-chl)[^>]*(?:challenge|verify)/i.test(html)
+  const challengeTitle = /just a moment|checking (?:your )?browser|attention required|cloudflare/i.test(title)
+  const challengeText = /just a moment|checking (?:your )?browser|verify you are human|human verification|performing security verification|正在进行安全验证|验证您不是自动程序|请验证您是真人|人机验证/i.test(visibleText)
+  const challengeWidget = /<(?:div|input|iframe)\b[^>]*(?:cf-turnstile|cf-chl-widget|data-cf-chl|challenges\.cloudflare\.com)/i.test(html)
+  return challengeMeta || challengeTitle || challengeText || challengeWidget
 }
 
 function isLikelyMissAVHTML(html: string | null): html is string {
