@@ -31,7 +31,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
 function NativeOnlinePlayerModal({ player }: { player: AVPlayer }) {
   const pipStatus = useObservable<PIPStatus>()
   useEffect(() => {
-    Device.supportedInterfaceOrientations = ["allButUpsideDown"]
+    Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
     return () => {
       Device.supportedInterfaceOrientations = Device.userConfiguredInterfaceOrientations
     }
@@ -43,7 +43,7 @@ function NativeOnlinePlayerModal({ player }: { player: AVPlayer }) {
       allowsPictureInPicturePlayback={true}
       canStartPictureInPictureAutomaticallyFromInline={true}
       updatesNowPlayingInfoCenter={true}
-      entersFullScreenWhenPlaybackBegins={false}
+      entersFullScreenWhenPlaybackBegins={true}
       exitsFullScreenWhenPlaybackEnds={false}
       videoGravity="resizeAspect"
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
