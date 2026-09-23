@@ -1,5 +1,5 @@
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
-import { cleanText, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
+import { cleanText, missavClient, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
 export type MissAVAccountSnapshot = { state: MissAVAccountState; domain: string; accountLabel?: string; accountEmail?: string; updatedAt?: number }
@@ -77,10 +77,9 @@ export type MissAVSiteVerificationResult = "accessible" | "incomplete" | "unavai
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
   const controller = new WebViewController()
   try {
-    // Probe the selected domain's entry point. Some routes apply their
-    // Cloudflare challenge or language redirect only at the domain root.
-    // Preserve the WebView's existing cookies and language preference.
-    const probeURL = new URL("/", `${origin()}/`).toString()
+    // Probe the exact default Browse URL. The domain root may be accessible
+    // while the listing route used by the app still requires a challenge.
+    const probeURL = missavClient.browseProbeURL()
     // Always present the WebView, even when navigation reports failure. A
     // failed load can still leave a useful Cloudflare/error page to inspect.
     await controller.loadURL(probeURL)

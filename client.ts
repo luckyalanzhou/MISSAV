@@ -69,6 +69,7 @@ class MissAVClient {
   }
 
   watchUrl(videoCode: string): string { return new URL(`${MISSAV_LOCALE}/${extractMissAVVideoCode(videoCode) || videoCode}`, getMissAVBaseURL()).toString() }
+  browseProbeURL(): string { return this.collectionUrl({ collection: "new", page: 1, sort: "released_at" }) }
   playbackHeaders(watchUrl: string, resourceUrl: string): Record<string, string> { return { ...this.requestHeaders(watchUrl), Referer: watchUrl, Origin: new URL(watchUrl).origin, Accept: "*/*" } }
   async loadCoverImage(url: string, watchUrl: string): Promise<UIImage | null> { try { const response = await fetch(url, { headers: this.requestHeaders(watchUrl) }); return response.ok ? UIImage.fromData(await response.data()) : null } catch { return null } }
 
