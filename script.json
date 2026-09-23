@@ -1,0 +1,45 @@
+{
+  "contributors" : [
+
+  ],
+  "intentInputTypes" : [
+
+  ],
+  "localizedDescriptions" : {
+    "zh" : "浏览、搜索、收藏并播放 MISSAV 内容。",
+    "de" : "",
+    "ru" : "",
+    "it" : "",
+    "en" : "Browse, search, save and play MISSAV content.",
+    "fr" : "",
+    "pt" : "",
+    "es" : "",
+    "ja" : ""
+  },
+  "color" : "rgba(255, 45, 85, 1.00)",
+  "permissions" : null,
+  "remoteResource" : null,
+  "entry" : "index.tsx",
+  "iconImage" : null,
+  "description" : "浏览、搜索、收藏并播放 MISSAV 内容。",
+  "name" : "MISSAV",
+  "icon" : "flame.fill",
+  "localizedNames" : {
+    "it" : "",
+    "pt" : "",
+    "ru" : "",
+    "ja" : "",
+    "en" : "MISSAV",
+    "es" : "",
+    "zh" : "MISSAV",
+    "fr" : "",
+    "de" : ""
+  },
+  "runInApp" : false,
+  "author" : {
+    "name" : "瀬戸 明日葉",
+    "email" : null,
+    "homepage" : "https:\/\/github.com\/OkadaMei\/Scripting"
+  },
+  "version" : "4.1.0"
+}
