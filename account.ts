@@ -79,7 +79,7 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
   try {
     // Probe the same localized listing route used by Browse, and preserve the
     // WebView's language and Cloudflare cookies instead of clearing them.
-    const probeURL = new URL(`/${MISSAV_LOCALE}/new`, `${origin()}/`).toString()
+    const probeURL = new URL(`/${MISSAV_LOCALE}/new?sort=released_at`, `${origin()}/`).toString()
     // Always present the WebView, even when navigation reports failure. A
     // failed load can still leave a useful Cloudflare/error page to inspect.
     await controller.loadURL(probeURL)

@@ -83,33 +83,35 @@ class MissAVClient {
   }
 
   private async fetchHtml(url: string): Promise<string> {
-    const response = await fetch(url, { headers: this.requestHeaders() })
-    const html = await response.text()
-    if (response.ok) return html
+    // Use the same persistent WebKit session as the verification window.
+    // `scripting.fetch` has a separate cookie jar and a manually supplied UA,
+    // so Cloudflare can accept the WebView while returning 403 to fetch.
+    const controller = new WebViewController()
+    try {
+      const loaded = await controller.loadURL(url)
+      const finished = loaded ? await controller.waitForLoad() : false
+      let html = await controller.getHTML()
 
-    if (response.status === 403) {
-      // Scripting fetch is a separate HTTP client and does not keep WebView's
-      // Cloudflare cookies. Retry through the persistent WebKit store, which
-      // is also used by the Settings verification flow.
-      const controller = new WebViewController()
-      try {
-        const loaded = await controller.loadURL(url)
-        if (loaded) await controller.waitForLoad()
-        let webViewHTML = await controller.getHTML()
-        for (let attempt = 0; attempt < 4 && isCloudflareChallengeHTML(webViewHTML); attempt += 1) {
-          await new Promise(resolve => setTimeout(resolve, 600))
-          webViewHTML = await controller.getHTML()
-        }
-        if (isLikelyMissAVHTML(webViewHTML) && !isCloudflareChallengeHTML(webViewHTML)) return webViewHTML
-        if (isCloudflareChallengeHTML(webViewHTML) || isCloudflareChallengeHTML(html) || response.headers.get("cf-mitigated")) {
-          throw new Error("当前域名返回 Cloudflare 403。请先到设置页打开“验证访问线路”并完成验证，再重试。")
-        }
-      } finally {
-        controller.dispose()
+      if (isCloudflareChallengeHTML(html)) {
+        // Present the exact URL that the app needs, not a different homepage
+        // probe. Once the user closes the WebView, inspect the post-challenge page.
+        await controller.present({ fullscreen: true, navigationTitle: "Cloudflare 验证" })
+        await controller.waitForLoad()
+        html = await controller.getHTML()
+      } else if (!loaded || !finished || !html) {
+        // Keep network/error pages visible instead of failing silently.
+        await controller.present({ fullscreen: true, navigationTitle: "页面访问" })
+        html = await controller.getHTML()
       }
-    }
 
-    throw new Error(`MISSAV 页面加载失败（HTTP 状态码 ${response.status}）。`)
+      if (isCloudflareChallengeHTML(html)) {
+        throw new Error("Cloudflare 验证尚未完成。请在弹出的页面完成验证后关闭，再重试。")
+      }
+      if (isLikelyMissAVHTML(html)) return html
+      throw new Error("当前域名未返回可识别的 MISSAV 页面。请在设置页切换线路后重试。")
+    } finally {
+      controller.dispose()
+    }
   }
 
   private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ja,en;q=0.8", ...(referer ? { Referer: referer } : {}) } }
