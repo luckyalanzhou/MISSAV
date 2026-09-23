@@ -85,11 +85,42 @@ class MissAVClient {
   private async fetchHtml(url: string): Promise<string> {
     const response = await fetch(url, { headers: this.requestHeaders() })
     const html = await response.text()
-    if (!response.ok) throw new Error(`MISSAV 页面加载失败（HTTP 状态码 ${response.status}）。`)
-    return html
+    if (response.ok) return html
+
+    if (response.status === 403) {
+      // Scripting fetch is a separate HTTP client and does not keep WebView's
+      // Cloudflare cookies. Retry through the persistent WebKit store, which
+      // is also used by the Settings verification flow.
+      const controller = new WebViewController()
+      try {
+        const loaded = await controller.loadURL(url)
+        if (loaded) await controller.waitForLoad()
+        let webViewHTML = await controller.getHTML()
+        for (let attempt = 0; attempt < 4 && isCloudflareChallengeHTML(webViewHTML); attempt += 1) {
+          await new Promise(resolve => setTimeout(resolve, 600))
+          webViewHTML = await controller.getHTML()
+        }
+        if (isLikelyMissAVHTML(webViewHTML) && !isCloudflareChallengeHTML(webViewHTML)) return webViewHTML
+        if (isCloudflareChallengeHTML(webViewHTML) || isCloudflareChallengeHTML(html) || response.headers.get("cf-mitigated")) {
+          throw new Error("当前域名返回 Cloudflare 403。请先到设置页打开“验证访问线路”并完成验证，再重试。")
+        }
+      } finally {
+        controller.dispose()
+      }
+    }
+
+    throw new Error(`MISSAV 页面加载失败（HTTP 状态码 ${response.status}）。`)
   }
 
   private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ja,en;q=0.8", ...(referer ? { Referer: referer } : {}) } }
+}
+
+function isCloudflareChallengeHTML(html: string | null): boolean {
+  return Boolean(html && /cf-mitigated|cf_chl_|cf-chl-|__cf_chl|challenge-platform|cf-turnstile|challenges\.cloudflare\.com|just a moment|checking (?:your )?browser|verify you are human|human verification|performing security verification|attention required|cloudflare.{0,40}(?:challenge|verify)|(?:challenge|verify).{0,40}cloudflare|正在进行安全验证|验证您不是自动程序|请验证您是真人|人机验证/i.test(html))
+}
+
+function isLikelyMissAVHTML(html: string | null): html is string {
+  return Boolean(html && /missav/i.test(html) && /<(?:html|body|main|video|meta)\b/i.test(html) && html.length > 500)
 }
 
 export const missavClient = new MissAVClient()
