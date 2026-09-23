@@ -94,20 +94,9 @@ class MissAVClient {
       let html = await controller.getHTML()
 
       if (isCloudflareChallengeHTML(html)) {
-        // Present the exact URL that the app needs, not a different homepage
-        // probe. Once the user closes the WebView, inspect the post-challenge page.
-        await controller.present({ fullscreen: true, navigationTitle: "Cloudflare 验证" })
-        await controller.waitForLoad()
-        html = await controller.getHTML()
-      } else if (!loaded || !finished || !html) {
-        // Keep network/error pages visible instead of failing silently.
-        await controller.present({ fullscreen: true, navigationTitle: "页面访问" })
-        html = await controller.getHTML()
+        throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }
-
-      if (isCloudflareChallengeHTML(html)) {
-        throw new Error("Cloudflare 验证尚未完成。请在弹出的页面完成验证后关闭，再重试。")
-      }
+      if (!loaded || !finished || !html) throw new Error("当前域名未返回页面内容，请在设置页切换线路后重试。")
       if (isLikelyMissAVHTML(html)) return html
       throw new Error("当前域名未返回可识别的 MISSAV 页面。请在设置页切换线路后重试。")
     } finally {
