@@ -18,6 +18,14 @@ const run = (): void => {
   assert(sources.map(item => item.label).join(",") === "1080p,720p,自动清晰度", "固定清晰度必须优先，且不得出现额外“自动”")
   assert(sources.every(item => item.type === "application/vnd.apple.mpegurl"), "磁力下载与预览 MP4 不得混入播放源")
 
+  const noisyPaths = parseMissAVSources(`
+    <script>
+      a='https://surrit.com/2024/episode/playlist.m3u8';
+      b='https://surrit.com/2024/episode/1080.m3u8';
+    </script>
+  `)
+  assert(noisyPaths.map(item => item.label).join(",") === "1080p,自动清晰度", "日期或作品目录数字不得被误显示为分辨率")
+
   const selected = sources[0]
   const refreshed: MissAVVideoSource[] = [
     { ...selected, url: `${selected.url}?token=next` },
@@ -27,7 +35,7 @@ const run = (): void => {
   const ambiguous = refreshed.map(item => ({ ...item, url: item.url.replace("surrit.com", "third.example") }))
   assert(matchFreshMissAVPlaybackSource(selected, ambiguous) === null, "多个同类型同清晰度候选存在时不得任意误选")
 
-  Script.exit({ passed: 6, message: "MISSAV media source regression tests passed" })
+  Script.exit({ passed: 7, message: "MISSAV media source regression tests passed" })
 }
 
 try { run() } catch (error) { Script.exit({ passed: 0, error: error instanceof Error ? error.message : String(error) }) }

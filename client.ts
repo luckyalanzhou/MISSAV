@@ -205,7 +205,11 @@ function unpackPackerMediaUrls(html: string): string[] {
 
 function hasNextPage(html: string, page: number): boolean { return [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["']/gi)].some(match => { try { return Number(new URL(decodeHtml(match[1]), getMissAVBaseURL()).searchParams.get("page")) === page + 1 } catch { return false } }) }
 function qualityLabel(url: string): string {
-  const match = /(?:^|[/_.-])(\d{3,4})p?(?=[/_.?&=-]|$)/i.exec(url) || /[?&](?:quality|res(?:olution)?|height|q)=(\d{3,4})(?:&|$)/i.exec(url) || /(?:^|[/_.-])\d{3,4}x(\d{3,4})(?=[/_.?&=-]|$)/i.exec(url)
+  const value = decodeTransportUrl(url)
+  const match = /(?:^|[/_.-])(\d{3,4})p(?=[/_.?&=-]|$)/i.exec(value)
+    || /[?&](?:quality|res(?:olution)?|height|q)=(\d{3,4})(?:&|$)/i.exec(value)
+    || /(?:^|[/_.-])\d{3,4}x(\d{3,4})(?=[/_.?&=-]|$)/i.exec(value)
+    || /[/_.-](\d{3,4})(?:\.m3u8|\.mp4)(?:\?|$)/i.exec(value)
   return match ? `${match[1]}p` : "自动清晰度"
 }
 function qualityNumber(label: string): number { return Number.parseInt(label, 10) || 0 }
