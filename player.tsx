@@ -14,7 +14,13 @@ export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selec
     const progress = await loadMissAVPlaybackProgress(video.videoCode)
     let subtitleCues: MissAVSubtitleCue[] | null = null
     try { if (isMissAVSubtitleEnabled(video.videoCode)) subtitleCues = await loadMissAVSubtitle(video.videoCode) }
-    catch (reason) { console.error("读取外挂字幕失败:", reason) }
+    catch (reason) {
+      console.error("读取外挂字幕失败:", reason)
+      await Dialog.alert({
+        title: "外挂字幕加载失败",
+        message: `${reason instanceof Error ? reason.message : String(reason)}\n\n视频仍会继续播放。请返回作品详情页重新导入 SRT 或 WebVTT 字幕。`,
+      })
+    }
     await recordMissAVPlayback(video, freshSource)
     await presentNativeOnlinePlayer({
       url: freshSource.url,

@@ -48,10 +48,16 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     if (!accepted) throw new Error("系统无法加载该视频格式。")
     SharedAudioSession.setCategory("playback", ["defaultToSpeaker"])
     SharedAudioSession.setActive(true)
-    await Navigation.present({
-      element: <NativeOnlinePlayerModal player={player} subtitleCues={request.subtitleCues} />,
-      modalPresentationStyle: "fullScreen",
-    })
+    const previousOrientations = Device.supportedInterfaceOrientations.slice()
+    Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
+    try {
+      await Navigation.present({
+        element: <NativeOnlinePlayerModal player={player} subtitleCues={request.subtitleCues} />,
+        modalPresentationStyle: "fullScreen",
+      })
+    } finally {
+      Device.supportedInterfaceOrientations = previousOrientations
+    }
   } finally {
     if (progressTimer !== undefined) clearInterval(progressTimer)
     if (hasStarted) saveProgress(hasEnded ? 0 : player.currentTime, player.duration)
@@ -74,12 +80,6 @@ function NativeOnlinePlayerModal({ player, subtitleCues }: { player: AVPlayer; s
     const timer = setInterval(updateSubtitle, 300)
     return () => clearInterval(timer)
   }, [player, subtitleCues])
-  useEffect(() => {
-    Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
-    return () => {
-      Device.supportedInterfaceOrientations = Device.userConfiguredInterfaceOrientations
-    }
-  }, [])
   return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
     <AVPlayerView
       player={player}
@@ -92,7 +92,12 @@ function NativeOnlinePlayerModal({ player, subtitleCues }: { player: AVPlayer; s
       videoGravity="resizeAspect"
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       ignoresSafeArea={true}
+      overlay={subtitleText ? {
+        alignment: "bottom",
+        content: <VStack frame={{ maxWidth: "infinity" }} padding={{ horizontal: 24, bottom: 42 }}>
+          <Text font="headline" fontWeight="semibold" foregroundStyle="white" multilineTextAlignment="center" lineLimit={3} padding={{ horizontal: 18, vertical: 8 }} background="black" clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}>{subtitleText}</Text>
+        </VStack>,
+      } : undefined}
     />
-    {subtitleText ? <VStack padding={{ horizontal: 24, bottom: 74 }}><Text font="headline" fontWeight="semibold" foregroundStyle="white" multilineTextAlignment="center" lineLimit={3} padding={{ horizontal: 18, vertical: 8 }} background="black" clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}>{subtitleText}</Text></VStack> : undefined}
   </ZStack>
 }
