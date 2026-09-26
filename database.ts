@@ -3,11 +3,13 @@ import type { MissAVVideoDetail, MissAVVideoItem, MissAVVideoSource } from "./cl
 
 export type MissAVFavouriteRecord = { sourceId: "builtin.missav"; videoCode: string; video: MissAVVideoItem; addedAt: number }
 export type MissAVPlaybackRecord = { sourceId: "builtin.missav"; videoCode: string; video: MissAVVideoItem; lastPlayedAt: number; qualityLabel: string; player?: string }
+export type MissAVPlaybackProgress = { videoCode: string; positionSeconds: number; durationSeconds?: number; updatedAt: number }
 export type MissAVBrowseRecord = { videoCode: string; video: MissAVVideoItem; lastViewedAt: number; viewCount: number }
 
 type VideoRow = { video_code: string; title: string; detail_path: string; cover_url: string; duration: string | null; badge: string | null }
 type FavouriteRow = VideoRow & { added_at: number }
 type PlaybackRow = VideoRow & { last_played_at: number; quality_label: string }
+type PlaybackProgressRow = { video_code: string; position_seconds: number; duration_seconds: number | null; updated_at: number }
 type BrowseRow = VideoRow & { last_viewed_at: number; view_count: number }
 
 const DB_PATH = Path.join(FileManager.documentsDirectory, "missav-library.db")
@@ -36,6 +38,7 @@ export function getMissAVDatabase(): Promise<SQLite.Database> {
       await db.execute(`CREATE TABLE IF NOT EXISTS favourites (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, added_at INTEGER NOT NULL)`)
       await db.execute(`CREATE TABLE IF NOT EXISTS browse_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_viewed_at INTEGER NOT NULL, last_viewed_at INTEGER NOT NULL, view_count INTEGER NOT NULL DEFAULT 1)`)
       await db.execute(`CREATE TABLE IF NOT EXISTS playback_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_played_at INTEGER NOT NULL, last_played_at INTEGER NOT NULL, play_count INTEGER NOT NULL DEFAULT 1, quality_label TEXT NOT NULL)`)
+      await db.execute(`CREATE TABLE IF NOT EXISTS playback_progress (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, position_seconds REAL NOT NULL, duration_seconds REAL, updated_at INTEGER NOT NULL)`)
       await db.createIndex("idx_browse_last_viewed", { table: "browse_history", columns: ["last_viewed_at"], ifNotExists: true })
       await db.createIndex("idx_playback_last_played", { table: "playback_history", columns: ["last_played_at"], ifNotExists: true })
       await migrateLegacyRecords(db)
@@ -98,7 +101,28 @@ export async function loadPlaybackHistory(limit = 100): Promise<MissAVPlaybackRe
   const db = await getMissAVDatabase()
   return (await db.fetchAll<PlaybackRow>(`SELECT v.video_code, v.title, v.detail_path, v.cover_url, v.duration, v.badge, h.last_played_at, h.quality_label FROM playback_history h JOIN videos v USING(video_code) ORDER BY h.last_played_at DESC LIMIT ?`, [limit])).map(row => ({ sourceId: "builtin.missav", videoCode: row.video_code, video: rowToVideo(row), lastPlayedAt: row.last_played_at, qualityLabel: row.quality_label }))
 }
-export async function clearPlaybackHistory(): Promise<void> { const db = await getMissAVDatabase(); await db.execute("DELETE FROM playback_history") }
+export async function loadPlaybackProgress(videoCode: string): Promise<MissAVPlaybackProgress | null> {
+  const db = await getMissAVDatabase()
+  const row = await db.fetchOne<PlaybackProgressRow>("SELECT video_code, position_seconds, duration_seconds, updated_at FROM playback_progress WHERE video_code = ?", [videoCode])
+  return row ? { videoCode: row.video_code, positionSeconds: row.position_seconds, durationSeconds: row.duration_seconds ?? undefined, updatedAt: row.updated_at } : null
+}
+export async function savePlaybackProgress(videoCode: string, positionSeconds: number, durationSeconds: number): Promise<void> {
+  const db = await getMissAVDatabase()
+  const position = Number.isFinite(positionSeconds) ? Math.max(0, positionSeconds) : 0
+  if (position < 5) {
+    await db.execute("DELETE FROM playback_progress WHERE video_code = ?", [videoCode])
+    return
+  }
+  const duration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : null
+  await db.execute(`INSERT INTO playback_progress (video_code, position_seconds, duration_seconds, updated_at) VALUES (?, ?, ?, ?)
+    ON CONFLICT(video_code) DO UPDATE SET position_seconds=excluded.position_seconds, duration_seconds=excluded.duration_seconds, updated_at=excluded.updated_at`,
+    [videoCode, position, duration, Date.now()])
+}
+export async function clearPlaybackHistory(): Promise<void> {
+  const db = await getMissAVDatabase()
+  await db.execute("DELETE FROM playback_progress")
+  await db.execute("DELETE FROM playback_history")
+}
 export async function clearBrowseHistory(): Promise<void> { const db = await getMissAVDatabase(); await db.execute("DELETE FROM browse_history") }
 
 export async function recommendationProfile(): Promise<{ terms: Map<string, number>; excluded: Set<string> }> {
