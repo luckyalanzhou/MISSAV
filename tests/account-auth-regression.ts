@@ -1,4 +1,5 @@
 import { Script } from "scripting"
+import { restoreMissAVAccountState } from "../account"
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) throw new Error(message)
@@ -13,7 +14,7 @@ const accountCookiesOnly = (cookies: any[]): any[] => cookies.filter(cookie => c
 
 const restoredState = (cookies: any[], metaState?: string): string => {
   const hasSession = accountCookiesOnly(cookies).length > 0
-  return hasSession && (metaState === "expired" || metaState === "blocked") ? metaState : hasSession ? "signedIn" : "signedOut"
+  return restoreMissAVAccountState(hasSession, metaState)
 }
 
 const isCurrentMissAVCookie = (cookie: any, host: string): boolean => {

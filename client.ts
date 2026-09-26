@@ -1,5 +1,6 @@
 import { fetch } from "scripting"
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
+import { loadWebViewPage } from "./webview"
 
 export const MISSAV_BASE_URL = () => getMissAVBaseURL()
 export const MISSAV_LOCALE = "ja"
@@ -89,9 +90,7 @@ class MissAVClient {
     // so Cloudflare can accept the WebView while returning 403 to fetch.
     const controller = new WebViewController()
     try {
-      const loaded = await controller.loadURL(url)
-      const finished = loaded ? await controller.waitForLoad() : false
-      let html = await controller.getHTML()
+      const { loaded, finished, html } = await loadWebViewPage(controller, url)
 
       if (isCloudflareChallengeHTML(html)) {
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")

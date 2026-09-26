@@ -1,5 +1,6 @@
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
 import { cleanText, isCloudflareChallengeHTML as isCloudflareHTML, missavClient, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
+import { loadWebViewPage } from "./webview"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
 export type MissAVAccountSnapshot = { state: MissAVAccountState; domain: string; accountLabel?: string; accountEmail?: string; updatedAt?: number }
@@ -22,7 +23,13 @@ function loginAPIURL(): string { return new URL(`/${LOCALE}/api/login`, `${origi
 export function getMissAVAccountSnapshot(): MissAVAccountSnapshot {
   const domain = origin()
   const meta = parseMeta(Keychain.get(metaKey(domain)))
-  return { state: Keychain.get(cookieKey(domain)) ? (meta?.state === "expired" ? "expired" : "signedIn") : "signedOut", domain, accountLabel: meta?.accountLabel, accountEmail: meta?.accountEmail, updatedAt: meta?.updatedAt }
+  const hasStoredSession = Boolean(Keychain.get(cookieKey(domain)))
+  return { state: restoreMissAVAccountState(hasStoredSession, meta?.state), domain, accountLabel: meta?.accountLabel, accountEmail: meta?.accountEmail, updatedAt: meta?.updatedAt }
+}
+
+export function restoreMissAVAccountState(hasStoredSession: boolean, persistedState: unknown): MissAVAccountState {
+  if (!hasStoredSession) return "signedOut"
+  return persistedState === "expired" || persistedState === "blocked" ? persistedState : "signedIn"
 }
 
 export async function loginMissAV(email: string, password: string): Promise<MissAVAccountSnapshot> {
@@ -32,9 +39,10 @@ export async function loginMissAV(email: string, password: string): Promise<Miss
   const controller = new WebViewController()
   try {
     await clearNonValidationMissAVCookies(controller)
-    await controller.loadURL(loginURL())
-    const initialHTML = await controller.getHTML()
+    const initialPage = await loadWebViewPage(controller, loginURL())
+    const initialHTML = initialPage.html
     if (!initialHTML || isCloudflareHTML(initialHTML)) throw new Error("当前线路暂时无法完成内置登录，请切换访问线路后重试。")
+    if (!initialPage.loaded || !initialPage.finished) throw new Error("登录页面尚未加载完成，请稍后重试。")
     const result = await controller.evaluateJavaScript<{ ok: boolean; accountLabel?: string; status?: number; error?: string }>(`
       return (async () => {
         try {
@@ -60,9 +68,10 @@ export async function loginMissAV(email: string, password: string): Promise<Miss
       if (result?.error === "login_client_not_found") throw new Error("站点登录接口暂时不可用，请切换访问线路或稍后重试。")
       throw new Error(result?.error || "MISSAV 登录失败，请稍后重试。")
     }
-    await controller.loadURL(savedURL())
-    const verifiedHTML = await controller.getHTML()
+    const verifiedPage = await loadWebViewPage(controller, savedURL())
+    const verifiedHTML = verifiedPage.html
     if (!verifiedHTML || isCloudflareHTML(verifiedHTML)) throw new Error("登录请求已提交，但当前线路暂时无法验证会话，请切换访问线路后重试。")
+    if (!verifiedPage.loaded || !verifiedPage.finished) throw new Error("登录请求已提交，但账号验证页面尚未加载完成，请稍后重试。")
     if (!isAuthenticatedHTML(verifiedHTML)) throw new Error("站点未建立有效登录会话，请检查注册邮箱和密码后重试。")
     const cookies = await controller.getCookies(savedURL())
     if (!cookies.length) throw new Error("登录成功，但未取得可用于站点收藏的会话，请稍后重试。")
@@ -82,8 +91,7 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
     const probeURL = missavClient.browseProbeURL()
     // Always present the WebView, even when navigation reports failure. A
     // failed load can still leave a useful Cloudflare/error page to inspect.
-    await controller.loadURL(probeURL)
-    await controller.waitForLoad()
+    await loadWebViewPage(controller, probeURL)
     await controller.present({ fullscreen: true, navigationTitle: "验证访问线路" })
     const html = await controller.getHTML()
     if (isCloudflareHTML(html || "")) return "incomplete"
@@ -119,10 +127,10 @@ export async function loadMissAVSavedVideos(page = 1): Promise<MissAVSavedVideos
   const controller = new WebViewController()
   try {
     await restoreCookies(controller, cookies)
-    await controller.loadURL(savedURL(page))
-    const html = await controller.getHTML()
-    if (!html) throw new Error("站点收藏页面暂时无法读取，请稍后重试。")
+    const loadedPage = await loadWebViewPage(controller, savedURL(page))
+    const html = loadedPage.html
     if (isCloudflareHTML(html)) throw new Error("当前线路暂时无法读取站点收藏，请切换访问线路后重试。")
+    if (!loadedPage.loaded || !loadedPage.finished || !html) throw new Error("站点收藏页面尚未加载完成，请稍后重试。")
     if (!isAuthenticatedHTML(html)) throw new Error("站点账号已失效，请重新登录。")
     return { items: parseMissAVVideoItems(html), page, hasNext: hasNextPage(html, page) }
   } finally { controller.dispose() }
@@ -134,10 +142,10 @@ async function websiteSavedTransaction(detailPath: string, targetSaved?: boolean
   const controller = new WebViewController()
   try {
     await restoreCookies(controller, cookies)
-    await controller.loadURL(resolveMissAVURL(detailPath))
-    const html = await controller.getHTML()
-    if (!html) throw new Error("网站详情页暂时无法读取。")
+    const loadedPage = await loadWebViewPage(controller, resolveMissAVURL(detailPath))
+    const html = loadedPage.html
     if (isCloudflareHTML(html)) throw new Error("当前线路暂时无法读取站点收藏，请切换访问线路后重试。")
+    if (!loadedPage.loaded || !loadedPage.finished || !html) throw new Error("网站详情页尚未加载完成，请稍后重试。")
     const target = targetSaved === undefined ? "null" : JSON.stringify(targetSaved)
     const result = await controller.evaluateJavaScript<{ ok: boolean; saved?: boolean; authenticated?: boolean; status?: number; error?: string }>(`
       return (async () => {
@@ -189,9 +197,9 @@ async function verifyStoredSession(): Promise<MissAVAccountSnapshot> {
     const controller = new WebViewController()
     try {
       await restoreCookies(controller, readStoredCookies())
-      await controller.loadURL(savedURL())
-      const html = await controller.getHTML()
-      if (!html || isCloudflareHTML(html)) return { state: "blocked", domain: origin() }
+      const loadedPage = await loadWebViewPage(controller, savedURL())
+      const html = loadedPage.html
+      if (!loadedPage.loaded || !loadedPage.finished || !html || isCloudflareHTML(html)) return { state: "blocked", domain: origin() }
       if (!isAuthenticatedHTML(html)) return { state: "expired", domain: origin() }
       return { state: "signedIn", domain: origin(), accountLabel: extractAccountLabel(html), updatedAt: Date.now() }
     } finally { controller.dispose() }

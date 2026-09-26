@@ -18,28 +18,34 @@ const OLD_HISTORY_KEY = `missav_${LEGACY_NAMESPACE}_playback_history_v1`
 let databasePromise: Promise<SQLite.Database> | null = null
 
 export function getMissAVDatabase(): Promise<SQLite.Database> {
-  if (!databasePromise) databasePromise = (async () => {
-    const db = SQLite.open(DB_PATH, { foreignKeysEnabled: true, readonly: false, label: "MISSAV Library", busyMode: 3, journalMode: "wal", maximumReaderCount: 3 })
-    await db.execute(`CREATE TABLE IF NOT EXISTS videos (
-      video_code TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      detail_path TEXT NOT NULL,
-      cover_url TEXT NOT NULL,
-      duration TEXT,
-      badge TEXT,
-      actress TEXT,
-      genres_json TEXT,
-      maker TEXT,
-      updated_at INTEGER NOT NULL
-    )`)
-    await db.execute(`CREATE TABLE IF NOT EXISTS favourites (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, added_at INTEGER NOT NULL)`)
-    await db.execute(`CREATE TABLE IF NOT EXISTS browse_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_viewed_at INTEGER NOT NULL, last_viewed_at INTEGER NOT NULL, view_count INTEGER NOT NULL DEFAULT 1)`)
-    await db.execute(`CREATE TABLE IF NOT EXISTS playback_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_played_at INTEGER NOT NULL, last_played_at INTEGER NOT NULL, play_count INTEGER NOT NULL DEFAULT 1, quality_label TEXT NOT NULL)`)
-    await db.createIndex("idx_browse_last_viewed", { table: "browse_history", columns: ["last_viewed_at"], ifNotExists: true })
-    await db.createIndex("idx_playback_last_played", { table: "playback_history", columns: ["last_played_at"], ifNotExists: true })
-    await migrateLegacyRecords(db)
-    return db
-  })()
+  if (!databasePromise) {
+    const opening = (async () => {
+      const db = SQLite.open(DB_PATH, { foreignKeysEnabled: true, readonly: false, label: "MISSAV Library", busyMode: 3, journalMode: "wal", maximumReaderCount: 3 })
+      await db.execute(`CREATE TABLE IF NOT EXISTS videos (
+        video_code TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        detail_path TEXT NOT NULL,
+        cover_url TEXT NOT NULL,
+        duration TEXT,
+        badge TEXT,
+        actress TEXT,
+        genres_json TEXT,
+        maker TEXT,
+        updated_at INTEGER NOT NULL
+      )`)
+      await db.execute(`CREATE TABLE IF NOT EXISTS favourites (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, added_at INTEGER NOT NULL)`)
+      await db.execute(`CREATE TABLE IF NOT EXISTS browse_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_viewed_at INTEGER NOT NULL, last_viewed_at INTEGER NOT NULL, view_count INTEGER NOT NULL DEFAULT 1)`)
+      await db.execute(`CREATE TABLE IF NOT EXISTS playback_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_played_at INTEGER NOT NULL, last_played_at INTEGER NOT NULL, play_count INTEGER NOT NULL DEFAULT 1, quality_label TEXT NOT NULL)`)
+      await db.createIndex("idx_browse_last_viewed", { table: "browse_history", columns: ["last_viewed_at"], ifNotExists: true })
+      await db.createIndex("idx_playback_last_played", { table: "playback_history", columns: ["last_played_at"], ifNotExists: true })
+      await migrateLegacyRecords(db)
+      return db
+    })()
+    databasePromise = opening.catch(error => {
+      databasePromise = null
+      throw error
+    })
+  }
   return databasePromise!
 }
 
