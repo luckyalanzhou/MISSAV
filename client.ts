@@ -15,6 +15,11 @@ export type MissAVVideoDetail = { title: string; videoCode: string; coverUrl: st
 export type MissAVSearchParams = { collection?: MissAVCollection; query?: string; page?: number; sort?: MissAVSort; filter?: MissAVFilter }
 export type MissAVSearchPage = { items: MissAVVideoItem[]; page: number; hasNext: boolean; title: string }
 
+const SEARCH_PAGE_CACHE_TTL_MS = 45_000
+const MAX_CACHED_SEARCH_PAGES = 24
+type CachedSearchPage = { expiresAt: number; value: MissAVSearchPage }
+type PendingSearchPage = { requestId: number; forceRefresh: boolean; promise: Promise<MissAVSearchPage> }
+
 export const MISSAV_COLLECTION_OPTIONS: ReadonlyArray<{ value: MissAVCollection; title: string; systemImage: string }> = [
   { value: "new", title: "最近更新", systemImage: "clock.arrow.circlepath" },
   { value: "release", title: "新作", systemImage: "sparkles" },
@@ -46,11 +51,45 @@ export const MISSAV_FILTER_OPTIONS: ReadonlyArray<{ value: MissAVFilter; title: 
 ]
 
 class MissAVClient {
-  async searchVideoPage(params: MissAVSearchParams): Promise<MissAVSearchPage> {
+  private searchPageCache = new Map<string, CachedSearchPage>()
+  private searchPageRequests = new Map<string, PendingSearchPage>()
+  private searchRequestId = 0
+
+  async searchVideoPage(params: MissAVSearchParams, options: { forceRefresh?: boolean } = {}): Promise<MissAVSearchPage> {
     const page = Math.max(1, Math.floor(params.page || 1))
     const url = this.collectionUrl(params)
-    const html = await this.fetchHtml(url)
-    return { items: parseMissAVVideoItems(html), page, hasNext: hasNextPage(html, page), title: cleanText(firstMatch(html, /<h1\b[^>]*>([\s\S]*?)<\/h1>/i)) }
+    const forceRefresh = options.forceRefresh === true
+    const cached = this.searchPageCache.get(url)
+    if (!forceRefresh && cached) {
+      if (cached.expiresAt > Date.now()) {
+        this.searchPageCache.delete(url)
+        this.searchPageCache.set(url, cached)
+        return copySearchPage(cached.value)
+      }
+      this.searchPageCache.delete(url)
+    }
+    const pending = this.searchPageRequests.get(url)
+    if (pending && (!forceRefresh || pending.forceRefresh)) return pending.promise.then(copySearchPage)
+
+    const requestId = ++this.searchRequestId
+    const request = (async () => {
+      const html = await this.fetchHtml(url)
+      return { items: parseMissAVVideoItems(html), page, hasNext: hasNextPage(html, page), title: cleanText(firstMatch(html, /<h1\b[^>]*>([\s\S]*?)<\/h1>/i)) }
+    })()
+    const tracked = request.then(value => {
+      if (this.searchPageRequests.get(url)?.requestId === requestId) {
+        if (this.searchPageCache.size >= MAX_CACHED_SEARCH_PAGES) {
+          const oldestKey = this.searchPageCache.keys().next().value
+          if (oldestKey) this.searchPageCache.delete(oldestKey)
+        }
+        this.searchPageCache.set(url, { expiresAt: Date.now() + SEARCH_PAGE_CACHE_TTL_MS, value })
+      }
+      return value
+    }).finally(() => {
+      if (this.searchPageRequests.get(url)?.requestId === requestId) this.searchPageRequests.delete(url)
+    })
+    this.searchPageRequests.set(url, { requestId, forceRefresh, promise: tracked })
+    return tracked.then(copySearchPage)
   }
 
   async getVideo(item: MissAVVideoItem | string): Promise<MissAVVideoDetail> {
@@ -104,6 +143,10 @@ class MissAVClient {
   }
 
   private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ja,en;q=0.8", ...(referer ? { Referer: referer } : {}) } }
+}
+
+function copySearchPage(value: MissAVSearchPage): MissAVSearchPage {
+  return { ...value, items: value.items.map(item => ({ ...item })) }
 }
 
 export function isCloudflareChallengeHTML(html: string | null): boolean {

@@ -91,7 +91,11 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
     const probeURL = missavClient.browseProbeURL()
     // Always present the WebView, even when navigation reports failure. A
     // failed load can still leave a useful Cloudflare/error page to inspect.
-    await loadWebViewPage(controller, probeURL)
+    try {
+      await loadWebViewPage(controller, probeURL)
+    } catch {
+      // Keep the WebView available so a slow challenge page can still be inspected or completed.
+    }
     await controller.present({ fullscreen: true, navigationTitle: "验证访问线路" })
     const html = await controller.getHTML()
     if (isCloudflareHTML(html || "")) return "incomplete"

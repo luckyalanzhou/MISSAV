@@ -52,15 +52,15 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
     } finally { setPopularLoading(false) }
   }
 
-  async function loadResults(nextSource: ResultSource, nextPage = 1) {
+  async function loadResults(nextSource: ResultSource, nextPage = 1, forceRefresh = false) {
     const gen = ++generation.current
     const sourceChanged = !source || source.kind !== nextSource.kind || (source.kind === "query" ? source.query !== (nextSource.kind === "query" ? nextSource.query : "") : source.collection !== (nextSource.kind === "collection" ? nextSource.collection : ""))
     setLoading(true); setError(null); setSource(nextSource)
     if (sourceChanged) { setItems([]); setHasNext(false); setPage(1) }
     try {
       const result = nextSource.kind === "query"
-        ? await missavClient.searchVideoPage({ query: nextSource.query, page: nextPage, sort: "released_at", filter: "" })
-        : await missavClient.searchVideoPage({ collection: nextSource.collection, page: nextPage, sort: "released_at", filter: "" })
+        ? await missavClient.searchVideoPage({ query: nextSource.query, page: nextPage, sort: "released_at", filter: "" }, { forceRefresh })
+        : await missavClient.searchVideoPage({ collection: nextSource.collection, page: nextPage, sort: "released_at", filter: "" }, { forceRefresh })
       if (gen !== generation.current) return
       setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1)
     } catch (reason) {
@@ -77,7 +77,7 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
     const query = keyword.trim()
     dismissKeyboard()
     if (!query) { ++generation.current; setLoading(false); setError("请输入番号、女优或作品标题。"); setSource({ kind: "query", query: "" }); setItems([]); setPage(1); setHasNext(false); return }
-    void loadResults({ kind: "query", query }, 1)
+    void loadResults({ kind: "query", query }, 1, true)
   }
   function open(video: MissAVVideoItem) { setSelected(video); detailPresented.setValue(true) }
   function changeResultLayout(value: string | number) {
@@ -119,7 +119,7 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
               <Button title="浏览分类" systemImage="square.grid.2x2" action={showDiscovery} frame={{ maxWidth: "infinity", minHeight: 44, alignment: "trailing" }} />
             </VStack>
           </VStack>
-          {loading && !items.length ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 260 }} /> : error && !items.length ? <StateView title={source.kind === "query" && !source.query ? "输入搜索内容" : "加载失败"} description={error} kind="error" action={source.kind === "query" && !source.query ? undefined : () => { void loadResults(source, page) }} /> : !items.length ? <StateView title="未找到结果" description="请尝试其他番号、女优、作品标题或浏览分类。" kind="empty" systemImage="magnifyingglass" action={showDiscovery} actionTitle="浏览分类" /> : <SearchResultList items={items} layout={resultLayout} onOpen={open} />}
+          {loading && !items.length ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 260 }} /> : error && !items.length ? <StateView title={source.kind === "query" && !source.query ? "输入搜索内容" : "加载失败"} description={error} kind="error" action={source.kind === "query" && !source.query ? undefined : () => { void loadResults(source, page, true) }} /> : !items.length ? <StateView title="未找到结果" description="请尝试其他番号、女优、作品标题或浏览分类。" kind="empty" systemImage="magnifyingglass" action={showDiscovery} actionTitle="浏览分类" /> : <SearchResultList items={items} layout={resultLayout} onOpen={open} />}
           {error && items.length ? <Text font="footnote" foregroundStyle="secondaryLabel">新结果加载失败，当前仍显示上次成功的结果。</Text> : undefined}
           {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void loadResults(source, page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void loadResults(source, page + 1) }} /></HStack> : undefined}
         </VStack>}

@@ -24,7 +24,7 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
   const generation = useRef(0)
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
 
-  async function load(next: { page?: number; collection?: MissAVCollection; filter?: MissAVFilter; sort?: MissAVSort } = {}) {
+  async function load(next: { page?: number; collection?: MissAVCollection; filter?: MissAVFilter; sort?: MissAVSort } = {}, forceRefresh = false) {
     const gen = ++generation.current
     const nextPage = next.page ?? page
     const nextCollection = next.collection ?? collection
@@ -32,7 +32,7 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
     const nextSort = next.sort ?? sort
     setLoading(true); setError(null)
     try {
-      const result = await missavClient.searchVideoPage({ page: nextPage, collection: nextCollection, filter: nextFilter, sort: nextSort })
+      const result = await missavClient.searchVideoPage({ page: nextPage, collection: nextCollection, filter: nextFilter, sort: nextSort }, { forceRefresh })
       if (gen !== generation.current) return
       setItems(result.items); setHasNext(result.hasNext); setPage(result.page); setCollection(nextCollection); setFilter(nextFilter); setSort(nextSort)
     } catch (reason) { if (gen === generation.current) setError(reason instanceof Error ? reason.message : String(reason)) }
@@ -49,7 +49,7 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
     <PageBackground />
-    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load()} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage video={selected} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage video={selected} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="discover-results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
@@ -65,7 +65,7 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
             {loading && items.length ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : undefined}
           </HStack>
 
-          {loading && items.length === 0 ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 360 }} /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load() }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection: "new", filter: "", sort: "released_at" }) }} actionTitle="重置筛选" /> : <>
+          {loading && items.length === 0 ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 360 }} /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load({}, true) }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection: "new", filter: "", sort: "released_at" }, true) }} actionTitle="重置筛选" /> : <>
             {hero ? <DiscoverHero video={hero} eyebrow="本栏精选" onOpen={open} /> : undefined}
             <HStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
               <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{page === 1 ? "更多作品" : title}</Text>
@@ -74,7 +74,7 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
             {recommendations.length ? <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 14 }]} spacing={20}>{recommendations.map(video => <MediaGridCard key={video.videoCode} video={video} onOpen={open} />)}</LazyVGrid> : undefined}
           </>}
 
-          {error && items.length ? <StateView title="刷新失败" description="正在显示上次结果。" kind="error" action={() => { void load() }} actionTitle="重试" /> : undefined}
+          {error && items.length ? <StateView title="刷新失败" description="正在显示上次结果。" kind="error" action={() => { void load({}, true) }} actionTitle="重试" /> : undefined}
           {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load({ page: page - 1 }) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load({ page: page + 1 }) }} /></HStack> : undefined}
         </VStack>
       </VStack>

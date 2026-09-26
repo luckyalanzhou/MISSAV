@@ -1,32 +1,41 @@
 import { missavClient, type MissAVVideoItem } from "./client"
 import { recommendationProfile, tokenize } from "./database"
+import { getMissAVBaseURL } from "./domain"
 
 export type MissAVRecommendation = { video: MissAVVideoItem; score: number; reason: string }
 
 const CANDIDATE_TTL = 3 * 60 * 1000
-let candidateCache: { expiresAt: number; items: MissAVVideoItem[] } | null = null
-let candidatePromise: Promise<MissAVVideoItem[]> | null = null
+let candidateCache: { domain: string; expiresAt: number; items: MissAVVideoItem[] } | null = null
+const candidatePromises = new Map<string, Promise<MissAVVideoItem[]>>()
 
-async function loadCandidates(): Promise<MissAVVideoItem[]> {
-  if (candidateCache && candidateCache.expiresAt > Date.now()) return candidateCache.items
-  if (candidatePromise) return candidatePromise
-  candidatePromise = (async () => {
+async function loadCandidates(forceRefresh = false): Promise<MissAVVideoItem[]> {
+  const domain = getMissAVBaseURL()
+  if (!forceRefresh && candidateCache?.domain === domain && candidateCache.expiresAt > Date.now()) return candidateCache.items.map(item => ({ ...item }))
+  const existing = candidatePromises.get(domain)
+  if (!forceRefresh && existing) return existing.then(items => items.map(item => ({ ...item })))
+  let request: Promise<MissAVVideoItem[]>
+  request = (async () => {
     const pages = await Promise.allSettled([
-      missavClient.searchVideoPage({ collection: "today-hot", page: 1, sort: "today_views", filter: "" }),
-      missavClient.searchVideoPage({ collection: "weekly-hot", page: 1, sort: "weekly_views", filter: "" }),
-      missavClient.searchVideoPage({ collection: "new", page: 1, sort: "released_at", filter: "" }),
+      missavClient.searchVideoPage({ collection: "today-hot", page: 1, sort: "today_views", filter: "" }, { forceRefresh }),
+      missavClient.searchVideoPage({ collection: "weekly-hot", page: 1, sort: "weekly_views", filter: "" }, { forceRefresh }),
+      missavClient.searchVideoPage({ collection: "new", page: 1, sort: "released_at", filter: "" }, { forceRefresh }),
     ])
+    if (pages.every(result => result.status === "rejected")) throw new Error("无法获取推荐候选内容，请检查网络后重试。")
     const candidates = new Map<string, MissAVVideoItem>()
     for (const result of pages) if (result.status === "fulfilled") for (const video of result.value.items) candidates.set(video.videoCode, video)
     const items = [...candidates.values()]
-    candidateCache = { expiresAt: Date.now() + CANDIDATE_TTL, items }
+    if (pages.some(result => result.status === "fulfilled") && candidatePromises.get(domain) === request) {
+      candidateCache = { domain, expiresAt: Date.now() + CANDIDATE_TTL, items }
+    }
     return items
   })()
-  try { return await candidatePromise } finally { candidatePromise = null }
+  candidatePromises.set(domain, request)
+  try { return (await request).map(item => ({ ...item })) }
+  finally { if (candidatePromises.get(domain) === request) candidatePromises.delete(domain) }
 }
 
-export async function loadLocalRecommendations(limit = 20): Promise<MissAVRecommendation[]> {
-  const [profile, sourceItems] = await Promise.all([recommendationProfile(), loadCandidates()])
+export async function loadLocalRecommendations(limit = 20, forceRefresh = false): Promise<MissAVRecommendation[]> {
+  const [profile, sourceItems] = await Promise.all([recommendationProfile(), loadCandidates(forceRefresh)])
   const candidates = sourceItems.filter(video => !profile.excluded.has(video.videoCode))
   const hasProfile = profile.terms.size > 0
   return candidates.map((video, index) => {
