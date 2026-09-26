@@ -1,25 +1,13 @@
 import { Script } from "scripting"
-import { restoreMissAVAccountState } from "../account"
+import { accountCookiesOnly, isCurrentMissAVCookie, restoreMissAVAccountState } from "../account"
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) throw new Error(message)
 }
 
-const isSiteValidationCookie = (cookie: any): boolean => {
-  const name = String(cookie?.name || "").toLowerCase()
-  return name.startsWith("cf_") || name.startsWith("__cf")
-}
-
-const accountCookiesOnly = (cookies: any[]): any[] => cookies.filter(cookie => cookie?.name && cookie?.value && cookie?.domain && !isSiteValidationCookie(cookie))
-
-const restoredState = (cookies: any[], metaState?: string): string => {
+const restoredState = (cookies: unknown[], metaState?: string): string => {
   const hasSession = accountCookiesOnly(cookies).length > 0
   return restoreMissAVAccountState(hasSession, metaState)
-}
-
-const isCurrentMissAVCookie = (cookie: any, host: string): boolean => {
-  const domain = String(cookie?.domain || "").replace(/^\./, "").toLowerCase()
-  return domain === host || domain.endsWith(`.${host}`)
 }
 
 const run = (): void => {

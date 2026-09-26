@@ -1,5 +1,5 @@
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
-import { cleanText, isCloudflareChallengeHTML as isCloudflareHTML, missavClient, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
+import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, missavClient, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
 import { loadWebViewPage } from "./webview"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
@@ -11,6 +11,8 @@ const ACCOUNT_KEY_PREFIX = "missav_account_cookie_v2_"
 const ACCOUNT_META_PREFIX = "missav_account_meta_v2_"
 const LOCALE = "ja"
 const MISSAV_COOKIE_HOSTS = ["missav.ws", "missav.ai"] as const
+type CookieRecord = Record<string, unknown> & { name?: unknown; value?: unknown; domain?: unknown; expiresDate?: unknown }
+type StoredMissAVCookie = CookieRecord & { name: string; value: string; domain: string }
 
 function origin(): string { return new URL(getMissAVBaseURL()).origin }
 function keySuffix(value = origin()): string { return value.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "_").toLowerCase() }
@@ -99,7 +101,7 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
     await controller.present({ fullscreen: true, navigationTitle: "验证访问线路" })
     const html = await controller.getHTML()
     if (isCloudflareHTML(html || "")) return "incomplete"
-    return isLikelyMissAVPageHTML(html || "") ? "accessible" : "unavailable"
+    return isLikelyMissAVHTML(html || "") ? "accessible" : "unavailable"
   } finally { controller.dispose() }
 }
 
@@ -210,32 +212,54 @@ async function verifyStoredSession(): Promise<MissAVAccountSnapshot> {
   } catch { return { state: "blocked", domain: origin() } }
 }
 
-function saveSession(cookies: any[], snapshot: MissAVAccountSnapshot): void {
+function saveSession(cookies: readonly unknown[], snapshot: MissAVAccountSnapshot): void {
   Keychain.set(cookieKey(), JSON.stringify(accountCookiesOnly(cookies)), { accessibility: "first_unlock_this_device" })
   Keychain.set(metaKey(), JSON.stringify({ state: "signedIn", accountLabel: snapshot.accountLabel, accountEmail: snapshot.accountEmail, updatedAt: snapshot.updatedAt }), { accessibility: "first_unlock_this_device" })
 }
-function isSiteValidationCookie(cookie: any): boolean {
-  const name = String(cookie?.name || "").toLowerCase()
+export function isSiteValidationCookie(cookie: unknown): boolean {
+  if (!isCookieRecord(cookie)) return false
+  const name = typeof cookie.name === "string" ? cookie.name.toLowerCase() : ""
   return name.startsWith("cf_") || name.startsWith("__cf")
 }
-function accountCookiesOnly(cookies: any[]): any[] { return cookies.filter(cookie => cookie?.name && cookie?.value && cookie?.domain && !isSiteValidationCookie(cookie)) }
-function readStoredCookies(): any[] { try { const value = Keychain.get(cookieKey()); const parsed = value ? JSON.parse(value) : []; return Array.isArray(parsed) ? accountCookiesOnly(parsed) : [] } catch { return [] } }
-function isMissAVCookie(cookie: any): boolean {
-  const domain = String(cookie?.domain || "").replace(/^\./, "").toLowerCase()
-  return MISSAV_COOKIE_HOSTS.some(host => domain === host || domain.endsWith(`.${host}`))
+export function accountCookiesOnly(cookies: readonly unknown[]): StoredMissAVCookie[] {
+  return cookies.filter((cookie): cookie is StoredMissAVCookie => isCookieRecord(cookie)
+    && typeof cookie.name === "string" && Boolean(cookie.name)
+    && typeof cookie.value === "string" && Boolean(cookie.value)
+    && typeof cookie.domain === "string" && Boolean(cookie.domain)
+    && !isSiteValidationCookie(cookie))
+}
+function readStoredCookies(): StoredMissAVCookie[] {
+  try {
+    const value = Keychain.get(cookieKey())
+    const parsed: unknown = value ? JSON.parse(value) : []
+    return Array.isArray(parsed) ? accountCookiesOnly(parsed) : []
+  } catch { return [] }
+}
+export function isCurrentMissAVCookie(cookie: unknown, host: string): boolean {
+  if (!isCookieRecord(cookie) || typeof cookie.domain !== "string") return false
+  const domain = cookie.domain.replace(/^\./, "").toLowerCase()
+  const normalizedHost = host.replace(/^\./, "").toLowerCase()
+  return domain === normalizedHost || domain.endsWith(`.${normalizedHost}`)
+}
+function isMissAVCookie(cookie: unknown): boolean {
+  return MISSAV_COOKIE_HOSTS.some(host => isCurrentMissAVCookie(cookie, host))
 }
 async function clearNonValidationMissAVCookies(controller: WebViewController): Promise<void> {
   const cookies = await controller.getAllCookies()
   for (const cookie of cookies) if (isMissAVCookie(cookie) && !isSiteValidationCookie(cookie)) await controller.deleteCookie(cookie)
 }
-async function setStoredCookie(controller: WebViewController, stored: any): Promise<void> {
-  if (!stored?.name || !stored?.value || !stored?.domain) return
-  const cookie = { ...stored, expiresDate: stored.expiresDate ? new Date(stored.expiresDate) : undefined }
+async function setStoredCookie(controller: WebViewController, stored: StoredMissAVCookie): Promise<void> {
+  const expiry = stored.expiresDate
+  const expiresDate = expiry instanceof Date ? expiry : typeof expiry === "string" || typeof expiry === "number" ? new Date(expiry) : undefined
+  const cookie = { ...stored, expiresDate } as Parameters<WebViewController["setCookie"]>[0]
   await controller.setCookie(cookie)
 }
-async function restoreCookies(controller: WebViewController, cookies: any[]): Promise<void> {
+async function restoreCookies(controller: WebViewController, cookies: readonly unknown[]): Promise<void> {
   await clearNonValidationMissAVCookies(controller)
   for (const stored of accountCookiesOnly(cookies)) await setStoredCookie(controller, stored)
+}
+function isCookieRecord(value: unknown): value is CookieRecord {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 function isAuthenticatedHTML(html: string): boolean {
   const positive = /マイアカウント|(?:logout|登出|ログアウト|sign[\s-]?out|用户菜单|ユーザー)/i.test(html)
@@ -243,7 +267,5 @@ function isAuthenticatedHTML(html: string): boolean {
   return positive || savedContent
 }
 function extractAccountLabel(html: string): string | undefined { return cleanText(firstMatch(html, /(?:data-user-name|data-username)=['"]([^'"]+)/i)) || cleanText(firstMatch(html, /<meta\b[^>]*name=['"]user['"][^>]*content=['"]([^'"]+)/i)) || undefined }
-function isLikelyMissAVPageHTML(html: string): boolean { return Boolean(html && /missav/i.test(html) && /<(?:html|body|main|video|meta)\b/i.test(html) && html.length > 500) }
-function hasNextPage(html: string, page: number): boolean { return [...html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)].some(match => { try { return Number(new URL(match[1], `${origin()}/`).searchParams.get("page")) === page + 1 } catch { return false } }) }
 function parseMeta(value: string | null): { state?: MissAVAccountState; accountLabel?: string; accountEmail?: string; updatedAt?: number } | null { try { return value ? JSON.parse(value) : null } catch { return null } }
 function firstMatch(value: string, regex: RegExp): string { return regex.exec(value)?.[1] || "" }
