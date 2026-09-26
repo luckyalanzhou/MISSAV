@@ -1,5 +1,6 @@
-import { AVPlayerView, Device, Navigation, PIPStatus, ZStack, useEffect, useObservable } from "scripting"
+import { AVPlayerView, Device, Navigation, PIPStatus, Text, VStack, ZStack, useEffect, useObservable, useState } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
+import { findMissAVSubtitleCue, type MissAVSubtitleCue } from "./subtitles"
 
 export type NativePlaybackRequest = {
   url: string
@@ -7,6 +8,7 @@ export type NativePlaybackRequest = {
   title: string
   providerLabel: string
   qualityLabel: string
+  subtitleCues?: MissAVSubtitleCue[]
   resumePositionSeconds?: number
   resumeDurationSeconds?: number
   onProgress?: (positionSeconds: number, durationSeconds: number) => Promise<void> | void
@@ -47,7 +49,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     SharedAudioSession.setCategory("playback", ["defaultToSpeaker"])
     SharedAudioSession.setActive(true)
     await Navigation.present({
-      element: <NativeOnlinePlayerModal player={player} />,
+      element: <NativeOnlinePlayerModal player={player} subtitleCues={request.subtitleCues} />,
       modalPresentationStyle: "fullScreen",
     })
   } finally {
@@ -59,26 +61,38 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
   }
 }
 
-function NativeOnlinePlayerModal({ player }: { player: AVPlayer }) {
+function NativeOnlinePlayerModal({ player, subtitleCues }: { player: AVPlayer; subtitleCues?: MissAVSubtitleCue[] }) {
   const pipStatus = useObservable<PIPStatus>()
+  const [subtitleText, setSubtitleText] = useState("")
+  useEffect(() => {
+    if (!subtitleCues?.length) return
+    const updateSubtitle = () => {
+      const nextText = findMissAVSubtitleCue(subtitleCues, player.currentTime)?.text || ""
+      setSubtitleText(current => current === nextText ? current : nextText)
+    }
+    updateSubtitle()
+    const timer = setInterval(updateSubtitle, 300)
+    return () => clearInterval(timer)
+  }, [player, subtitleCues])
   useEffect(() => {
     Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
     return () => {
       Device.supportedInterfaceOrientations = Device.userConfiguredInterfaceOrientations
     }
   }, [])
-  return <ZStack alignment="topLeading" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
+  return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
     <AVPlayerView
       player={player}
       pipStatus={pipStatus}
       allowsPictureInPicturePlayback={true}
       canStartPictureInPictureAutomaticallyFromInline={true}
       updatesNowPlayingInfoCenter={true}
-      entersFullScreenWhenPlaybackBegins={true}
+      entersFullScreenWhenPlaybackBegins={!subtitleCues?.length}
       exitsFullScreenWhenPlaybackEnds={false}
       videoGravity="resizeAspect"
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       ignoresSafeArea={true}
     />
+    {subtitleText ? <VStack padding={{ horizontal: 24, bottom: 74 }}><Text font="headline" fontWeight="semibold" foregroundStyle="white" multilineTextAlignment="center" lineLimit={3} padding={{ horizontal: 18, vertical: 8 }} background="black" clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}>{subtitleText}</Text></VStack> : undefined}
   </ZStack>
 }
