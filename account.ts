@@ -1,5 +1,6 @@
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
 import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, missavClient, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
+import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
 import { loadWebViewPage } from "./webview"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
@@ -41,6 +42,7 @@ export async function loginMissAV(email: string, password: string): Promise<Miss
   const controller = new WebViewController()
   try {
     await clearNonValidationMissAVCookies(controller)
+    await restoreCloudflareSession(controller, new URL(loginURL()).hostname)
     const initialPage = await loadWebViewPage(controller, loginURL())
     const initialHTML = initialPage.html
     if (!initialHTML || isCloudflareHTML(initialHTML)) throw new Error("当前线路暂时无法完成内置登录，请切换访问线路后重试。")
@@ -91,6 +93,8 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
     // Probe the exact default Browse URL. The domain root may be accessible
     // while the listing route used by the app still requires a challenge.
     const probeURL = missavClient.browseProbeURL()
+    const probeHost = new URL(probeURL).hostname
+    await restoreCloudflareSession(controller, probeHost)
     // Always present the WebView, even when navigation reports failure. A
     // failed load can still leave a useful Cloudflare/error page to inspect.
     try {
@@ -99,6 +103,7 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
       // Keep the WebView available so a slow challenge page can still be inspected or completed.
     }
     await controller.present({ fullscreen: true, navigationTitle: "验证访问线路" })
+    try { await captureCloudflareSession(controller, probeHost) } catch { /* Keep verification usable if cookie persistence is unavailable. */ }
     const html = await controller.getHTML()
     if (isCloudflareHTML(html || "")) return "incomplete"
     return isLikelyMissAVHTML(html || "") ? "accessible" : "unavailable"
@@ -217,9 +222,7 @@ function saveSession(cookies: readonly unknown[], snapshot: MissAVAccountSnapsho
   Keychain.set(metaKey(), JSON.stringify({ state: "signedIn", accountLabel: snapshot.accountLabel, accountEmail: snapshot.accountEmail, updatedAt: snapshot.updatedAt }), { accessibility: "first_unlock_this_device" })
 }
 export function isSiteValidationCookie(cookie: unknown): boolean {
-  if (!isCookieRecord(cookie)) return false
-  const name = typeof cookie.name === "string" ? cookie.name.toLowerCase() : ""
-  return name.startsWith("cf_") || name.startsWith("__cf")
+  return isCloudflareSessionCookie(cookie)
 }
 export function accountCookiesOnly(cookies: readonly unknown[]): StoredMissAVCookie[] {
   return cookies.filter((cookie): cookie is StoredMissAVCookie => isCookieRecord(cookie)
@@ -256,6 +259,7 @@ async function setStoredCookie(controller: WebViewController, stored: StoredMiss
 }
 async function restoreCookies(controller: WebViewController, cookies: readonly unknown[]): Promise<void> {
   await clearNonValidationMissAVCookies(controller)
+  await restoreCloudflareSession(controller, new URL(origin()).hostname)
   for (const stored of accountCookiesOnly(cookies)) await setStoredCookie(controller, stored)
 }
 function isCookieRecord(value: unknown): value is CookieRecord {

@@ -1,5 +1,6 @@
 import { fetch } from "scripting"
 import { getMissAVBaseURL } from "./domain"
+import { captureCloudflareSession, restoreCloudflareSession } from "./cloudflare-session"
 import * as SiteHTML from "./html-parser"
 import { loadWebViewPage } from "./webview"
 
@@ -133,11 +134,13 @@ class MissAVClient {
     // so Cloudflare can accept the WebView while returning 403 to fetch.
     const controller = new WebViewController()
     try {
+      await restoreCloudflareSession(controller, new URL(url).hostname)
       const { loaded, finished, html } = await loadWebViewPage(controller, url)
 
       if (SiteHTML.isCloudflareChallengeHTML(html)) {
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }
+      try { await captureCloudflareSession(controller, new URL(url).hostname) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
       if (!loaded || !finished || !html) throw new Error("当前域名未返回页面内容，请在设置页切换线路后重试。")
       if (SiteHTML.isLikelyMissAVHTML(html)) return html
       throw new Error("当前域名未返回可识别的 MISSAV 页面。请在设置页切换线路后重试。")
