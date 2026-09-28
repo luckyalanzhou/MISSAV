@@ -1,6 +1,5 @@
-import { AVPlayerView, Device, Navigation, PIPStatus, Text, VStack, ZStack, useEffect, useObservable, useState } from "scripting"
+import { AVPlayerView, Device, Navigation, PIPStatus, ZStack, useObservable } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
-import { findMissAVSubtitleCue, type MissAVSubtitleCue } from "./subtitles"
 
 export type NativePlaybackRequest = {
   url: string
@@ -8,7 +7,6 @@ export type NativePlaybackRequest = {
   title: string
   providerLabel: string
   qualityLabel: string
-  subtitleCues?: MissAVSubtitleCue[]
   resumePositionSeconds?: number
   resumeDurationSeconds?: number
   onProgress?: (positionSeconds: number, durationSeconds: number) => Promise<void> | void
@@ -52,7 +50,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
     try {
       await Navigation.present({
-        element: <NativeOnlinePlayerModal player={player} subtitleCues={request.subtitleCues} />,
+        element: <NativeOnlinePlayerModal player={player} />,
         modalPresentationStyle: "fullScreen",
       })
     } finally {
@@ -67,41 +65,16 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
   }
 }
 
-function NativeOnlinePlayerModal({ player, subtitleCues }: { player: AVPlayer; subtitleCues?: MissAVSubtitleCue[] }) {
+function NativeOnlinePlayerModal({ player }: { player: AVPlayer }) {
   const pipStatus = useObservable<PIPStatus>()
-  const [subtitleText, setSubtitleText] = useState("")
-  const [subtitleNotice, setSubtitleNotice] = useState("")
-  useEffect(() => {
-    if (!subtitleCues?.length) return
-    setSubtitleNotice(`外挂字幕已载入 ${subtitleCues.length} 条`)
-    const noticeTimer = setTimeout(() => setSubtitleNotice(""), 4_000)
-    const updateSubtitle = () => {
-      const nextText = findMissAVSubtitleCue(subtitleCues, player.currentTime)?.text || ""
-      setSubtitleText(current => current === nextText ? current : nextText)
-    }
-    updateSubtitle()
-    const timer = setInterval(updateSubtitle, 300)
-    return () => {
-      clearInterval(timer)
-      clearTimeout(noticeTimer)
-    }
-  }, [player, subtitleCues])
-  return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false} overlay={{
-    alignment: "center",
-    content: <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      {subtitleNotice ? <Text font="caption" fontWeight="semibold" foregroundStyle="white" padding={{ horizontal: 12, vertical: 7 }} background="black" clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }} frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "topLeading" }}>{subtitleNotice}</Text> : undefined}
-      {subtitleText ? <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 24, bottom: 42 }}>
-        <Text font="headline" fontWeight="semibold" foregroundStyle="white" multilineTextAlignment="center" lineLimit={3} padding={{ horizontal: 18, vertical: 8 }} background="black" clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}>{subtitleText}</Text>
-      </VStack> : undefined}
-    </ZStack>,
-  }}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
     <AVPlayerView
       player={player}
       pipStatus={pipStatus}
       allowsPictureInPicturePlayback={true}
       canStartPictureInPictureAutomaticallyFromInline={true}
       updatesNowPlayingInfoCenter={true}
-      entersFullScreenWhenPlaybackBegins={!subtitleCues?.length}
+      entersFullScreenWhenPlaybackBegins={true}
       exitsFullScreenWhenPlaybackEnds={false}
       videoGravity="resizeAspect"
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
