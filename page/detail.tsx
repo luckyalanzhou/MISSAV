@@ -10,6 +10,7 @@ import { downloadSubtitleCatFile, searchSubtitleCatFiles, type SubtitleCatSubtit
 import { MediaArtwork } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
+import { SubtitleFileRow } from "./components/subtitle_file_row"
 import { MISSAV_SUBTITLE_PREVIEW } from "../subtitles"
 
 export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: () => void; onHistoryChanged: () => void }) {
@@ -350,19 +351,7 @@ function JavSubSubtitleSearchPage(props: { videoCode: string; onImported: (count
             {sourceStatus.map((status, index) => <Text key={`subtitle-source-${index}`} font="caption" foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"} multilineTextAlignment="leading">{status}</Text>)}
             {files.length ? <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>{files.map((file, index) => <VStack key={`${file.source}-${file.id}`} spacing={0} frame={{ maxWidth: "infinity" }}>
               {index ? <Divider /> : undefined}
-              <VStack spacing={7} alignment="leading" padding={{ vertical: 12 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-                <HStack spacing={8} frame={{ maxWidth: "infinity" }}>
-                  <Text font="subheadline" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }}>{file.language}</Text>
-                  <Text font="caption" foregroundStyle="secondaryLabel">{file.source}</Text>
-                  <Text font="caption" foregroundStyle={file.isFree ? "systemGreen" : "secondaryLabel"}>{file.isFree ? "完整 · 免费" : "预览"}</Text>
-                </HStack>
-                {file.details ? <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={4} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{file.details}</Text> : undefined}
-                <Button action={() => { void download(file) }} disabled={!file.isFree || file.isDemo || Boolean(downloadingId)} buttonStyle={file.isFree ? "borderedProminent" : "bordered"} tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 42 }} accessibilityLabel={file.isFree ? `下载并导入${file.source}的${file.language}字幕` : `${file.language}字幕仅供预览，无法导入`}>
-                  <HStack spacing={7}>{downloadingId === `${file.source}:${file.id}` ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName={file.isFree ? "square.and.arrow.down" : "eye"} />}
-                    <Text>{downloadingId === `${file.source}:${file.id}` ? "正在下载并导入…" : file.isFree ? "下载并导入" : "仅预览，不能导入"}</Text>
-                  </HStack>
-                </Button>
-              </VStack>
+              <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} />
             </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{!hasSuccessfulSource ? "两站都没有返回有效搜索结果；不能据此认定没有字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已载入来源没有返回可下载文件，仍有来源或详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : totalCount ? "网站有字幕条目，但没有识别到可列出的下载文件。" : "没有找到这个番号的字幕文件。可以修改番号后重新搜索。"}</Text>}
             {hasIncompleteResults && hasSuccessfulSource ? <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading || Boolean(downloadingId)} action={() => { void search() }} /> : undefined}
             {!hasImportable && files.length ? <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">当前结果没有可直接导入的免费完整字幕；预览文件不包含完整对白，付费文件不会被绕过。</Text> : undefined}
