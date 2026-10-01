@@ -19,6 +19,7 @@ let player
 let presented
 let dismiss
 let dismissCount = 0
+let subtitleInfo
 const hookContexts = new Map()
 let hookContext
 
@@ -99,6 +100,21 @@ function renderOverlay(overlay) {
   return renderComponent(overlay)
 }
 
+function currentCaption() {
+  const modal = renderOverlay(presented)
+  const video = find(modal, "VideoPlayer")
+  const overlay = children(modal)[1]
+  assert.equal(children(modal)[0], video)
+  assert.equal(children(modal).length, 3, "Caption and close control must both follow the video in the visible page ZStack")
+  assert.equal(video.props.overlay, undefined, "Do not rely on a separately bridged native video overlay")
+  assert.equal(typeof overlay.type, "string", "Page caption must be a concrete native subtree, not an independently stateful function component")
+  const caption = find(overlay, "Text")
+  assert.ok(caption, "Native caption Text must remain mounted, including before the first cue")
+  assert.equal(typeof caption.type, "string")
+  assert.equal(video.props.player, player, "Cue updates must retain the same AVPlayer instance")
+  return { overlay, caption }
+}
+
 function tickCaptions() {
   for (const timer of timers.values()) if (timer.delay === 250) timer.callback()
 }
@@ -121,7 +137,7 @@ try {
     dispose() { this.disposed = true }
   }
   globalThis.SharedAudioSession = { setCategory() {}, setActive() {} }
-  globalThis.Dialog = { alert: async value => { throw new Error(value.message) } }
+  globalThis.Dialog = { alert: async value => { if (value.title === "字幕信息") subtitleInfo = value; else throw new Error(value.message) } }
   globalThis.setInterval = (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id }
   globalThis.setTimeout = globalThis.setInterval
   globalThis.clearInterval = id => timers.delete(id)
@@ -138,40 +154,49 @@ try {
   await waitForPresentation(playback)
   assert.equal(presented.props.subtitles.cues.length, 2, "Downloaded subtitles must reach the presented player")
   assert.equal(player.currentTime, 8, "Resume must use video time, not elapsed timer time")
-  const modal = renderComponent(presented)
-  assert.equal(modal.type, "VStack", "Header and video must use separate layout rows, not overlap in a ZStack")
-  assert.equal(modal.props.spacing, 0)
-  assert.equal(children(modal).length, 2, "Both subtitle modes must reserve exactly one header before the video")
-  const header = children(modal)[0]
-  assert.equal(renderOverlay(header).props.frame.height, 52, "Close control must have a dedicated fixed-height row")
+  const modal = renderOverlay(presented)
+  assert.equal(modal.type, "ZStack", "Floating close control must not shrink the video with a separate header row")
+  assert.equal(modal.props.background, "black")
+  assert.equal(modal.props.preferredColorScheme, "dark")
+  assert.equal(modal.props.ignoresSafeArea, true, "Black playback root must cover white system safe-area margins")
+  assert.equal(modal.props.statusBarHidden, true)
+  assert.equal(modal.props.alignment, "leading", "Close control must sit at the side middle, away from top/bottom toolbars")
+  const controls = children(modal)[2]
+  assert.equal(renderOverlay(controls).props.frame?.height, undefined, "Close control must not reserve a 52-point video header")
   const video = find(modal, "VideoPlayer")
-  assert.equal(children(modal)[1], video, "Video must be the second row, below the close control")
-  assert.notEqual(video.props.ignoresSafeArea, true, "Video must not escape the reserved safe-area layout")
-  assert.ok(video?.props.overlay, "Captions must be hosted by the native VideoPlayer.overlay, not its outer sibling")
-  const overlay = video.props.overlay
-  let tree = renderOverlay(overlay)
-  assert.ok(texts(tree).includes("第二句对白"), "Resume must immediately show the matching dialogue")
-  assert.ok(texts(renderOverlay(header)).includes("字幕已加载 · 2 条"), "Header must confirm the loaded cue count")
-  assert.equal(find(tree, "Button"), undefined, "Close control must never be placed over native video controls")
-  assert.equal(find(tree, "Text").props.lineLimit, 1)
+  assert.equal(children(modal)[0], video)
+  assert.equal(video.props.ignoresSafeArea, true)
+  let current = currentCaption()
+  assert.ok(texts(current.overlay).includes("第二句对白"), "Resume must immediately show the matching dialogue")
+  assert.ok(texts(renderOverlay(controls)).includes("字幕已加载 · 2 条"))
+  assert.equal(find(current.overlay, "Button"), undefined, "Caption overlay must not contain another close button")
+  assert.equal(current.caption.props.lineLimit, 1)
+  assert.equal(current.caption.props.opacity, 1)
+  player.currentTime = 0
+  tickCaptions()
+  assert.equal(currentCaption().caption.props.opacity, 0, "Caption must be mounted but hidden before the first dialogue")
   player.currentTime = 2
   tickCaptions()
-  assert.ok(texts(renderOverlay(overlay)).includes("第一句对白"), "Seeking backward must update captions")
+  assert.ok(texts(currentCaption().overlay).includes("第一句对白"), "Seeking backward must update the native overlay props")
+  assert.equal(currentCaption().caption.props.opacity, 1)
   player.currentTime = 3
   tickCaptions()
-  assert.ok(!texts(renderOverlay(overlay)).includes("第一句对白"), "Gaps must clear expired captions")
+  assert.ok(!texts(currentCaption().overlay).includes("第一句对白"), "Gaps must clear expired captions")
+  assert.equal(currentCaption().caption.props.opacity, 0)
   player.currentTime = 9
   tickCaptions()
-  const pausedTexts = texts(renderOverlay(overlay))
+  const pausedTexts = texts(currentCaption().overlay)
   tickCaptions()
-  assert.deepEqual(texts(renderOverlay(overlay)), pausedTexts, "Pausing must preserve the matching dialogue")
+  assert.deepEqual(texts(currentCaption().overlay), pausedTexts, "Pausing must preserve the matching dialogue")
   for (const timer of [...timers.values()]) if (timer.delay === 5000) timer.callback()
-  tree = renderOverlay(overlay)
-  assert.ok(!texts(renderOverlay(header)).includes("字幕已加载 · 2 条"), "Load notice must disappear without clearing dialogue")
-  assert.ok(texts(tree).includes("第二句对白"))
-  const closeButton = find(renderOverlay(header), "Button")
+  assert.ok(!texts(renderOverlay(controls)).includes("字幕已加载 · 2 条"), "Load notice must disappear without clearing dialogue")
+  assert.ok(texts(currentCaption().overlay).includes("第二句对白"))
+  const closeButton = find(renderOverlay(controls), "Button")
   assert.equal(closeButton.props.accessibilityLabel, "关闭播放器")
   assert.deepEqual(closeButton.props.frame, { width: 44, height: 44 }, "Close hit target must remain accessible")
+  closeButton.props.contextMenu.menuItems.props.action()
+  assert.match(subtitleInfo.message, /当前视频时间：9.00 秒/)
+  assert.match(subtitleInfo.message, /第二句对白/)
   closeButton.props.action()
   unmount()
   assert.equal((await playback).opened, true)
@@ -185,19 +210,37 @@ try {
   const withoutSubtitles = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source)
   await waitForPresentation(withoutSubtitles)
   assert.equal(presented.props.subtitles, undefined)
-  const plainModal = renderComponent(presented)
-  assert.equal(plainModal.type, "VStack")
+  const plainModal = renderOverlay(presented)
+  assert.equal(plainModal.type, "ZStack")
+  assert.equal(plainModal.props.ignoresSafeArea, true)
   assert.equal(children(plainModal).length, 2)
-  assert.equal(renderOverlay(children(plainModal)[0]).props.frame.height, 52)
   assert.ok(find(plainModal, "AVPlayerView"), "No-subtitle playback must retain native PiP-capable player")
   assert.equal(find(plainModal, "AVPlayerView").props.allowsPictureInPicturePlayback, true)
-  assert.notEqual(find(plainModal, "AVPlayerView").props.ignoresSafeArea, true)
+  assert.equal(find(plainModal, "AVPlayerView").props.ignoresSafeArea, true)
   assert.ok(find(plainModal, "Button"), "No-subtitle playback must retain close control")
   dismiss()
   unmount()
   await withoutSubtitles
   assert.equal(timers.size, 0)
-  console.log("PASS: separate close header in both playback modes; native caption overlay; import/resume/seek/gaps/pause/cleanup/PiP")
+
+  presented = undefined
+  const preview = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source, { subtitles: subtitles.MISSAV_SUBTITLE_PREVIEW, preview: true })
+  await waitForPresentation(preview)
+  renderOverlay(presented)
+  assert.equal(player.currentTime, 0)
+  assert.equal(currentCaption().caption.props.opacity, 0)
+  player.currentTime = 1.2
+  tickCaptions()
+  assert.ok(texts(currentCaption().overlay).includes("本地字幕测试：应在横屏底部单行显示"), "Local preview must put its first dialogue into native overlay props")
+  player.currentTime = 30
+  tickCaptions()
+  assert.ok(texts(currentCaption().overlay).includes("暂停时字幕保持，继续播放后按时间更新"), "Local preview must retain visible dialogue after 11.5 seconds")
+  assert.equal(currentCaption().caption.props.opacity, 1)
+  dismiss()
+  unmount()
+  await preview
+  assert.equal(timers.size, 0)
+  console.log("PASS: immersive black playback; always-mounted page caption above video; import/local-preview/resume/seek/gaps/pause/diagnostics/cleanup/PiP")
 } finally {
   unmount()
   for (const [name, value] of Object.entries(oldGlobals)) {

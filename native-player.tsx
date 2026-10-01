@@ -70,36 +70,10 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
 function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subtitles?: SubtitleTrack }) {
   const dismiss = Navigation.useDismiss()
   const pipStatus = useObservable<PIPStatus>()
-
-  // Reserve a real row outside the video; native controls never share this hit area.
-  return <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
-    <PlayerCloseControl dismiss={dismiss} subtitles={subtitles} />
-    {subtitles
-      ? <VideoPlayer
-        player={player}
-        // Use the native video overlay so captions follow the system full-screen player.
-        overlay={<SubtitlePlaybackOverlay player={player} subtitles={subtitles} />}
-        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      />
-      : <AVPlayerView
-        player={player}
-        pipStatus={pipStatus}
-        allowsPictureInPicturePlayback={true}
-        canStartPictureInPictureAutomaticallyFromInline={true}
-        updatesNowPlayingInfoCenter={true}
-        entersFullScreenWhenPlaybackBegins={false}
-        exitsFullScreenWhenPlaybackEnds={false}
-        videoGravity="resizeAspect"
-        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      />}
-  </VStack>
-}
-
-function SubtitlePlaybackOverlay({ player, subtitles }: { player: AVPlayer; subtitles: SubtitleTrack }) {
-  const [subtitleText, setSubtitleText] = useState("")
+  const [subtitleText, setSubtitleText] = useState(subtitles ? findSubtitleCue(subtitles, player.currentTime)?.text ?? "" : "")
 
   useEffect(() => {
-    // Keep caption state in the overlay: changing a cue must not rebuild VideoPlayer.
+    if (!subtitles) { setSubtitleText(""); return }
     let previousText: string | undefined
     const refreshSubtitle = () => {
       const nextText = findSubtitleCue(subtitles, player.currentTime)?.text ?? ""
@@ -112,12 +86,48 @@ function SubtitlePlaybackOverlay({ player, subtitles }: { player: AVPlayer; subt
     return () => clearInterval(timer)
   }, [player, subtitles])
 
-  return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-    {subtitleText ? <SubtitleCaption text={subtitleText} /> : undefined}
+  return <ZStack alignment="leading" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" ignoresSafeArea={true} preferredColorScheme="dark" statusBarHidden={true}>
+    {subtitles
+      ? <VideoPlayer
+        player={player}
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+        ignoresSafeArea={true}
+      />
+      : <AVPlayerView
+        player={player}
+        pipStatus={pipStatus}
+        allowsPictureInPicturePlayback={true}
+        canStartPictureInPictureAutomaticallyFromInline={true}
+        updatesNowPlayingInfoCenter={true}
+        entersFullScreenWhenPlaybackBegins={false}
+        exitsFullScreenWhenPlaybackEnds={false}
+        videoGravity="resizeAspect"
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+        ignoresSafeArea={true}
+      />}
+    {subtitles ? <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 28, bottom: 48 }}>
+      <Spacer />
+      {/* Keep the concrete Text mounted on the same page layer as the visible close control. */}
+      <Text
+        font="headline"
+        fontWeight="semibold"
+        foregroundStyle="white"
+        lineLimit={1}
+        truncationMode="tail"
+        allowsTightening={true}
+        multilineTextAlignment="center"
+        frame={{ maxWidth: "infinity", alignment: "center" }}
+        padding={{ horizontal: 14, vertical: 8 }}
+        background="rgba(0, 0, 0, 0.72)"
+        clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
+        opacity={subtitleText ? 1 : 0}
+      >{subtitleText || " "}</Text>
+    </VStack> : undefined}
+    <PlayerCloseControl dismiss={dismiss} player={player} subtitles={subtitles} />
   </ZStack>
 }
 
-function PlayerCloseControl({ dismiss, subtitles }: { dismiss: () => void; subtitles?: SubtitleTrack }) {
+function PlayerCloseControl({ dismiss, player, subtitles }: { dismiss: () => void; player: AVPlayer; subtitles?: SubtitleTrack }) {
   const [showLoadNotice, setShowLoadNotice] = useState(true)
   useEffect(() => {
     setShowLoadNotice(true)
@@ -126,28 +136,23 @@ function PlayerCloseControl({ dismiss, subtitles }: { dismiss: () => void; subti
     return () => clearTimeout(timer)
   }, [subtitles])
 
-  return <HStack spacing={10} frame={{ maxWidth: "infinity", height: 52, alignment: "leading" }} padding={{ horizontal: 14 }} background="black">
-    <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭播放器">
+  async function showSubtitleInfo() {
+    const time = player.currentTime
+    const cue = subtitles ? findSubtitleCue(subtitles, time) : null
+    const first = subtitles?.cues[0]
+    await Dialog.alert({
+      title: "字幕信息",
+      message: subtitles
+        ? `已读取 ${subtitles.cues.length} 条对白\n当前视频时间：${time.toFixed(2)} 秒\n首句时间：${first?.startSeconds.toFixed(2) ?? "无"} 秒\n当前匹配：${cue ? `${cue.startSeconds.toFixed(2)}–${cue.endSeconds.toFixed(2)} 秒\n${cue.text}` : "当前时间没有对白；字幕可能有空档或与视频版本不一致。"}`
+        : "播放器没有收到字幕。请确认详情页已导入字幕，并且字幕开关已开启。",
+    })
+  }
+
+  // Float in the leading-side middle, away from native top/bottom/central transport controls.
+  return <VStack spacing={8} alignment="leading" padding={{ leading: 64 }}>
+    <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" background="rgba(0, 0, 0, 0.72)" clipShape={{ type: "rect", cornerRadius: 22 }} accessibilityLabel="关闭播放器" contextMenu={{ menuItems: <Button title="字幕信息" systemImage="captions.bubble" action={() => { void showSubtitleInfo() }} /> }}>
       <Image systemName="xmark" font="headline" foregroundStyle="white" />
     </Button>
     {subtitles && showLoadNotice ? <Text font="caption" foregroundStyle="white" lineLimit={1}>{`字幕已加载 · ${subtitles.cues.length} 条`}</Text> : undefined}
-    <Spacer />
-  </HStack>
-}
-
-function SubtitleCaption({ text }: { text: string }) {
-  return <VStack spacing={0} alignment="center" frame={{ maxWidth: "infinity", alignment: "center" }} padding={{ horizontal: 28, bottom: 48 }}>
-    <Text
-      font="headline"
-      fontWeight="semibold"
-      foregroundStyle="white"
-      lineLimit={1}
-      truncationMode="tail"
-      allowsTightening={true}
-      multilineTextAlignment="center"
-      padding={{ horizontal: 14, vertical: 8 }}
-      background="rgba(0, 0, 0, 0.72)"
-      clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
-    >{text}</Text>
   </VStack>
 }
