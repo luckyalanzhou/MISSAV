@@ -1,5 +1,3 @@
-import { Path } from "scripting"
-
 export type SubtitleCue = {
   startSeconds: number
   endSeconds: number
@@ -107,11 +105,12 @@ function serializeSubtitleTrack(track: SubtitleTrack): string {
 }
 
 function subtitleFilePath(videoCode: string): string {
-  return Path.join(subtitleDirectoryPath(), `${normalizeVideoCode(videoCode)}.srt`)
+  return `${subtitleDirectoryPath()}/${normalizeVideoCode(videoCode)}.srt`
 }
 
 function subtitleDirectoryPath(): string {
-  return Path.join(FileManager.documentsDirectory, SUBTITLE_DIRECTORY_NAME)
+  const documentsDirectory = FileManager.documentsDirectory.replace(/[\\/]+$/, "")
+  return `${documentsDirectory}/${SUBTITLE_DIRECTORY_NAME}`
 }
 
 function subtitleEnabledKey(videoCode: string): string {
