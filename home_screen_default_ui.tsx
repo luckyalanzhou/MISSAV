@@ -49,7 +49,16 @@ export default function MISSAVHomeScreenView() {
       favourites: results[1].status === "fulfilled" ? results[1].value.map(item => item.video) : previous.favourites,
       trending: results[2].status === "fulfilled" && results[2].value ? results[2].value.items.slice(0, 6) : previous.trending,
     }))
-    if (results.some(result => result.status === "rejected")) setError("部分内容暂时无法更新，当前已显示可用内容。")
+    if (results.some(result => result.status === "rejected")) {
+      const failedParts: string[] = []
+      if (results[0].status === "rejected") failedParts.push("观看记录")
+      if (results[1].status === "rejected") failedParts.push("本机收藏")
+      if (shouldLoadRemote && results[2].status === "rejected") {
+        const reason = results[2].reason
+        failedParts.push(`首页今日热门：${reason instanceof Error ? reason.message : String(reason)}`)
+      }
+      setError(`部分内容暂时无法更新${failedParts.length ? `（${failedParts.join("；")}）` : ""}，当前已显示可用内容。`)
+    }
     setLoading(false)
   }
 

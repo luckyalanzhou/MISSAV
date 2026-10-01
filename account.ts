@@ -1,7 +1,7 @@
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
-import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, missavClient, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
+import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVListingHTML, missavClient, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
 import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
-import { loadWebViewPage } from "./webview"
+import { loadWebViewPage, type WebViewPageLoad } from "./webview"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
 export type MissAVAccountSnapshot = { state: MissAVAccountState; domain: string; accountLabel?: string; accountEmail?: string; updatedAt?: number }
@@ -90,23 +90,42 @@ export type MissAVSiteVerificationResult = "accessible" | "incomplete" | "unavai
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
   const controller = new WebViewController()
   try {
-    // Probe the exact default Browse URL. The domain root may be accessible
-    // while the listing route used by the app still requires a challenge.
-    const probeURL = missavClient.browseProbeURL()
-    const probeHost = new URL(probeURL).hostname
-    await restoreCloudflareSession(controller, probeHost)
-    // Always present the WebView, even when navigation reports failure. A
-    // failed load can still leave a useful Cloudflare/error page to inspect.
-    try {
-      await loadWebViewPage(controller, probeURL)
-    } catch {
-      // Keep the WebView available so a slow challenge page can still be inspected or completed.
+    // Verify the same two result routes used by the home and Browse screens.
+    // Passing only one category can incorrectly report success while another
+    // category still receives a Cloudflare challenge.
+    let verificationWindowShown = false
+    for (const probeURL of missavClient.accessProbeURLs()) {
+      const probeHost = new URL(probeURL).hostname
+      await restoreCloudflareSession(controller, probeHost)
+      let initialPage: WebViewPageLoad = { loaded: false, finished: false, html: null }
+      try { initialPage = await loadWebViewPage(controller, probeURL) }
+      catch { initialPage = { loaded: false, finished: false, html: await controller.getHTML().catch(() => null) } }
+
+      const needsVisibleCheck = !verificationWindowShown
+        || !initialPage.loaded
+        || !initialPage.finished
+        || isCloudflareHTML(initialPage.html || "")
+        || !isLikelyMissAVListingHTML(initialPage.html)
+      if (needsVisibleCheck) {
+        // Keep the exact challenged route on screen so the user can complete
+        // its verification; the action is initiated only from Settings.
+        await controller.present({ fullscreen: true, navigationTitle: "验证访问线路" })
+        verificationWindowShown = true
+        try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
+      }
+
+      // Reload the exact route after closing the WebView. This confirms that
+      // the clearance was retained and that the app's actual listing HTML is
+      // available, not merely a branded shell or redirected landing page.
+      await restoreCloudflareSession(controller, probeHost)
+      let verifiedPage: WebViewPageLoad
+      try { verifiedPage = await loadWebViewPage(controller, probeURL) }
+      catch { return "unavailable" }
+      try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
+      if (isCloudflareHTML(verifiedPage.html || "")) return "incomplete"
+      if (!verifiedPage.loaded || !verifiedPage.finished || !isLikelyMissAVListingHTML(verifiedPage.html)) return "unavailable"
     }
-    await controller.present({ fullscreen: true, navigationTitle: "验证访问线路" })
-    try { await captureCloudflareSession(controller, probeHost) } catch { /* Keep verification usable if cookie persistence is unavailable. */ }
-    const html = await controller.getHTML()
-    if (isCloudflareHTML(html || "")) return "incomplete"
-    return isLikelyMissAVHTML(html || "") ? "accessible" : "unavailable"
+    return "accessible"
   } finally { controller.dispose() }
 }
 

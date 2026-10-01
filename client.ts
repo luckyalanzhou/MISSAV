@@ -10,6 +10,7 @@ export {
   hasNextPage,
   isCloudflareChallengeHTML,
   isLikelyMissAVHTML,
+  isLikelyMissAVListingHTML,
   normalizeMissAVUrl,
   parseMissAVSources,
   parseMissAVVideoItems,
@@ -87,7 +88,11 @@ class MissAVClient {
     const requestId = ++this.searchRequestId
     const request = (async () => {
       const html = await this.fetchHtml(url)
-      return SiteHTML.parseMissAVSearchPage(html, page)
+      const result = SiteHTML.parseMissAVSearchPage(html, page)
+      if (!params.query && page === 1 && (params.collection === undefined || params.collection === "new" || params.collection === "today-hot") && result.items.length === 0) {
+        throw new Error(`首页/浏览列表没有解析到作品（${new URL(url).pathname}）。该页面可能仍被 Cloudflare 拦截，请在设置页验证访问线路后重试。`)
+      }
+      return result
     })()
     const tracked = request.then(value => {
       if (this.searchPageRequests.get(url)?.requestId === requestId) {
@@ -115,6 +120,12 @@ class MissAVClient {
 
   watchUrl(videoCode: string): string { return new URL(`${MISSAV_LOCALE}/${SiteHTML.extractMissAVVideoCode(videoCode) || videoCode}`, getMissAVBaseURL()).toString() }
   browseProbeURL(): string { return this.collectionUrl({ collection: "new", page: 1, sort: "released_at" }) }
+  accessProbeURLs(): string[] {
+    return [
+      this.collectionUrl({ collection: "today-hot", page: 1, sort: "today_views" }),
+      this.browseProbeURL(),
+    ]
+  }
   playbackHeaders(watchUrl: string, resourceUrl: string): Record<string, string> { return { ...this.requestHeaders(watchUrl), Referer: watchUrl, Origin: new URL(watchUrl).origin, Accept: "*/*" } }
   async loadCoverImage(url: string, watchUrl: string): Promise<UIImage | null> { try { const response = await fetch(url, { headers: this.requestHeaders(watchUrl) }); return response.ok ? UIImage.fromData(await response.data()) : null } catch { return null } }
 

@@ -25,6 +25,7 @@ export function parseMissAVVideoDetail(html: string, videoCode: string, watchUrl
 export function isCloudflareChallengeHTML(html: string | null): boolean {
   if (!html) return false
   const title = firstMatch(html, /<title\b[^>]*>([\s\S]*?)<\/title>/i)
+  const normalizedTitle = cleanText(title).toLowerCase()
   const visibleText = html
     .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
     .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
@@ -33,14 +34,18 @@ export function isCloudflareChallengeHTML(html: string | null): boolean {
     .replace(/&(?:nbsp|amp|lt|gt|quot);/gi, " ")
     .replace(/\s+/g, " ")
   const challengeMeta = /<meta\b[^>]*(?:cf-mitigated|cf_chl|cf-chl)[^>]*(?:challenge|verify)/i.test(html)
-  const challengeTitle = /just a moment|checking (?:your )?browser|attention required|cloudflare/i.test(title)
-  const challengeText = /just a moment|checking (?:your )?browser|verify you are human|human verification|performing security verification|正在进行安全验证|验证您不是自动程序|请验证您是真人|人机验证/i.test(visibleText)
-  const challengeWidget = /<(?:div|input|iframe)\b[^>]*(?:cf-turnstile|cf-chl-widget|data-cf-chl|challenges\.cloudflare\.com)/i.test(html)
-  return challengeMeta || challengeTitle || challengeText || challengeWidget
+  const challengeTitle = /just a moment|checking (?:your )?browser|attention required|cloudflare (?:ray id|error|security)/i.test(normalizedTitle)
+  const challengeText = /just a moment|checking (?:your )?browser|checking if the site connection is secure|verify you are human|verifying you are human|human verification|performing security verification|security verification|please enable javascript and cookies|sorry, you have been blocked|人机验证|正在进行安全验证|验证您不是自动程序|请验证您是真人|確認しています|セキュリティ確認|人間であることを確認|ブラウザを確認しています/i.test(visibleText)
+  const challengeMarker = /(?:cdn-cgi\/challenge-platform|__cf_chl|cf_chl_opt|cf-turnstile|cf-chl-widget|data-cf-chl|challenges\.cloudflare\.com)/i.test(html)
+  return challengeMeta || challengeTitle || challengeText || challengeMarker
 }
 
 export function isLikelyMissAVHTML(html: string | null): html is string {
   return Boolean(html && /missav/i.test(html) && /<(?:html|body|main|video|meta)\b/i.test(html) && html.length > 500)
+}
+
+export function isLikelyMissAVListingHTML(html: string | null): html is string {
+  return Boolean(html && isLikelyMissAVHTML(html) && !isCloudflareChallengeHTML(html) && parseMissAVVideoItems(html).length > 0)
 }
 
 export function extractMissAVVideoCode(value: string | undefined | null): string | null {

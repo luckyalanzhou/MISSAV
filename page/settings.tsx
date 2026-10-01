@@ -50,7 +50,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccountChan
     setAccountMessage(null)
     try {
       const result = await openMissAVSiteVerification()
-      setAccountMessage(result === "accessible" ? "当前所选域名页面可访问，无需 Cloudflare 验证；可以继续操作。" : result === "incomplete" ? "Cloudflare 验证尚未完成，请重新打开验证线路，完成挑战后再关闭窗口。" : "无法确认当前域名页面状态，请检查网络或切换线路后重试。")
+      setAccountMessage(result === "accessible" ? "验证通过：所选域名的首页热门和浏览列表均可载入。" : result === "incomplete" ? "仍检测到 Cloudflare 验证。请在弹出的页面完成验证，关闭后再试。" : "验证窗口未返回有效作品列表；可能是线路拦截或网络异常，请完成验证或切换域名后重试。")
     } catch (reason) {
       setAccountMessage(reason instanceof Error ? reason.message : "访问线路验证窗口当前无法打开。")
     } finally { setAccountBusy(false) }

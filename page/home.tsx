@@ -38,7 +38,10 @@ export function MediaHomePage(props: { revision: number; onFavouriteChanged: () 
       trending: results[0].status === "fulfilled" ? results[0].value.items.slice(0, 10) : previous.trending,
       latest: results[1].status === "fulfilled" ? results[1].value.items.slice(0, 10) : previous.latest,
     }))
-    if (results.some(result => result.status === "rejected")) setRemoteError("部分在线内容暂时无法更新。")
+    const failures = results.flatMap((result, index) => result.status === "rejected"
+      ? [`${index === 0 ? "今日热门" : "最近更新"}：${errorMessage(result.reason)}`]
+      : [])
+    if (failures.length) setRemoteError(`在线内容更新失败（${failures.join("；")}）。`)
     setRemoteLoading(false)
   }
 
@@ -97,13 +100,15 @@ export function MediaHomePage(props: { revision: number; onFavouriteChanged: () 
         {remoteError && (recommended.length || latest.length)
           ? <HStack spacing={8} alignment="center" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
               <Image systemName="wifi.exclamationmark" foregroundStyle="secondaryLabel" />
-              <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">部分在线内容暂时无法更新，当前显示已成功载入的内容。</Text>
+              <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{`${remoteError} 当前显示已成功载入的内容。`}</Text>
             </HStack>
           : undefined}
       </VStack>
     </ScrollView>
   </ZStack>
 }
+
+function errorMessage(reason: unknown): string { return reason instanceof Error ? reason.message : String(reason) }
 
 function HomeShelf(props: { title: string; subtitle: string; items: MissAVVideoItem[]; onOpen: (video: MissAVVideoItem) => void }) {
   return <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
