@@ -1,9 +1,9 @@
 import { fetch } from "scripting"
-import { loadWebViewPage, submitWebViewSearch } from "./webview"
+import { loadWebViewPage } from "./webview"
 
 const SUBTITLECAT_ORIGIN = "https://www.subtitlecat.com"
 const SUBTITLECAT_HOME = `${SUBTITLECAT_ORIGIN}/`
-const SEARCH_TIMEOUT_MS = 20_000
+const SUBTITLECAT_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
 export type SubtitleCatSubtitleFile = {
   id: string
@@ -21,59 +21,26 @@ export type SubtitleCatSearchResult = {
   failedDetailCount: number
 }
 
-type SubtitleCatSearchEntry = { url?: unknown; title?: unknown }
+export type SubtitleCatSearchEntry = { url: string; title: string }
 type SubtitleCatRawFile = { url?: unknown; details?: unknown }
 
 export async function searchSubtitleCatFiles(controller: WebViewController, value: string): Promise<SubtitleCatSearchResult> {
   const videoCode = normalizeSubtitleCatVideoCode(value)
-  let page = await loadWebViewPage(controller, SUBTITLECAT_HOME)
-  if (!page.loaded || !page.finished || !page.html) throw new Error("Subtitle Cat 页面加载失败，请检查网络后重试。")
-
-  if (isSubtitleCatChallenge(page.html)) {
-    await Dialog.alert({ title: "需要完成网站验证", message: "Subtitle Cat 要求先验证访问线路。请在随后打开的网页中完成验证并关闭网页，应用会继续搜索。" })
-    await controller.present({ fullscreen: true, navigationTitle: "Subtitle Cat 验证" })
-    page = await loadWebViewPage(controller, SUBTITLECAT_HOME)
-    if (!page.loaded || !page.finished || !page.html || isSubtitleCatChallenge(page.html)) {
-      throw new Error("Subtitle Cat 验证尚未完成，暂时无法搜索字幕。")
-    }
-  }
-
-  await submitWebViewSearch(controller, videoCode, "Subtitle Cat")
-
-  const entries = await waitForSubtitleCatSearchResults(controller, videoCode)
+  // The site's public GET search form uses index.php?search=...; show=1000 is its Load More link.
+  const searchURL = `${SUBTITLECAT_ORIGIN}/index.php?search=${encodeURIComponent(videoCode)}&show=1000`
+  const entries = parseSubtitleCatSearchHTML(await readSubtitleCatPage(controller, searchURL), videoCode)
   const files: SubtitleCatSubtitleFile[] = []
   const seen = new Set<string>()
   let failedDetailCount = 0
   for (const entry of entries) {
-    if (!entry.url) continue
     let detailURL: URL
     try { detailURL = new URL(entry.url, SUBTITLECAT_ORIGIN) }
     catch { continue }
     if (detailURL.origin !== SUBTITLECAT_ORIGIN || !/^\/subs\/\d+\/[^/]+\.html$/i.test(detailURL.pathname)) continue
 
     try {
-      const detailPage = await loadWebViewPage(controller, detailURL.toString(), 12_000)
-      if (!detailPage.loaded || !detailPage.finished || !detailPage.html || isSubtitleCatChallenge(detailPage.html)) {
-        failedDetailCount += 1
-        continue
-      }
-      const listing = await controller.evaluateJavaScript<string>(`return (() => {
-        const files = Array.from(document.querySelectorAll("a[href]"))
-          .filter(anchor => /\\.srt(?:[?#]|$)/i.test(anchor.href))
-          .map(anchor => {
-          let node = anchor;
-          let details = anchor.getAttribute("aria-label") || anchor.title || anchor.textContent || "";
-          for (let depth = 0; node && depth < 5; depth += 1, node = node.parentElement) {
-            const text = (node.innerText || node.textContent || "").replace(/\\s+/g, " ").trim();
-            if (text.length > 180) break;
-            if (text && text.length > details.length) details = text;
-            if (/(chinese|english|japanese|korean|simplified|traditional|zh-cn|zh-tw)/i.test(text)) break;
-          }
-          return { url: anchor.href, details };
-        });
-        return JSON.stringify(files);
-      })()`)
-      for (const file of parseSubtitleCatFileListing(listing || "[]")) {
+      const html = await readSubtitleCatPage(controller, detailURL.toString())
+      for (const file of parseSubtitleCatFileHTML(html, detailURL.toString())) {
         if (seen.has(file.downloadURL)) continue
         seen.add(file.downloadURL)
         files.push(file)
@@ -83,8 +50,56 @@ export async function searchSubtitleCatFiles(controller: WebViewController, valu
     }
   }
 
+  if (entries.length && failedDetailCount === entries.length) {
+    throw new Error(`Subtitle Cat 搜索到 ${entries.length} 个匹配条目，但详情页暂时无法读取，请重试。`)
+  }
   files.sort((left, right) => subtitleCatLanguagePriority(left.language) - subtitleCatLanguagePriority(right.language))
   return { files, searchResultCount: entries.length, failedDetailCount }
+}
+
+export function parseSubtitleCatSearchHTML(html: string, value: string): SubtitleCatSearchEntry[] {
+  const videoCode = normalizeSubtitleCatVideoCode(value)
+  const visibleHTML = stripSubtitleCatScripts(html)
+  const count = normalizeSubtitleCatText(visibleHTML).match(/\b(\d+)\s+subtitles?\s+found\b/i)
+  if (!count || isSubtitleCatChallenge(html)) throw new Error("Subtitle Cat 没有返回可识别的搜索结果页，请稍后重试。")
+  const escapedCode = videoCode.split("-").map(part => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("[\\s_-]*")
+  const codePattern = new RegExp(`(?:^|[^a-z0-9])${escapedCode}(?![a-z0-9])`, "i")
+  const entries: SubtitleCatSearchEntry[] = []
+  for (const anchor of visibleHTML.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const href = subtitleCatAttribute(anchor[1], "href")
+    if (!href) continue
+    const url = canonicalSubtitleCatURL(href)
+    if (!url || !/^\/subs\/\d+\/[^/]+\.html$/i.test(url.pathname)) continue
+    const title = normalizeSubtitleCatText(anchor[2])
+    let path = url.pathname
+    try { path = decodeURIComponent(path) } catch {}
+    if (!codePattern.test(title) && !codePattern.test(path)) continue
+    entries.push({ url: url.toString(), title })
+  }
+  // A positive result count without any result links indicates an incomplete/error document.
+  if (Number(count[1]) > 0 && !/href\s*=\s*["'][^"']*\bsubs\//i.test(visibleHTML)) {
+    throw new Error("Subtitle Cat 搜索结果尚未完整加载，请重试。")
+  }
+  return dedupeSubtitleCatEntries(entries)
+}
+
+export function parseSubtitleCatFileHTML(html: string, baseURL = SUBTITLECAT_HOME): SubtitleCatSubtitleFile[] {
+  if (isSubtitleCatChallenge(html) || !/All language subtitles|id\s*=\s*["']download_/i.test(html)) {
+    throw new Error("Subtitle Cat 没有返回可识别的字幕详情页，请重试。")
+  }
+  const visibleHTML = stripSubtitleCatScripts(html)
+  const candidates: SubtitleCatRawFile[] = []
+  for (const anchor of visibleHTML.matchAll(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi)) {
+    const href = subtitleCatAttribute(anchor[1], "href")
+    if (!href || !/\.srt(?:[?#]|$)/i.test(href)) continue
+    const url = canonicalSubtitleCatURL(href, baseURL)
+    if (!url) continue
+    const preceding = visibleHTML.slice(Math.max(0, anchor.index! - 400), anchor.index)
+    const labels = [...preceding.matchAll(/<span\b[^>]*>([^<]+)<\/span>/gi)]
+    const details = normalizeSubtitleCatText(labels.length ? labels[labels.length - 1][1] : anchor[2])
+    candidates.push({ url: url.toString(), details })
+  }
+  return parseSubtitleCatFileListing(JSON.stringify(candidates))
 }
 
 export function parseSubtitleCatFileListing(payload: string): SubtitleCatSubtitleFile[] {
@@ -99,18 +114,19 @@ export function parseSubtitleCatFileListing(payload: string): SubtitleCatSubtitl
     if (!candidateValue || typeof candidateValue !== "object") continue
     const candidate = candidateValue as SubtitleCatRawFile
     if (typeof candidate.url !== "string") continue
-    let url: URL
-    try { url = new URL(candidate.url, SUBTITLECAT_ORIGIN) }
-    catch { continue }
-    if (url.protocol !== "https:" || url.origin !== SUBTITLECAT_ORIGIN || !/^\/subs\/\d+\/[^/]+\.srt$/i.test(url.pathname)) continue
+    const url = canonicalSubtitleCatURL(candidate.url)
+    if (!url || !/^\/subs\/\d+\/[^/]+\.srt$/i.test(url.pathname)) continue
     if (seen.has(url.toString())) continue
     seen.add(url.toString())
     const details = normalizeSubtitleCatText(typeof candidate.details === "string" ? candidate.details : "")
     const filename = decodePathName(url.pathname)
+    // The original filename can contain zh-cn even for an English/Traditional translation.
+    const languageSuffix = filename.match(/-([a-z]{2,3}(?:[-_][a-z]{2,4})?)\.srt$/i)?.[1]
+    const suffixLanguage = languageSuffix ? parseSubtitleCatLanguage(languageSuffix) : "其他语言"
     files.push({
       id: url.pathname,
       source: "SubtitleCat",
-      language: parseSubtitleCatLanguage(`${filename} ${details}`),
+      language: suffixLanguage !== "其他语言" ? suffixLanguage : parseSubtitleCatLanguage(details),
       details: details || filename,
       downloadURL: url.toString(),
       isFree: true,
@@ -122,21 +138,19 @@ export function parseSubtitleCatFileListing(payload: string): SubtitleCatSubtitl
 }
 
 export async function downloadSubtitleCatFile(file: SubtitleCatSubtitleFile): Promise<string> {
-  let url: URL
-  try { url = new URL(file.downloadURL) }
-  catch { throw new Error("Subtitle Cat 字幕地址无效，已取消下载。") }
-  if (url.protocol !== "https:" || url.origin !== SUBTITLECAT_ORIGIN || !/^\/subs\/\d+\/[^/]+\.srt$/i.test(url.pathname)) {
+  const url = canonicalSubtitleCatURL(file.downloadURL)
+  if (!url || !/^\/subs\/\d+\/[^/]+\.srt$/i.test(url.pathname)) {
     throw new Error("Subtitle Cat 字幕下载地址不安全，已取消下载。")
   }
 
   const response = await fetch(url.toString(), {
-    headers: { Accept: "text/plain, application/x-subrip, */*", "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" },
+    headers: { Accept: "text/plain, application/x-subrip, */*", "User-Agent": SUBTITLECAT_USER_AGENT },
     timeout: 45,
     debugLabel: "Download Subtitle Cat SRT",
     handleRedirect: async request => {
       try {
         const target = new URL(request.url)
-        return target.protocol === "https:" && target.origin === SUBTITLECAT_ORIGIN ? request : null
+        return canonicalSubtitleCatURL(target.toString()) ? request : null
       } catch { return null }
     },
   })
@@ -146,37 +160,41 @@ export async function downloadSubtitleCatFile(file: SubtitleCatSubtitleFile): Pr
   return content
 }
 
-async function waitForSubtitleCatSearchResults(controller: WebViewController, videoCode: string): Promise<SubtitleCatSearchEntry[]> {
-  const deadline = Date.now() + SEARCH_TIMEOUT_MS
-  const compactCode = compactSubtitleCatCode(videoCode)
-  while (Date.now() < deadline) {
-    try {
-      const raw = await controller.evaluateJavaScript<string>(`return (() => {
-        const normalize = value => (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-        const code = ${JSON.stringify(compactCode)};
-        const entries = Array.from(document.querySelectorAll('a[href*="/subs/"]'))
-          .filter(anchor => /\\.html(?:$|[?#])/i.test(anchor.href))
-          .map(anchor => ({ url: anchor.href, title: (anchor.innerText || anchor.textContent || "").replace(/\\s+/g, " ").trim() }))
-          .filter(entry => normalize(entry.title + " " + entry.url).includes(code));
-        return JSON.stringify({ url: location.href, text: (document.body?.innerText || "").slice(0, 4000), entries });
-      })()`)
-      if (raw) {
-        const state = JSON.parse(raw) as { url?: unknown; text?: unknown; entries?: unknown }
-        const url = typeof state.url === "string" ? new URL(state.url) : null
-        const entries = Array.isArray(state.entries) ? state.entries as SubtitleCatSearchEntry[] : []
-        if (entries.length) return dedupeSubtitleCatEntries(entries)
-        const text = typeof state.text === "string" ? state.text : ""
-        const query = url ? Array.from(url.searchParams.values()).join(" ") : ""
-        const queryMatches = compactSubtitleCatCode(query).includes(compactCode)
-        if (queryMatches && /no subtitles|no results|not found|0 results/i.test(text)) return []
-        if (isSubtitleCatChallenge(text)) throw new Error("Subtitle Cat 访问验证未完成，请完成验证后重试。")
-      }
-    } catch (reason) {
-      if (reason instanceof Error && /验证未完成/.test(reason.message)) throw reason
-    }
-    await pause(250)
+async function readSubtitleCatPage(controller: WebViewController, url: string): Promise<string> {
+  let requestError = "公开页面请求失败"
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: "text/html, application/xhtml+xml", "User-Agent": SUBTITLECAT_USER_AGENT },
+      timeout: 20,
+      debugLabel: "Search Subtitle Cat public subtitles",
+      handleRedirect: async request => canonicalSubtitleCatURL(request.url) ? request : null,
+    })
+    const html = await response.text()
+    const recognizable = new URL(url).pathname === "/index.php"
+      ? /\b\d+\s+subtitles?\s+found\b/i.test(normalizeSubtitleCatText(stripSubtitleCatScripts(html)))
+      : /All language subtitles|id\s*=\s*["']download_/i.test(html)
+    if (response.ok && recognizable && !isSubtitleCatChallenge(html)) return html
+    requestError = response.ok ? "页面暂时未能返回正常内容" : `公开页面请求失败（HTTP ${response.status}）`
+  } catch (reason) {
+    requestError = reason instanceof Error && /timeout|超时/i.test(reason.message) ? "公开页面请求超时" : requestError
   }
-  throw new Error("Subtitle Cat 搜索超时，没有返回该番号的字幕结果。")
+
+  // A failed subresource/waitForLoad flag must not discard a usable main document.
+  try { await loadWebViewPage(controller, url, 20_000) } catch {}
+  let html = await controller.getHTML()
+  let currentURL = canonicalSubtitleCatURL(await controller.evaluateJavaScript<string>("return location.href"))
+  if (html && currentURL && isSubtitleCatChallenge(html)) {
+    await Dialog.alert({ title: "需要完成网站验证", message: "Subtitle Cat 要求先验证访问线路。请在随后打开的网页中完成验证并关闭网页，应用会继续搜索。" })
+    await controller.present({ fullscreen: true, navigationTitle: "Subtitle Cat 验证" })
+    html = await controller.getHTML()
+    currentURL = canonicalSubtitleCatURL(await controller.evaluateJavaScript<string>("return location.href"))
+  }
+  const expectedURL = canonicalSubtitleCatURL(url)!
+  const matchesPage = currentURL?.pathname === expectedURL.pathname
+    && currentURL.searchParams.get("search") === expectedURL.searchParams.get("search")
+  if (!html?.trim() || !matchesPage) throw new Error(`Subtitle Cat ${requestError}，网页也未能载入，请检查网络后重试。`)
+  if (isSubtitleCatChallenge(html)) throw new Error("Subtitle Cat 验证尚未完成，暂时无法读取字幕。")
+  return html
 }
 
 function parseSubtitleCatLanguage(text: string): string {
@@ -190,6 +208,7 @@ function parseSubtitleCatLanguage(text: string): string {
   if (/(?:^|[^a-z])th(?:a)?(?:[^a-z]|$)|thai/i.test(value)) return "泰语"
   if (/(?:^|[^a-z])vi(?:e)?(?:[^a-z]|$)|vietnamese/i.test(value)) return "越南语"
   if (/(?:^|[^a-z])es(?:p)?(?:[^a-z]|$)|spanish/i.test(value)) return "西班牙语"
+  if (/(?:^|[^a-z])tr(?:[^a-z]|$)|turkish/i.test(value)) return "土耳其语"
   return "其他语言"
 }
 
@@ -205,18 +224,11 @@ function normalizeSubtitleCatVideoCode(value: string): string {
   return code
 }
 
-function compactSubtitleCatCode(value: string): string {
-  return value.toUpperCase().replace(/[^A-Z0-9]/g, "")
-}
-
 function dedupeSubtitleCatEntries(entries: SubtitleCatSearchEntry[]): SubtitleCatSearchEntry[] {
   const seen = new Set<string>()
   return entries.filter(entry => {
-    if (typeof entry.url !== "string") return false
-    let url: URL
-    try { url = new URL(entry.url, SUBTITLECAT_ORIGIN) }
-    catch { return false }
-    if (url.origin !== SUBTITLECAT_ORIGIN || !/^\/subs\/\d+\/[^/]+\.html$/i.test(url.pathname)) return false
+    const url = canonicalSubtitleCatURL(entry.url)
+    if (!url || !/^\/subs\/\d+\/[^/]+\.html$/i.test(url.pathname)) return false
     const key = url.toString()
     if (seen.has(key)) return false
     seen.add(key)
@@ -231,13 +243,44 @@ function decodePathName(pathname: string): string {
 }
 
 function normalizeSubtitleCatText(value: string): string {
-  return value.replace(/<[^>]*>/g, " ").replace(/&nbsp;/gi, " ").replace(/&amp;/gi, "&").replace(/\s+/g, " ").trim()
+  return decodeSubtitleCatEntities(value.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim()
+}
+
+function decodeSubtitleCatEntities(value: string): string {
+  return value.replace(/&amp;/gi, "&").replace(/&quot;/gi, '"').replace(/&#(?:39|x27);|&apos;/gi, "'")
+    .replace(/&nbsp;/gi, " ").replace(/&#(x[0-9a-f]+|\d+);/gi, (entity, raw: string) => {
+      const code = raw[0].toLowerCase() === "x" ? parseInt(raw.slice(1), 16) : Number(raw)
+      return code >= 0 && code <= 0x10ffff ? String.fromCodePoint(code) : entity
+    })
+}
+
+function subtitleCatAttribute(attributes: string, name: string): string {
+  const match = attributes.match(new RegExp(`(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, "i"))
+  return match ? decodeSubtitleCatEntities(match[1] ?? match[2]) : ""
+}
+
+function canonicalSubtitleCatURL(value: string, baseURL = SUBTITLECAT_HOME): URL | null {
+  try {
+    const url = new URL(value, baseURL)
+    if (url.protocol !== "https:" || !["www.subtitlecat.com", "subtitlecat.com"].includes(url.hostname.toLowerCase()) || url.port || url.username || url.password) return null
+    url.hostname = "www.subtitlecat.com"
+    url.pathname = url.pathname.split("/").map(part => {
+      try { return encodeURIComponent(decodeURIComponent(part)) } catch { return part }
+    }).join("/")
+    return url
+  } catch { return null }
+}
+
+function stripSubtitleCatScripts(html: string): string {
+  return html.replace(/<script\b[\s\S]*?<\/script>|<style\b[\s\S]*?<\/style>|<!--[\s\S]*?-->/gi, " ")
 }
 
 function isSubtitleCatChallenge(value: string): boolean {
-  return /just a moment|verify you are human|checking your browser|attention required|sorry, you have been blocked|security verification|请验证您是真人/i.test(value)
-}
-
-function pause(milliseconds: number): Promise<void> {
-  return new Promise(resolve => setTimeout(resolve, milliseconds))
+  // Ordinary SRT/VTT dialogue can say "just a moment" without being a security page.
+  if (/^(?:WEBVTT(?:\s|$)|\d+\s*\r?\n\d{1,2}:\d{2}(?::\d{2})?[,.]\d{1,3}\s*-->)/.test(value.replace(/^\uFEFF/, "").trimStart())) return false
+  const title = normalizeSubtitleCatText(value.match(/<title\b[^>]*>([\s\S]*?)<\/title>/i)?.[1] || "")
+  const markers = /just a moment|verify you are human|checking your browser|attention required|sorry, you have been blocked|security verification|请验证您是真人/i
+  if (markers.test(title)) return true
+  if (/All language subtitles|\b\d+\s+subtitles?\s+found\b/i.test(value)) return false
+  return markers.test(value) || /cdn-cgi\/challenge-platform|cf-chl-/i.test(value)
 }
