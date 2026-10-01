@@ -70,29 +70,13 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
 function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subtitles?: SubtitleTrack }) {
   const dismiss = Navigation.useDismiss()
   const pipStatus = useObservable<PIPStatus>()
-  const [subtitleText, setSubtitleText] = useState("")
-
-  useEffect(() => {
-    if (!subtitles) {
-      setSubtitleText("")
-      return
-    }
-    let previousText = ""
-    const refreshSubtitle = () => {
-      const nextText = findSubtitleCue(subtitles, player.currentTime)?.text ?? ""
-      if (nextText === previousText) return
-      previousText = nextText
-      setSubtitleText(nextText)
-    }
-    refreshSubtitle()
-    const timer = setInterval(refreshSubtitle, 250)
-    return () => clearInterval(timer)
-  }, [player, subtitles])
 
   return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
     {subtitles
       ? <VideoPlayer
         player={player}
+        // Use the native video overlay so captions follow the system full-screen player.
+        overlay={<SubtitlePlaybackOverlay player={player} subtitles={subtitles} dismiss={dismiss} />}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         ignoresSafeArea={true}
       />
@@ -108,21 +92,51 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         ignoresSafeArea={true}
       />}
-    {subtitleText ? <SubtitleCaption text={subtitleText} /> : undefined}
-    <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 14, top: 12 }}>
-      <HStack frame={{ maxWidth: "infinity", alignment: "leading" }}>
-        <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭播放器">
-          <Image systemName="xmark" font="headline" foregroundStyle="white" />
-        </Button>
-        <Spacer />
-      </HStack>
-      <Spacer />
-    </VStack>
+    {!subtitles ? <PlayerCloseControl dismiss={dismiss} /> : undefined}
   </ZStack>
 }
 
+function SubtitlePlaybackOverlay({ player, subtitles, dismiss }: { player: AVPlayer; subtitles: SubtitleTrack; dismiss: () => void }) {
+  const [subtitleText, setSubtitleText] = useState("")
+  const [showLoadNotice, setShowLoadNotice] = useState(true)
+
+  useEffect(() => {
+    // Keep caption state in the overlay: changing a cue must not rebuild VideoPlayer.
+    let previousText: string | undefined
+    const refreshSubtitle = () => {
+      const nextText = findSubtitleCue(subtitles, player.currentTime)?.text ?? ""
+      if (nextText === previousText) return
+      previousText = nextText
+      setSubtitleText(nextText)
+    }
+    refreshSubtitle()
+    const timer = setInterval(refreshSubtitle, 250)
+    setShowLoadNotice(true)
+    const noticeTimer = setTimeout(() => setShowLoadNotice(false), 5_000)
+    return () => { clearInterval(timer); clearTimeout(noticeTimer) }
+  }, [player, subtitles])
+
+  return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+    {subtitleText ? <SubtitleCaption text={subtitleText} /> : undefined}
+    <PlayerCloseControl dismiss={dismiss} notice={showLoadNotice ? `字幕已加载 · ${subtitles.cues.length} 条` : undefined} />
+  </ZStack>
+}
+
+function PlayerCloseControl({ dismiss, notice }: { dismiss: () => void; notice?: string }) {
+  return <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 14, top: 12 }}>
+    <HStack frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭播放器">
+        <Image systemName="xmark" font="headline" foregroundStyle="white" />
+      </Button>
+      {notice ? <Text font="caption" foregroundStyle="white" lineLimit={1} padding={{ horizontal: 10, vertical: 6 }} background="rgba(0, 0, 0, 0.72)">{notice}</Text> : undefined}
+      <Spacer />
+    </HStack>
+    <Spacer />
+  </VStack>
+}
+
 function SubtitleCaption({ text }: { text: string }) {
-  return <VStack spacing={0} alignment="center" padding={{ horizontal: 28, bottom: 48 }}>
+  return <VStack spacing={0} alignment="center" frame={{ maxWidth: "infinity", alignment: "center" }} padding={{ horizontal: 28, bottom: 48 }}>
     <Text
       font="headline"
       fontWeight="semibold"
