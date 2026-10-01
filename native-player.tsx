@@ -2,9 +2,9 @@ import { AVPlayerView, Button, Device, ForEach, Image, Navigation, PIPStatus, Ta
 import { resolveMissAVResumePosition } from "./playback-progress"
 import { startPlaybackPolling } from "./playback-polling"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
-import { loadPlaybackOptions, normalizePlaybackOptions, pictureGravity, savePlaybackOptions, type PlaybackOptions } from "./playback-options"
+import { loadPlaybackOptions, normalizePlaybackOptions, savePlaybackOptions, type PlaybackOptions } from "./playback-options"
 import { createPlaybackControls } from "./playback-controls"
-import { PictureOptionsPanel, SubtitleOptionsPanel } from "./page/components/subtitle_options"
+import { SubtitleOptionsPanel } from "./page/components/subtitle_options"
 
 export type NativePlaybackRequest = {
   url: string
@@ -84,7 +84,7 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
   const pipStatus = useObservable<PIPStatus>()
   const [options, setOptions] = useState(loadPlaybackOptions)
   const optionsRef = useRef(options)
-  const [activePanel, setActivePanel] = useState<"subtitle" | "picture" | null>(null)
+  const [activePanel, setActivePanel] = useState<"subtitle" | null>(null)
   const [controlsVisible, setControlsVisible] = useState(true)
   const [showLoadNotice, setShowLoadNotice] = useState(true)
   const controlsRef = useRef<ReturnType<typeof createPlaybackControls> | null>(null)
@@ -115,9 +115,9 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
     return () => clearTimeout(timer)
   }, [subtitles])
 
-  const openPanel = (panel: "subtitle" | "picture") => {
+  const openPanel = () => {
     controls.setPinned(true)
-    setActivePanel(panel)
+    setActivePanel("subtitle")
   }
   const closePanel = () => {
     setActivePanel(null)
@@ -155,8 +155,7 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
   }
 
   return <ZStack alignment="leading" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" ignoresSafeArea={true} preferredColorScheme="dark" statusBarHidden={true}>
-    {/* Use the documented videoGravity API without remounting/reloading the player.
-        Custom page captions cannot follow native PiP, so keep PiP for plain playback. */}
+    {/* Leave videoGravity unset to retain AVPlayerView's native aspect-fit behavior. */}
     <AVPlayerView
       player={player}
       pipStatus={pipStatus}
@@ -165,7 +164,6 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
       updatesNowPlayingInfoCenter={true}
       entersFullScreenWhenPlaybackBegins={false}
       exitsFullScreenWhenPlaybackEnds={false}
-      videoGravity={pictureGravity(options.pictureMode)}
       simultaneousGesture={TapGesture().onEnded(() => controls.toggle())}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       ignoresSafeArea={true}
@@ -198,16 +196,14 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
         />
       }} />
     </ZStack> : undefined}
-    {controlsVisible ? <PlayerCloseControl dismiss={dismiss} player={player} subtitles={subtitles} subtitleDisplayInfo={subtitleDisplayInfo} showLoadNotice={showLoadNotice} onInteraction={() => controls.show()} onSubtitleOptions={() => openPanel("subtitle")} onPictureOptions={() => openPanel("picture")} /> : undefined}
+    {controlsVisible ? <PlayerCloseControl dismiss={dismiss} player={player} subtitles={subtitles} subtitleDisplayInfo={subtitleDisplayInfo} showLoadNotice={showLoadNotice} onInteraction={() => controls.show()} onSubtitleOptions={openPanel} /> : undefined}
     {activePanel ? <ZStack alignment="trailing" frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "trailing" }} padding={{ trailing: 64 }}>
-      {activePanel === "subtitle"
-        ? <SubtitleOptionsPanel options={options} onChanged={changeOptions} onClose={closePanel} />
-        : <PictureOptionsPanel options={options} onChanged={changeOptions} onClose={closePanel} />}
+      <SubtitleOptionsPanel options={options} onChanged={changeOptions} onClose={closePanel} />
     </ZStack> : undefined}
   </ZStack>
 }
 
-function PlayerCloseControl({ dismiss, player, subtitles, subtitleDisplayInfo, showLoadNotice, onInteraction, onSubtitleOptions, onPictureOptions }: { dismiss: () => void; player: AVPlayer; subtitles?: SubtitleTrack; subtitleDisplayInfo: () => string; showLoadNotice: boolean; onInteraction: () => void; onSubtitleOptions: () => void; onPictureOptions: () => void }) {
+function PlayerCloseControl({ dismiss, player, subtitles, subtitleDisplayInfo, showLoadNotice, onInteraction, onSubtitleOptions }: { dismiss: () => void; player: AVPlayer; subtitles?: SubtitleTrack; subtitleDisplayInfo: () => string; showLoadNotice: boolean; onInteraction: () => void; onSubtitleOptions: () => void }) {
   async function showSubtitleInfo() {
     onInteraction()
     const time = player.currentTime
@@ -228,9 +224,6 @@ function PlayerCloseControl({ dismiss, player, subtitles, subtitleDisplayInfo, s
     </Button>
     <Button action={onSubtitleOptions} disabled={!subtitles} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" background="rgba(0, 0, 0, 0.72)" clipShape={{ type: "rect", cornerRadius: 22 }} accessibilityLabel={subtitles ? "字幕选项：调整字号和上下位置" : "字幕选项：请先导入并开启字幕"}>
       <Image systemName="captions.bubble" font="headline" foregroundStyle={subtitles ? "white" : "secondaryLabel"} />
-    </Button>
-    <Button action={onPictureOptions} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" background="rgba(0, 0, 0, 0.72)" clipShape={{ type: "rect", cornerRadius: 22 }} accessibilityLabel="画面比例">
-      <Image systemName="aspectratio" font="headline" foregroundStyle="white" />
     </Button>
     {subtitles && showLoadNotice ? <Text font="caption" foregroundStyle="white" lineLimit={1}>{`字幕已加载 · ${subtitles.cues.length} 条`}</Text> : undefined}
   </VStack>
