@@ -53,13 +53,13 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
       <VStack key="discover-results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
-            {collections.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === collection} action={() => { void load({ page: 1, collection: item.value }) }} />)}
+            {collections.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === collection} action={() => { void load({ page: 1, collection: item.value, ...(item.value === "chinese-subtitle" ? { filter: "" } : {}) }) }} />)}
           </HStack>
         </ScrollView>
 
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
-            <Menu label={<OptionChip title={filterTitle} systemImage="line.3.horizontal.decrease" />}>{filters.map(item => <Button key={item.value || "all"} title={item.title} systemImage={item.value === filter ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, filter: item.value }) }} />)}</Menu>
+            <Menu label={<OptionChip title={filterTitle} systemImage="line.3.horizontal.decrease" />}>{filters.map(item => <Button key={item.value || "all"} title={item.title} systemImage={item.value === filter ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, collection: collection === "chinese-subtitle" ? "new" : collection, filter: item.value }) }} />)}</Menu>
             <Menu label={<OptionChip title={sortTitle} systemImage="arrow.up.arrow.down" />}>{sorts.map(item => <Button key={item.value} title={item.title} systemImage={item.value === sort ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, sort: item.value }) }} />)}</Menu>
             <Spacer />
             {loading && items.length ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : undefined}

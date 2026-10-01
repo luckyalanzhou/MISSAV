@@ -20,7 +20,7 @@ export const MISSAV_BASE_URL = () => getMissAVBaseURL()
 export const MISSAV_LOCALE = "ja"
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
-export type MissAVCollection = "new" | "release" | "uncensored-leak" | "english-subtitle" | "fc2" | "today-hot" | "weekly-hot" | "monthly-hot"
+export type MissAVCollection = "new" | "release" | "uncensored-leak" | "chinese-subtitle" | "fc2" | "today-hot" | "weekly-hot" | "monthly-hot"
 export type MissAVSort = "released_at" | "published_at" | "today_views" | "weekly_views" | "monthly_views" | "views" | "saved"
 export type MissAVFilter = "" | "individual" | "multiple" | "uncensored" | "uncensored-leak" | "english-subtitle" | "chinese-subtitle" | "jav"
 export type MissAVVideoItem = { title: string; videoCode: string; detailPath: string; coverUrl: string; duration?: string; badge?: string }
@@ -38,7 +38,7 @@ export const MISSAV_COLLECTION_OPTIONS: ReadonlyArray<{ value: MissAVCollection;
   { value: "new", title: "最近更新", systemImage: "clock.arrow.circlepath" },
   { value: "release", title: "新作", systemImage: "sparkles" },
   { value: "uncensored-leak", title: "无码流出", systemImage: "lock.open" },
-  { value: "english-subtitle", title: "英文字幕", systemImage: "captions.bubble" },
+  { value: "chinese-subtitle", title: "中文字幕", systemImage: "captions.bubble" },
   { value: "fc2", title: "FC2", systemImage: "person.crop.rectangle.stack" },
   { value: "today-hot", title: "今日观看最多", systemImage: "flame" },
   { value: "weekly-hot", title: "本周观看最多", systemImage: "chart.line.uptrend.xyaxis" },
@@ -137,9 +137,12 @@ class MissAVClient {
 
   private collectionUrl(params: MissAVSearchParams): string {
     const query = params.query?.trim()
-    const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : `${MISSAV_LOCALE}/${params.collection || "new"}`
+    const chineseSubtitleCollection = !query && params.collection === "chinese-subtitle"
+    const collection = chineseSubtitleCollection ? "new" : params.collection || "new"
+    const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : `${MISSAV_LOCALE}/${collection}`
     const url = new URL(path, getMissAVBaseURL())
-    if (params.filter) url.searchParams.set("filters", params.filter)
+    const filter = chineseSubtitleCollection ? "chinese-subtitle" : params.filter
+    if (filter) url.searchParams.set("filters", filter)
     if (params.sort) url.searchParams.set("sort", params.sort)
     if ((params.page || 1) > 1) url.searchParams.set("page", String(Math.max(1, Math.floor(params.page || 1))))
     return url.toString()

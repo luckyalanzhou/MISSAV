@@ -52,7 +52,7 @@ export function extractMissAVVideoCode(value: string | undefined | null): string
   if (!value) return null
   const path = value.replace(/^https?:\/\/[^/]+/i, "").split(/[?#]/)[0].replace(/^\/dm\d+/i, "").replace(/^\/(?:ja|en|cn|ko|ms|th|de|fr|vi|id|fil|pt)\//i, "/")
   const slug = decodeURIComponent(path.replace(/^\/+|\/+$/g, ""))
-  return slug && !/^(?:new|release|uncensored-leak|english-subtitle|fc2|today-hot|weekly-hot|monthly-hot|search|genres|makers|actresses)$/i.test(slug) ? slug.toLowerCase() : null
+  return slug && !/^(?:new|release|uncensored-leak|english-subtitle|chinese-subtitle|fc2|today-hot|weekly-hot|monthly-hot|search|genres|makers|actresses)$/i.test(slug) ? slug.toLowerCase() : null
 }
 
 export function parseMissAVVideoItems(html: string): MissAVVideoItem[] {
