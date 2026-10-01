@@ -1,4 +1,4 @@
-import { AVPlayerView, Button, Device, HStack, Image, Navigation, PIPStatus, Spacer, Text, VStack, VideoPlayer, ZStack, useEffect, useObservable, useState } from "scripting"
+import { AVPlayerView, Button, Device, ForEach, Image, Navigation, PIPStatus, Text, VStack, VideoPlayer, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
 
@@ -67,24 +67,41 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
   }
 }
 
+type SubtitleDisplayRow = { id: string; text: string }
+
+function subtitleDisplayRows(subtitles: SubtitleTrack | undefined, time: number): SubtitleDisplayRow[] {
+  const cue = subtitles ? findSubtitleCue(subtitles, time) : null
+  return cue ? [{ id: `${cue.startSeconds}:${cue.endSeconds}:${cue.text}`, text: cue.text }] : []
+}
+
 function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subtitles?: SubtitleTrack }) {
   const dismiss = Navigation.useDismiss()
   const pipStatus = useObservable<PIPStatus>()
-  const [subtitleText, setSubtitleText] = useState(subtitles ? findSubtitleCue(subtitles, player.currentTime)?.text ?? "" : "")
+  // ForEach observes this native data binding even when the initial time has no cue.
+  // Do not leave a blank Text at opacity=0 and rely on parent props diffing to reveal it.
+  const captionRows = useObservable<SubtitleDisplayRow[]>(() => subtitleDisplayRows(subtitles, player.currentTime))
+  const displayStatus = useRef({ polls: 0, sampledTime: player.currentTime, builtText: "" })
 
   useEffect(() => {
-    if (!subtitles) { setSubtitleText(""); return }
-    let previousText: string | undefined
+    if (!subtitles) { captionRows.setValue([]); return }
     const refreshSubtitle = () => {
-      const nextText = findSubtitleCue(subtitles, player.currentTime)?.text ?? ""
-      if (nextText === previousText) return
-      previousText = nextText
-      setSubtitleText(nextText)
+      const time = player.currentTime
+      displayStatus.current.polls += 1
+      displayStatus.current.sampledTime = time
+      const nextRows = subtitleDisplayRows(subtitles, time)
+      if (nextRows[0]?.id === captionRows.value[0]?.id) return
+      if (!nextRows.length) displayStatus.current.builtText = ""
+      captionRows.setValue(nextRows)
     }
     refreshSubtitle()
     const timer = setInterval(refreshSubtitle, 250)
     return () => clearInterval(timer)
   }, [player, subtitles])
+
+  const subtitleDisplayInfo = () => {
+    const status = displayStatus.current
+    return `显示路径：原生绑定 / 底部对齐\n自动采样：${status.polls} 次，最近 ${status.sampledTime.toFixed(2)} 秒\n送往显示层：${captionRows.value[0]?.text ?? "当前空档"}\n文本节点构建：${status.builtText || "尚未构建或当前空档"}`
+  }
 
   return <ZStack alignment="leading" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" ignoresSafeArea={true} preferredColorScheme="dark" statusBarHidden={true}>
     {subtitles
@@ -105,29 +122,29 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         ignoresSafeArea={true}
       />}
-    {subtitles ? <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 28, bottom: 48 }}>
-      <Spacer />
-      {/* Keep the concrete Text mounted on the same page layer as the visible close control. */}
-      <Text
-        font="headline"
-        fontWeight="semibold"
-        foregroundStyle="white"
-        lineLimit={1}
-        truncationMode="tail"
-        allowsTightening={true}
-        multilineTextAlignment="center"
-        frame={{ maxWidth: "infinity", alignment: "center" }}
-        padding={{ horizontal: 14, vertical: 8 }}
-        background="rgba(0, 0, 0, 0.72)"
-        clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
-        opacity={subtitleText ? 1 : 0}
-      >{subtitleText || " "}</Text>
-    </VStack> : undefined}
-    <PlayerCloseControl dismiss={dismiss} player={player} subtitles={subtitles} />
+    {subtitles ? <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 56, bottom: 64 }}>
+      <ForEach data={captionRows} builder={row => {
+        displayStatus.current.builtText = row.text
+        return <Text
+          key={row.id}
+          font="headline"
+          fontWeight="semibold"
+          foregroundStyle="white"
+          lineLimit={1}
+          truncationMode="tail"
+          allowsTightening={true}
+          multilineTextAlignment="center"
+          padding={{ horizontal: 14, vertical: 8 }}
+          background="rgba(0, 0, 0, 0.72)"
+          clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
+        >{row.text}</Text>
+      }} />
+    </ZStack> : undefined}
+    <PlayerCloseControl dismiss={dismiss} player={player} subtitles={subtitles} subtitleDisplayInfo={subtitleDisplayInfo} />
   </ZStack>
 }
 
-function PlayerCloseControl({ dismiss, player, subtitles }: { dismiss: () => void; player: AVPlayer; subtitles?: SubtitleTrack }) {
+function PlayerCloseControl({ dismiss, player, subtitles, subtitleDisplayInfo }: { dismiss: () => void; player: AVPlayer; subtitles?: SubtitleTrack; subtitleDisplayInfo: () => string }) {
   const [showLoadNotice, setShowLoadNotice] = useState(true)
   useEffect(() => {
     setShowLoadNotice(true)
@@ -143,7 +160,7 @@ function PlayerCloseControl({ dismiss, player, subtitles }: { dismiss: () => voi
     await Dialog.alert({
       title: "字幕信息",
       message: subtitles
-        ? `已读取 ${subtitles.cues.length} 条对白\n当前视频时间：${time.toFixed(2)} 秒\n首句时间：${first?.startSeconds.toFixed(2) ?? "无"} 秒\n当前匹配：${cue ? `${cue.startSeconds.toFixed(2)}–${cue.endSeconds.toFixed(2)} 秒\n${cue.text}` : "当前时间没有对白；字幕可能有空档或与视频版本不一致。"}`
+        ? `已读取 ${subtitles.cues.length} 条对白\n当前视频时间：${time.toFixed(2)} 秒\n首句时间：${first?.startSeconds.toFixed(2) ?? "无"} 秒\n当前匹配：${cue ? `${cue.startSeconds.toFixed(2)}–${cue.endSeconds.toFixed(2)} 秒\n${cue.text}` : "当前时间没有对白；字幕可能有空档或与视频版本不一致。"}\n\n${subtitleDisplayInfo()}`
         : "播放器没有收到字幕。请确认详情页已导入字幕，并且字幕开关已开启。",
     })
   }
