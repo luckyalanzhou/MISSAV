@@ -18,7 +18,7 @@ const run = (): void => {
   assert(page.title === "Browse videos", "列表标题应从页面 HTML 中解析")
   assert(page.items.length === 1, "列表页应解析出作品卡片且不重复")
   assert(page.items[0].title === "ABC-123 sample title" && page.items[0].duration === "1:23:45", "卡片标题和时长应正确解析")
-  assert(page.items[0].detailPath.endsWith("/ja/ABC-123") && page.items[0].coverUrl.endsWith("/covers/abc.jpg"), "相对详情和封面地址应规范化")
+  assert(page.items[0].detailPath.endsWith("/cn/ABC-123") && page.items[0].coverUrl.endsWith("/covers/abc.jpg"), "旧语言详情应转为 cn，封面地址应保持不变")
   assert(page.hasNext, "下一页链接应被识别")
 
   const detail = parseMissAVVideoDetail(`

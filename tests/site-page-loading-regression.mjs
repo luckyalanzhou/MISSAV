@@ -4,7 +4,13 @@ import { stripTypeScriptTypes } from "node:module"
 
 // Execute production modules with only the iOS native bridge mocked.
 const modules = new Map()
-const scriptingStub = moduleURL('export function fetch() { throw new Error("Unexpected HTTP fetch") }')
+const scriptingStub = moduleURL(`
+  export function fetch() { throw new Error("Unexpected HTTP fetch") }
+  export const Script = { exit(result) {
+    if (!result.passed || result.error) throw new Error(result.error || "Regression failed")
+    console.log(result.message)
+  } }
+`)
 function moduleURL(source) { return `data:text/javascript;base64,${Buffer.from(source).toString("base64")}` }
 function compile(relative) {
   const url = new URL(relative, import.meta.url)
@@ -26,18 +32,18 @@ globalThis.Keychain = { get: key => keychain.get(key), set: (key, value) => keyc
 const { loadWebViewPage } = await import(compile("../webview.ts"))
 const parser = await import(compile("../html-parser.ts"))
 const session = await import(compile("../cloudflare-session.ts"))
-const { setMissAVBaseURL } = await import(compile("../domain.ts"))
+const { setMissAVBaseURL, getMissAVLandingURL, resolveMissAVURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE } = await import(compile("../domain.ts"))
 const { missavClient } = await import(compile("../client.ts"))
 const { openMissAVSiteVerification } = await import(compile("../account.ts"))
 
 const nativeTimeout = globalThis.setTimeout
 // Accelerate polling only, keeping the production timeout behavior intact.
 globalThis.setTimeout = (callback, delay, ...args) => nativeTimeout(callback, [250, 300, 500].includes(delay) ? 0 : delay, ...args)
-const menu = '<a href="/dm635/ja/release">新作</a><a href="/dm817/ja/uncensored-leak">无码流出</a>'
+const menu = '<a href="/dm635/cn/release">新作</a><a href="/dm817/cn/uncensored-leak">无码流出</a>'
 function listing(code, links = menu) {
   return `<html><body><header>MISSAV ${links}</header><h1>Listing</h1>
-    <a href="/ja/${code}"><img src="https://images.example/${code}.jpg" alt="${code} title">2:10:00</a>
-    <a href="/ja/${code}">${code} title</a><footer>${"fixture ".repeat(80)}</footer></body></html>`
+    <a href="/cn/${code}"><img src="https://images.example/${code}.jpg" alt="${code} title">2:10:00</a>
+    <a href="/cn/${code}">${code} title</a><footer>${"fixture ".repeat(80)}</footer></body></html>`
 }
 const finalHTML = listing("test-001")
 const challenge = '<html><body>Verify you are human<script src="/cdn-cgi/challenge-platform"></script></body></html>'
@@ -49,7 +55,7 @@ function loader(overrides = {}) {
 
 try {
   let reads = 0
-  const redirect = await loadWebViewPage(loader({ getHTML: async () => ++reads < 3 ? empty : finalHTML }), "https://missav.ws/ja/release")
+  const redirect = await loadWebViewPage(loader({ getHTML: async () => ++reads < 3 ? empty : finalHTML }), "https://missav.ws/cn/release")
   assert.equal(redirect.html, finalHTML)
   assert.equal(redirect.loaded, false, "Valid redirected HTML is authoritative even after a cancelled callback")
   assert.equal(reads, 3)
@@ -58,30 +64,57 @@ try {
     waitForLoad: async () => { throw new Error("Navigation cancelled") },
     getHTML: async () => { throw new Error("Document not ready") },
     evaluateJavaScript: async script => { assert.match(script, /return document\.documentElement/); return finalHTML },
-  }), "https://missav.ws/ja/new")
+  }), "https://missav.ws/cn/new")
   assert.equal(domFallback.html, finalHTML)
   reads = 0
-  assert.equal((await loadWebViewPage(loader({ getHTML: async () => { reads++; return empty } }), "https://missav.ws/ja/new")).html, null)
+  assert.equal((await loadWebViewPage(loader({ getHTML: async () => { reads++; return empty } }), "https://missav.ws/cn/new")).html, null)
   assert.equal(reads, 10, "Blank scaffolds must stop at the bounded retry limit")
-  await assert.rejects(loadWebViewPage(loader({ loadURL: async () => { throw new Error("Native load failed") } }), "https://missav.ws/ja/new"), /Native load failed/)
+  await assert.rejects(loadWebViewPage(loader({ loadURL: async () => { throw new Error("Native load failed") } }), "https://missav.ws/cn/new"), /Native load failed/)
 
   let resolveLoad
   let callsAfterTimeout = 0
   const pendingLoad = loadWebViewPage(loader({ loadURL: () => new Promise(resolve => { resolveLoad = resolve }),
     getHTML: async () => { callsAfterTimeout++; return finalHTML },
-  }), "https://missav.ws/ja/new", 15)
+  }), "https://missav.ws/cn/new", 15)
   await assert.rejects(pendingLoad, /网页加载超时/)
   resolveLoad(true)
   await new Promise(resolve => nativeTimeout(resolve, 5))
   assert.equal(callsAfterTimeout, 0, "Timed-out tasks must not read a disposed native controller")
 
   const routes = parser.parseMissAVCollectionLinks(`${menu}
-    <a href="/ja/release?sort=views">bare</a>
+    <a href="/cn/release?sort=views">bare</a>
     <a href="/dm12/en/fc2">wrong language</a>
-    <a href="https://missav.ai/dm99/ja/fc2">wrong domain</a>
-    <a href="/dm45/ja/today-hot?sort=today_views&amp;page=2#menu">hot</a>
-    <a href="javascript:alert(1)">action</a>`, "https://missav.ws/ja/new")
-  assert.deepEqual(routes, { release: "/dm635/ja/release", "uncensored-leak": "/dm817/ja/uncensored-leak", "today-hot": "/dm45/ja/today-hot" })
+    <a href="/dm13/ja/fc2">old Japanese language</a>
+    <a href="https://missav.ai/dm99/cn/fc2">wrong domain</a>
+    <a href="/dm45/cn/today-hot?sort=today_views&amp;page=2#menu">hot</a>
+    <a href="javascript:alert(1)">action</a>`, "https://missav.ws/cn/new")
+  assert.deepEqual(routes, { release: "/dm635/cn/release", "uncensored-leak": "/dm817/cn/uncensored-leak", "today-hot": "/dm45/cn/today-hot" })
+
+  assert.equal(MISSAV_LOCALE, "cn")
+  for (const baseURL of ["https://missav.ws/", "https://missav.ai/"]) {
+    setMissAVBaseURL(baseURL)
+    assert.equal(getMissAVLandingURL(), `${baseURL}cn/`)
+    assert.equal(getMissAVLandingURL(baseURL), `${baseURL}cn/`)
+    assert.equal(missavClient.watchUrl("ABC-123"), `${baseURL}cn/abc-123`)
+    for (const oldLocale of ["ja", "en", "cn", "ko", "ms", "th", "de", "fr", "vi", "id", "fil", "pt"]) {
+      const oldURL = `https://missav.ws/dm55/${oldLocale}/ABC-123?quality=1080#play`
+      const normalizedURL = `${baseURL}dm55/cn/ABC-123?quality=1080#play`
+      assert.equal(resolveMissAVURL(oldURL), normalizedURL)
+      const headers = missavClient.playbackHeaders(oldURL, "https://cdn.example/ja/video.m3u8?token=fixture")
+      assert.equal(headers.Referer, normalizedURL)
+      assert.equal(headers.Origin, new URL(baseURL).origin)
+      assert.equal(headers["Accept-Language"], MISSAV_ACCEPT_LANGUAGE)
+    }
+    assert.equal(resolveMissAVURL("https://cdn.example/ja/video.m3u8?token=fixture"), "https://cdn.example/ja/video.m3u8?token=fixture")
+    assert.equal(resolveMissAVURL("/covers/abc.jpg"), `${baseURL}covers/abc.jpg`)
+  }
+  setMissAVBaseURL("https://missav.ws/")
+  const settingsSource = readFileSync(new URL("../page/settings.tsx", import.meta.url), "utf8")
+  assert.match(settingsSource, /Safari\.openURL\(getMissAVLandingURL\(domain\)\)/)
+  const accountSource = readFileSync(new URL("../account.ts", import.meta.url), "utf8")
+  for (const path of ["saved", "login", "api/login"]) {
+    assert.ok(accountSource.includes(`/${"${MISSAV_LOCALE}"}/${path}`), `${path} must use the shared locale`)
+  }
 
   const cookie = (value, domain = ".missav.ws", expiresDate = new Date(Date.now() + 60_000)) => ({ name: "cf_clearance", value, domain, expiresDate })
   let liveCookies = [cookie("fixture-old")]
@@ -127,31 +160,40 @@ try {
   globalThis.WebViewController = MockWebView
   keychain.clear()
   responseFor = url => {
-    if (url.pathname === "/ja/release") return null
-    if (url.pathname === "/ja/new") return finalHTML
-    if (url.pathname === "/dm635/ja/release") return listing("release-002")
-    if (url.pathname === "/dm817/ja/uncensored-leak") return listing("leak-003")
+    if (url.pathname === "/cn/release") return null
+    if (url.pathname === "/cn/new") return finalHTML
+    if (url.pathname === "/dm635/cn/release") return listing("release-002")
+    if (url.pathname === "/dm817/cn/uncensored-leak") return listing("leak-003")
     throw new Error(`Unexpected route: ${url.pathname}`)
   }
   const release = await missavClient.searchVideoPage({ collection: "release", page: 2, sort: "released_at", filter: "individual" })
   assert.equal(release.items[0].videoCode, "release-002")
-  assert.deepEqual(requests.map(value => new URL(value).pathname), ["/ja/release", "/ja/new", "/dm635/ja/release"])
+  assert.deepEqual(requests.map(value => new URL(value).pathname), ["/cn/release", "/cn/new", "/dm635/cn/release"])
   const recoveredURL = new URL(requests.at(-1))
   assert.equal(recoveredURL.searchParams.get("page"), "2")
   assert.equal(recoveredURL.searchParams.get("sort"), "released_at")
   assert.equal(recoveredURL.searchParams.get("filters"), "individual")
   const leak = await missavClient.searchVideoPage({ collection: "uncensored-leak" })
   assert.equal(leak.items[0].videoCode, "leak-003")
-  assert.equal(new URL(requests.at(-1)).pathname, "/dm817/ja/uncensored-leak")
+  assert.equal(new URL(requests.at(-1)).pathname, "/dm817/cn/uncensored-leak")
   assert.equal(modalCount, 0, "Browse requests never open verification UI")
   assert.ok(controllers.every(controller => controller.disposed))
+
+  // Playback resolves a fresh Chinese detail even for items saved under ja/en.
+  requests.length = 0
+  const mediaURL = "https://cdn.example/ja/1080p/video.m3u8?token=fixture"
+  responseFor = () => `<html><head><meta property="og:title" content="MISSAV 中文标题"></head><body><video src="${mediaURL}"></video>${"fixture ".repeat(80)}</body></html>`
+  const detail = await missavClient.getVideo({ videoCode: "ABC-123", title: "old title", detailPath: "https://missav.ws/dm55/ja/ABC-123", coverUrl: "" })
+  assert.equal(requests[0], "https://missav.ws/dm55/cn/ABC-123")
+  assert.equal(detail.watchUrl, "https://missav.ws/dm55/cn/ABC-123")
+  assert.equal(detail.sources[0].url, mediaURL, "CDN stream paths and signed query parameters must not be rewritten")
 
   setMissAVBaseURL("https://missav.ai/")
   const aiMenu = menu.replace("dm635", "dm111").replace("dm817", "dm222")
   requests.length = 0
-  responseFor = url => url.pathname === "/ja/release" ? null : listing("ai-004", aiMenu)
+  responseFor = url => url.pathname === "/cn/release" ? null : listing("ai-004", aiMenu)
   await missavClient.searchVideoPage({ collection: "release" })
-  assert.deepEqual(requests.map(value => new URL(value).pathname), ["/ja/release", "/ja/new", "/dm111/ja/release"])
+  assert.deepEqual(requests.map(value => new URL(value).pathname), ["/cn/release", "/cn/new", "/dm111/cn/release"])
   assert.ok(requests.every(value => new URL(value).hostname === "missav.ai"))
 
   setMissAVBaseURL("https://missav.ws/")
@@ -170,14 +212,15 @@ try {
   // Settings refreshes the next probe's dynamic path after reading the first menu.
   missavClient.collectionPaths.clear()
   requests.length = 0
-  const probeMenu = menu + '<a href="/dm333/ja/fc2">FC2</a>'
+  const probeMenu = menu + '<a href="/dm333/cn/fc2">FC2</a>'
   sharedCookies = [cookie("verified-live")]
   responseFor = url => listing("verified-005", probeMenu)
   assert.equal((await openMissAVSiteVerification()).status, "accessible")
   assert.equal(requests.length, 7)
-  assert.equal(new URL(requests[1]).pathname, "/dm635/ja/release")
-  assert.equal(new URL(requests[2]).pathname, "/dm817/ja/uncensored-leak")
-  assert.equal(new URL(requests[3]).pathname, "/dm333/ja/fc2")
+  assert.ok(requests.every(value => /^\/(?:dm\d+\/)?cn\//.test(new URL(value).pathname)), "Every Settings verification probe uses cn")
+  assert.equal(new URL(requests[1]).pathname, "/dm635/cn/release")
+  assert.equal(new URL(requests[2]).pathname, "/dm817/cn/uncensored-leak")
+  assert.equal(new URL(requests[3]).pathname, "/dm333/cn/fc2")
   assert.ok(controllers.every(controller => controller.disposed))
   sharedCookies = []
   await session.restoreCloudflareSession(jar, "missav.ws")
@@ -206,6 +249,11 @@ try {
   assert.equal(unavailable.probe.collection, "release")
   assert.equal(modalCount, 1)
   assert.ok(controllers.every(controller => controller.disposed))
+  // Existing pure parser/session/account tests use only Script.exit reporting.
+  // Execute them here without pretending to run the native Scripting host.
+  await import(compile("../tests/client-parser-regression.ts"))
+  await import(compile("../tests/cloudflare-session-regression.ts"))
+  await import(compile("../tests/account-auth-regression.ts"))
   console.log("MISSAV native page loading, dynamic routes, live cookies and verification regressions passed")
 } finally {
   globalThis.setTimeout = nativeTimeout

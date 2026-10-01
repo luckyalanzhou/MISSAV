@@ -1,5 +1,5 @@
 import { fetch } from "scripting"
-import { getMissAVBaseURL } from "./domain"
+import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
 import { captureCloudflareSession, restoreCloudflareSession } from "./cloudflare-session"
 import * as SiteHTML from "./html-parser"
 import { loadWebViewPage } from "./webview"
@@ -17,7 +17,7 @@ export {
 } from "./html-parser"
 
 export const MISSAV_BASE_URL = () => getMissAVBaseURL()
-export const MISSAV_LOCALE = "ja"
+export { MISSAV_LOCALE } from "./domain"
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
 export type MissAVCollection = "new" | "release" | "uncensored-leak" | "english-subtitle" | "fc2" | "today-hot" | "weekly-hot" | "monthly-hot"
@@ -155,7 +155,10 @@ class MissAVClient {
       url: this.collectionUrl({ collection: value, page: 1, sort: collectionProbeSort(value) }),
     }))
   }
-  playbackHeaders(watchUrl: string, resourceUrl: string): Record<string, string> { return { ...this.requestHeaders(watchUrl), Referer: watchUrl, Origin: new URL(watchUrl).origin, Accept: "*/*" } }
+  playbackHeaders(watchUrl: string, resourceUrl: string): Record<string, string> {
+    const localizedWatchURL = resolveMissAVURL(watchUrl)
+    return { ...this.requestHeaders(localizedWatchURL), Referer: localizedWatchURL, Origin: new URL(localizedWatchURL).origin, Accept: "*/*" }
+  }
   async loadCoverImage(url: string, watchUrl: string): Promise<UIImage | null> { try { const response = await fetch(url, { headers: this.requestHeaders(watchUrl) }); return response.ok ? UIImage.fromData(await response.data()) : null } catch { return null } }
 
   private collectionUrl(params: MissAVSearchParams): string {
@@ -198,7 +201,7 @@ class MissAVClient {
     }
   }
 
-  private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ja", ...(referer ? { Referer: referer } : {}) } }
+  private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": MISSAV_ACCEPT_LANGUAGE, ...(referer ? { Referer: resolveMissAVURL(referer) } : {}) } }
 }
 
 function copySearchPage(value: MissAVSearchPage): MissAVSearchPage {

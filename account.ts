@@ -1,4 +1,4 @@
-import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
+import { getMissAVBaseURL, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
 import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVListingHTML, missavClient, parseMissAVVideoItems, type MissAVAccessProbe, type MissAVVideoItem } from "./client"
 import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
 import { loadWebViewPage, type WebViewPageLoad } from "./webview"
@@ -10,7 +10,6 @@ export type MissAVWebsiteSavedState = { saved: boolean; authenticated: boolean }
 
 const ACCOUNT_KEY_PREFIX = "missav_account_cookie_v2_"
 const ACCOUNT_META_PREFIX = "missav_account_meta_v2_"
-const LOCALE = "ja"
 const MISSAV_COOKIE_HOSTS = ["missav.ws", "missav.ai"] as const
 type CookieRecord = Record<string, unknown> & { name?: unknown; value?: unknown; domain?: unknown; expiresDate?: unknown }
 type StoredMissAVCookie = CookieRecord & { name: string; value: string; domain: string }
@@ -19,9 +18,9 @@ function origin(): string { return new URL(getMissAVBaseURL()).origin }
 function keySuffix(value = origin()): string { return value.replace(/^https?:\/\//, "").replace(/[^a-z0-9]+/gi, "_").toLowerCase() }
 function cookieKey(value = origin()): string { return `${ACCOUNT_KEY_PREFIX}${keySuffix(value)}` }
 function metaKey(value = origin()): string { return `${ACCOUNT_META_PREFIX}${keySuffix(value)}` }
-function savedURL(page = 1): string { const url = new URL(`/${LOCALE}/saved`, `${origin()}/`); if (page > 1) url.searchParams.set("page", String(page)); return url.toString() }
-function loginURL(): string { return new URL(`/${LOCALE}/login`, `${origin()}/`).toString() }
-function loginAPIURL(): string { return new URL(`/${LOCALE}/api/login`, `${origin()}/`).toString() }
+function savedURL(page = 1): string { const url = new URL(`/${MISSAV_LOCALE}/saved`, `${origin()}/`); if (page > 1) url.searchParams.set("page", String(page)); return url.toString() }
+function loginURL(): string { return new URL(`/${MISSAV_LOCALE}/login`, `${origin()}/`).toString() }
+function loginAPIURL(): string { return new URL(`/${MISSAV_LOCALE}/api/login`, `${origin()}/`).toString() }
 
 export function getMissAVAccountSnapshot(): MissAVAccountSnapshot {
   const domain = origin()
@@ -92,7 +91,7 @@ const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
 
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
   // Check the monitored Browse collections. The optional English subtitle
-  // listing is excluded because it may be empty on the shared Japanese route.
+  // listing is excluded because it may be empty on the shared Chinese route.
   for (const probe of missavClient.accessProbeRoutes()) {
     // Share cookies, not the preceding probe's document. A cancelled load
     // must never validate the next route using the previous listing's HTML.

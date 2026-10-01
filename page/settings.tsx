@@ -2,7 +2,7 @@ import { Button, HStack, Image, List, Navigation, Picker, Section, SecureField, 
 import { submitMissAVAccess } from "../access"
 import { getMissAVAccountSnapshot, loginMissAV, openMissAVSiteVerification, signOutMissAV, verifyMissAVAccount, type MissAVAccountSnapshot } from "../account"
 import { ACCENT } from "../design"
-import { getMissAVBaseURL, getMissAVDomainLabel, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../domain"
+import { getMissAVBaseURL, getMissAVDomainLabel, getMissAVLandingURL, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../domain"
 
 export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerified?: () => void; onAccountChanged?: () => void; onAccessReady?: () => void; accessRequired?: boolean }) {
   const dismiss = Navigation.useDismiss()
@@ -103,7 +103,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
       <Picker title="站点域名" value={domain} onChanged={changeDomain}>
         {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
       </Picker>
-      <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} action={() => { void Safari.openURL(domain) }} />
+      <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} action={() => { void Safari.openURL(getMissAVLandingURL(domain)) }} />
     </Section>
 
     <Section header={<Text>网站账号</Text>} footer={<Text>邮箱和密码只用于本次登录请求，不会保存；登录成功后仅将网站会话保存在系统钥匙串中。网站收藏与本机收藏分开显示。</Text>}>
