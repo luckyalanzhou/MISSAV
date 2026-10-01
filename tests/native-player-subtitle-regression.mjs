@@ -27,7 +27,7 @@ let hookContext
 
 const jsx = (type, props, key) => ({ type, props: props || {}, key })
 const scripting = {
-  ...Object.fromEntries(["AVPlayerView", "VideoPlayer", "Button", "ForEach", "HStack", "Image", "Spacer", "Text", "VStack", "ZStack"].map(name => [name, name])),
+  ...Object.fromEntries(["AVPlayerView", "Button", "ForEach", "HStack", "Image", "Menu", "ScrollView", "Slider", "Spacer", "Text", "VStack", "ZStack"].map(name => [name, name])),
   Device: { supportedInterfaceOrientations: ["portrait"] },
   Navigation: {
     useDismiss: () => () => { dismissCount += 1; dismiss() },
@@ -52,8 +52,8 @@ const scripting = {
   useState: initial => {
     const context = hookContext
     const index = context.index++
-    if (!(index in context.states)) context.states[index] = initial
-    return [context.states[index], value => { context.states[index] = value }]
+    if (!(index in context.states)) context.states[index] = typeof initial === "function" ? initial() : initial
+    return [context.states[index], value => { context.states[index] = typeof value === "function" ? value(context.states[index]) : value }]
   },
   useEffect: (effect, dependencies) => {
     const index = hookContext.index++
@@ -108,6 +108,12 @@ function find(node, type) {
   for (const child of children(node)) { const result = find(child, type); if (result) return result }
 }
 
+function findAll(node, type) {
+  if (!node || typeof node !== "object") return []
+  if (typeof node.type === "function") return findAll(renderComponent(node), type)
+  return [...(node.type === type ? [node] : []), ...children(node).flatMap(child => findAll(child, type))]
+}
+
 function texts(node) {
   if (!node || typeof node !== "object") return []
   if (typeof node.type === "function") return texts(renderComponent(node))
@@ -121,17 +127,17 @@ function renderOverlay(overlay) {
 
 function currentCaption() {
   // Keep the originally presented tree: caption updates must not require replaying
-  // the parent function or re-presenting/replacing VideoPlayer.
+  // the parent function or re-presenting/replacing AVPlayerView.
   const modal = mountedModal
-  const video = find(modal, "VideoPlayer")
+  const video = find(modal, "AVPlayerView")
   const overlay = children(modal)[1]
   assert.equal(children(modal)[0], video)
-  assert.equal(children(modal).length, 3, "Caption and close control must both follow the video in the visible page ZStack")
+  assert.ok(children(modal).length >= 3, "Caption and side controls must both follow the video in the visible page ZStack")
   assert.equal(video.props.overlay, undefined, "Do not rely on a separately bridged native video overlay")
   assert.equal(overlay.type, "ZStack")
   assert.equal(overlay.props.alignment, "bottom", "Caption position must not depend on Spacer sizing")
   assert.equal(overlay.props.frame.alignment, "bottom", "Expanded caption frame must not center its intrinsic ZStack")
-  assert.deepEqual(overlay.props.padding, { horizontal: 56, bottom: 64 }, "Caption must retain room above the home indicator and transport bar")
+  assert.deepEqual(overlay.props.padding, { horizontal: 56, bottom: load("playback-options.ts").loadPlaybackOptions().subtitleBottomInset }, "Caption must use the selected safe bottom inset")
   assert.equal(find(overlay, "Spacer"), undefined)
   const binding = find(overlay, "ForEach")
   assert.ok(binding, "Caption must use the native observable ForEach data binding")
@@ -142,6 +148,7 @@ function currentCaption() {
     assert.equal(caption.key, binding.props.data.value[0].id, "Cue identity must reach the native Text key")
     assert.equal(caption.props.opacity, undefined, "Matched captions must not inherit a hidden initial opacity")
     assert.equal(caption.props.styledText.content, binding.props.data.value[0].text)
+    assert.equal(caption.props.styledText.font, load("playback-options.ts").loadPlaybackOptions().subtitleFontSize)
     assert.equal(caption.props.styledText.foregroundColor, "white")
     assert.equal(caption.props.styledText.strokeColor, "black")
     assert.equal(caption.props.styledText.strokeWidth, -4, "Native attributed text must fill white glyphs and draw the black outline")
@@ -181,7 +188,8 @@ try {
   globalThis.AVPlayer = class {
     currentTime = 0
     duration = 100
-    setSource() { player = this; this.onReadyToPlay(); return true }
+    sourceLoads = 0
+    setSource() { this.sourceLoads += 1; player = this; this.onReadyToPlay(); return true }
     play() {}
     stop() {}
     dispose() { this.disposed = true }
@@ -240,8 +248,10 @@ try {
   assert.equal(modal.props.alignment, "leading", "Close control must sit at the side middle, away from top/bottom toolbars")
   const controls = children(modal)[2]
   assert.equal(renderOverlay(controls).props.frame?.height, undefined, "Close control must not reserve a 52-point video header")
-  const video = find(modal, "VideoPlayer")
+  const video = find(modal, "AVPlayerView")
   assert.equal(children(modal)[0], video)
+  assert.equal(video.props.videoGravity, "resizeAspect")
+  assert.equal(video.props.allowsPictureInPicturePlayback, false, "Custom page captions cannot follow native PiP")
   assert.equal(video.props.ignoresSafeArea, true)
   let current = currentCaption()
   assert.ok(texts(current.overlay).includes("第二句对白"), "Resume must immediately show the matching dialogue")
@@ -295,6 +305,65 @@ try {
   fireTimers(5000)
   for (let attempt = 0; attempt < 50 && !progressSaves.some(args => args.includes(71.26)); attempt += 1) await Promise.resolve()
   assert.ok(progressSaves.some(args => args.includes(71.26)), "Progress must keep saving while playing without interval APIs")
+
+  // Open the real subtitle options panel and change styles while paused on a cue.
+  // Rerender only for user settings changes, not for the 250ms caption polling.
+  const controlsTree = renderOverlay(controls)
+  const subtitleButton = findAll(controlsTree, "Button").find(node => node.props.accessibilityLabel?.startsWith("字幕选项"))
+  assert.deepEqual(subtitleButton.props.frame, { width: 44, height: 44 })
+  assert.equal(subtitleButton.props.disabled, false)
+  subtitleButton.props.action()
+  mountedModal = renderOverlay(presented)
+  let sliders = findAll(mountedModal, "Slider")
+  assert.equal(sliders.length, 2)
+  assert.equal(sliders[0].props.value, 17)
+  assert.equal(sliders[1].props.value, 64)
+  const originalCueKey = currentCaption().caption.key
+  sliders[0].props.onChanged(28)
+  mountedModal = renderOverlay(presented)
+  assert.equal(currentCaption().caption.props.styledText.font, 28)
+  assert.notEqual(currentCaption().caption.key, originalCueKey, "Font changes must rebuild even a paused native cue")
+  assert.equal(currentCaption().caption.props.styledText.content, "担心的话你也一起来吧?")
+  sliders = findAll(mountedModal, "Slider")
+  sliders[1].props.onChanged(120)
+  mountedModal = renderOverlay(presented)
+  assert.equal(currentCaption().overlay.props.padding.bottom, 120)
+  assert.equal(currentCaption().caption.props.styledText.font, 28)
+  // Polling reads the ref, not the settings snapshot captured by the first effect.
+  player.currentTime = 2
+  tickCaptions()
+  assert.equal(currentCaption().caption.props.styledText.font, 28)
+  assert.equal(currentCaption().caption.props.styledText.content, "第一句对白")
+
+  for (const [title, gravity] of [["裁切全屏", "resizeAspectFill"], ["拉伸全屏", "resize"], ["适应屏幕", "resizeAspect"]]) {
+    const menu = find(mountedModal, "Menu")
+    const action = children(menu).find(node => node.props.title === title)
+    assert.ok(action, `Missing picture mode: ${title}`)
+    const time = player.currentTime
+    action.props.action()
+    mountedModal = renderOverlay(presented)
+    assert.equal(find(mountedModal, "AVPlayerView").props.videoGravity, gravity)
+    assert.equal(find(mountedModal, "AVPlayerView").props.player, player)
+    assert.equal(player.currentTime, time)
+    assert.equal(player.sourceLoads, 1, "Picture mode changes must not reload the media")
+    assert.equal(children(find(mountedModal, "Menu")).find(node => node.props.title === title).props.systemImage, "checkmark")
+    assert.equal(currentCaption().caption.props.styledText.font, 28)
+  }
+  const resetButton = findAll(mountedModal, "Button").find(node => node.props.title === "恢复默认字幕样式")
+  resetButton.props.action()
+  mountedModal = renderOverlay(presented)
+  assert.equal(currentCaption().caption.props.styledText.font, 17)
+  assert.equal(currentCaption().overlay.props.padding.bottom, 64)
+  findAll(mountedModal, "Slider")[0].props.onChanged(23)
+  mountedModal = renderOverlay(presented)
+  findAll(mountedModal, "Slider")[1].props.onChanged(88)
+  mountedModal = renderOverlay(presented)
+  findAll(mountedModal, "Button").find(node => node.props.accessibilityLabel === "关闭字幕选项").props.action()
+  mountedModal = renderOverlay(presented)
+  assert.equal(find(mountedModal, "Slider"), undefined, "Closing options must dismiss only the panel")
+  assert.equal(dismissCount, 0)
+  assert.equal([...timers.values()].filter(timer => timer.delay === 250).length, 1, "Style edits must not multiply subtitle timers")
+
   closeButton.props.action()
   unmount()
   assert.equal((await playback).opened, true)
@@ -316,6 +385,9 @@ try {
   assert.equal(find(plainModal, "AVPlayerView").props.allowsPictureInPicturePlayback, true)
   assert.equal(find(plainModal, "AVPlayerView").props.ignoresSafeArea, true)
   assert.ok(find(plainModal, "Button"), "No-subtitle playback must retain close control")
+  assert.equal(findAll(plainModal, "Button").find(node => node.props.accessibilityLabel?.startsWith("字幕选项")).props.disabled, true)
+  children(find(plainModal, "Menu")).find(node => node.props.title === "拉伸全屏").props.action()
+  assert.equal(find(renderOverlay(presented), "AVPlayerView").props.videoGravity, "resize")
   player.onEnded()
   assert.equal([...timers.values()].filter(timer => timer.delay === 5000).length, 0, "Playback end must stop the recurring progress timeout")
   dismiss()
@@ -327,6 +399,9 @@ try {
   const preview = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source, { subtitles: subtitles.MISSAV_SUBTITLE_PREVIEW, preview: true })
   await waitForPresentation(preview)
   mountedModal = renderOverlay(presented)
+  assert.equal(find(mountedModal, "AVPlayerView").props.videoGravity, "resize", "Picture mode must survive a new playback session")
+  assert.equal(load("playback-options.ts").loadPlaybackOptions().subtitleFontSize, 23)
+  assert.equal(load("playback-options.ts").loadPlaybackOptions().subtitleBottomInset, 88)
   assert.equal(player.currentTime, 0)
   assert.equal(currentCaption().caption, undefined)
   player.currentTime = 1.2
@@ -347,7 +422,7 @@ try {
   unmount()
   await preview
   assert.equal(timers.size, 0)
-  console.log("PASS: bottom-aligned caption frame; native white/black outlined text without background box; timeout-only host/71.26s/import/preview/resume/seek/gaps/pause/cleanup/PiP")
+  console.log("PASS: subtitle options/font/position/reset/persistence; three picture modes without source reload; outlined caption/polling/import/preview/resume/seek/gaps/pause/cleanup/PiP")
 } finally {
   unmount()
   for (const [name, value] of Object.entries(oldGlobals)) {

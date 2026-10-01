@@ -5,20 +5,23 @@
 ## 本次实现
 
 - 下载和文件导入仍保存到当前作品对应的本地 SRT 文件，播放前重新读取。
-- 撤掉 52 点高顶栏，播放页恢复 `ZStack` 全屏黑色背景、深色界面和忽略安全区，不再用顶栏占用视频高度。视频仍按原始比例完整显示；比例不同产生的黑边属于正常留边，不承诺拉伸或裁剪填满画面。
-- 关闭按钮以 44 × 44 点点击区域浮在左侧中部，距离屏幕左侧 64 点，避开原生顶部、底部和中央控制区域；两种播放模式使用同一个按钮。是否与具体 iOS 版本的原生控件重叠仍需真机确认。
+- 撤掉 52 点高顶栏，播放页保持 `ZStack` 全屏黑色背景、深色界面和忽略安全区，不用顶栏占用视频高度。默认“适应屏幕”按原始比例完整显示，比例不同产生的黑边属于正常留边；用户也可选择保持比例但裁边的“裁切全屏”，或会变形的“拉伸全屏”。
+- 关闭、字幕选项和画面比例入口在左侧中部竖直分开，每个有 44 × 44 点点击区域，距离屏幕左侧 64 点，避开顶部、底部和中央控制区域。字幕选项面板浮在右侧，可单独关闭，不退出播放。是否与具体 iOS 版本的原生控件重叠仍需真机确认。
 - 有字幕时，每 250 毫秒读取实际 `AVPlayer.currentTime`，将当前对白写入 `useObservable` 创建的数据绑定。原生 `ForEach` 直接观察此数据，构建带唯一 `key` 的 `Text`，不再依赖父组件重新渲染后修改初始空文本的属性。
 - 重复采样使用 `playback-polling.ts` 中的递归 `setTimeout/clearTimeout`，不依赖脚本环境没有保证支持的 `setInterval/clearInterval`。播放进度每 5 秒保存也使用同一计时方式。每个循环最多保留一个待执行回调，退出/结束时取消；即使回调已进入队列，取消后也不能重启循环。
-- 字幕在视频之后、关闭按钮之前，仍处于与已显示关闭按钮相同的页面层。字幕层的 `ZStack` 和扩展 `frame` 均设置 `alignment="bottom"`，横向留 56 点、底部留 64 点。只设置 `ZStack` 内部对齐不足以把其自然高度的内容移到扩展 frame 底部，frame 默认居中会让字幕仍在画面中间；本次补上 frame 底部对齐。不使用 `Spacer` 推算位置，也不预先挂载透明度为 0 的字幕。无对白时数据为空，移除文字；有对白时插入一条文字。同一条对白不重复写入绑定。
+- 字幕在视频之后、侧边按钮之前，仍处于与已显示关闭按钮相同的页面层。字幕层的 `ZStack` 和扩展 `frame` 均设置 `alignment="bottom"`，横向留 56 点、默认底部留 64 点。字幕选项的“距底部”可调 24–160 点，数值越大位置越靠上。只设置 `ZStack` 内部对齐不足以把其自然高度的内容移到扩展 frame 底部，frame 默认居中会让字幕仍在画面中间。不使用 `Spacer` 推算位置，也不预先挂载透明度为 0 的字幕。无对白时数据为空，移除文字；有对白时插入一条文字。同一条对白及同一字号不重复写入绑定。
 - 字幕使用原生 `Text.styledText` 的系统字体、白色填充与黑色描边，`strokeWidth=-4` 按苹果负值同时填充和描边的约定设置；加轻微黑色阴影提升亮背景可读性。移除圆角黑色背景框，保持下方居中单行显示，长对白可略微缩小到 80%，仍过长时尾部截断。这是脚本自定义字幕外观，不是读取用户在 iOS 辅助功能中选择的字幕预设。
-- 字幕更新继续复用同一个 `AVPlayer`，不重新设置视频源，不改变已正常的全屏黑底布局、横屏或关闭按钮位置。
+- 字幕字号可调 14–32 点，默认 17 点。暂停在同一句对白时修改字号，也会通过带字号的原生列表唯一键重建文本；轮询通过 ref 读取最新设置，避免下一句对白回到旧字号。字号、底部距离和画面模式统一校验并保存到本机 Storage，坏值安全回退。
+- 有字幕和无字幕统一使用官方支持 `videoGravity` 的 `AVPlayerView`，字幕仍在页面 `ForEach` 叠层中，不移入播放器内部 overlay。改变画面模式和字幕样式均继续复用同一个 `AVPlayer`，不重新设置视频源或重置进度，保留全屏黑底和自动横屏。
 - 开始播放时短暂显示“字幕已加载 · N 条”，5 秒后消失。对白仍只在匹配的时间区间内以底部单行显示。
 - 长按关闭按钮后选择“字幕信息”，除了当前时间重新匹配的对白，还能检查自动采样次数、最后采样时间、实际写入显示绑定的文字和文本节点构建内容。这些字段区分“菜单即时计算成功”与“自动显示链路已更新”，但不能单独证明屏幕像素可见；此操作本身不会关闭播放器。
-- 没有字幕或关闭字幕时，保持原来的 `AVPlayerView` 和画中画路径。自定义字幕不承诺在画中画窗口内显示。
+- 没有字幕或关闭字幕时，保留 `AVPlayerView` 画中画路径。开启自定义字幕时禁用画中画，避免进入没有字幕叠层的系统窗口；自定义字幕不承诺在画中画或播放器自身另开的一层系统全屏界面内显示。
 
 官方接口：[可观察数据列表 ForEach](https://scriptingapp.github.io/guide/Views/View%20groupings/ForEach/)、[ZStack 底部对齐](https://scriptingapp.github.io/guide/Views/Layout/ZStack/)、[Scripting VideoPlayer](https://scriptingapp.github.io/guide/Device%20Capabilities/Play%20Video/VideoPlayer/)。[官方完整文档](https://scriptingapp.github.io/llms-full.txt)的 `Tap-to-focus, interruptions, stabilization` 示例明确指出脚本环境只保证 `setTimeout/clearTimeout`，并用递归超时更新进度。文档支持可观察列表更新与底部对齐；本机无法验证 iPhone 上的最终渲染。本次继续使用普通页面叠层，不改播放器内置控件。
 
 位置和样式接口：[frame 对齐](https://scriptingapp.github.io/guide/View%20Modifiers/frame)、[Text 富文本描边](https://scriptingapp.github.io/guide/Views/Displaying%20text/Quick%20Start/)、[苹果描边宽度约定](https://developer.apple.com/documentation/uikit/nsstrokewidthattributename)。
+
+播放器选项接口：[AVPlayerView 的 videoGravity](https://scriptingapp.github.io/guide/Views/AVPlayerView)、[Slider 的 min/max/step/value/onChanged](https://scriptingapp.github.io/zh/guide/Views/Controls/Slider/)、[Menu](https://scriptingapp.github.io/guide/Views/Menu/)、[数字字体尺寸](https://scriptingapp.github.io/guide/View%20Modifiers/Text%20View%20Modifiers)。
 
 ## 本机回归检查
 
@@ -42,6 +45,8 @@ node tests/native-player-subtitle-regression.mjs
 
 位置和样式回归还检查外层 frame 必须明确底部对齐、字幕为白色填充/黑色负宽度描边、无背景框，以及富文本内容随每条对白更新。不把这些属性检查当作真机布局证明。
 
+播放器选项回归执行实际按钮、菜单和滑块回调，检查暂停时改字号、位置变化、下一句继续使用新字号、关闭面板不退出播放、恢复默认、重新播放后保留设置，以及三种画面模式不重新设置视频源、不改变进度、不增加轮询定时器。`tests/playback-options-regression.ts` 另检查范围、坏存储值回退和三种原生缩放映射。这些检查不是 AVPlayerView 在 iPhone 上的叠层或菜单触摸证明。
+
 这不是 iPhone 上的布局、触摸或全屏动画测试，也不是完整 TypeScript 类型检查。
 
 ## iPhone 必须检查
@@ -53,6 +58,9 @@ node tests/native-player-subtitle-regression.mjs
 5. 暂停、倒退、前进和退出后续播，分别检查显示的对白与当前视频时间一致。
 6. 唤出系统播放控件，检查左侧中部脚本关闭按钮不与原生顶部、底部和中央控件重叠。脚本播放页本身已全屏；若点击系统全屏按钮进入播放器自身的另一层全屏界面，普通页面字幕不能保证跟随该层显示，请使用系统按钮退出该层，回到脚本播放页。
 7. 关闭字幕后播放，确认原生播放控件和画中画行为没有回归。
+8. 点击左侧字幕图标，暂停在有对白处，拖动“字体大小”和“距底部”滑块，确认字幕立即变化，保持白字黑描边和单行。确认面板可滚动、“恢复默认字幕样式”有效，面板关闭按钮不会退出视频。
+9. 点击左侧画面比例图标，依次选择“适应屏幕、裁切全屏、拉伸全屏”。确认留边、裁边、拉伸符合说明，字幕位置不随画面被裁走，播放进度不重置，原生进度条和关闭按钮仍可操作。尤其检查从 VideoPlayer 改为 AVPlayerView 后字幕与按钮仍出现在页面叠层。
+10. 退出后再播放，确认字号、底部距离和画面模式保留。分别在有字幕/无字幕下验证画面比例；没有字幕时字幕选项应禁用。
 
 如果仍然不显示字幕，长按关闭按钮并选择“字幕信息”：
 
