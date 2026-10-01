@@ -28,6 +28,7 @@ export type MissAVVideoSource = { label: string; qualityHeight?: number; url: st
 export type MissAVVideoDetail = { title: string; videoCode: string; coverUrl: string; duration?: string; releaseDate?: string; actress?: string; genres: string[]; maker?: string; sources: MissAVVideoSource[]; watchUrl: string }
 export type MissAVSearchParams = { collection?: MissAVCollection; query?: string; page?: number; sort?: MissAVSort; filter?: MissAVFilter }
 export type MissAVSearchPage = { items: MissAVVideoItem[]; page: number; hasNext: boolean; title: string }
+export type MissAVAccessProbe = { collection: MissAVCollection; title: string; url: string }
 
 const SEARCH_PAGE_CACHE_TTL_MS = 45_000
 const MAX_CACHED_SEARCH_PAGES = 24
@@ -126,11 +127,12 @@ class MissAVClient {
 
   watchUrl(videoCode: string): string { return new URL(`${MISSAV_LOCALE}/${SiteHTML.extractMissAVVideoCode(videoCode) || videoCode}`, getMissAVBaseURL()).toString() }
   browseProbeURL(): string { return this.collectionUrl({ collection: "new", page: 1, sort: "released_at" }) }
-  accessProbeURLs(): string[] {
-    return [
-      this.collectionUrl({ collection: "today-hot", page: 1, sort: "today_views" }),
-      this.browseProbeURL(),
-    ]
+  accessProbeRoutes(): MissAVAccessProbe[] {
+    return MISSAV_COLLECTION_OPTIONS.map(({ value, title }) => ({
+      collection: value,
+      title,
+      url: this.collectionUrl({ collection: value, page: 1, sort: collectionProbeSort(value) }),
+    }))
   }
   playbackHeaders(watchUrl: string, resourceUrl: string): Record<string, string> { return { ...this.requestHeaders(watchUrl), Referer: watchUrl, Origin: new URL(watchUrl).origin, Accept: "*/*" } }
   async loadCoverImage(url: string, watchUrl: string): Promise<UIImage | null> { try { const response = await fetch(url, { headers: this.requestHeaders(watchUrl) }); return response.ok ? UIImage.fromData(await response.data()) : null } catch { return null } }
@@ -177,3 +179,10 @@ function copySearchPage(value: MissAVSearchPage): MissAVSearchPage {
 }
 
 export const missavClient = new MissAVClient()
+
+function collectionProbeSort(collection: MissAVCollection): MissAVSort {
+  if (collection === "today-hot") return "today_views"
+  if (collection === "weekly-hot") return "weekly_views"
+  if (collection === "monthly-hot") return "monthly_views"
+  return "released_at"
+}

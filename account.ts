@@ -1,5 +1,5 @@
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
-import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVListingHTML, missavClient, parseMissAVVideoItems, type MissAVVideoItem } from "./client"
+import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVListingHTML, missavClient, parseMissAVVideoItems, type MissAVAccessProbe, type MissAVVideoItem } from "./client"
 import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
 import { loadWebViewPage, type WebViewPageLoad } from "./webview"
 
@@ -85,67 +85,63 @@ export async function loginMissAV(email: string, password: string): Promise<Miss
   } finally { controller.dispose() }
 }
 
-export type MissAVSiteVerificationResult = "accessible" | "incomplete" | "unavailable"
+export type MissAVSiteVerificationResult =
+  | { status: "accessible" }
+  | { status: "incomplete" | "unavailable"; probe: MissAVAccessProbe }
+const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
 
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
   const controller = new WebViewController()
   try {
-    // Probe the actual home and Browse result routes. If a visible challenge is
-    // needed, its exact route must render real cards; after clearance, the normal
-    // home/Browse refresh performs the remaining route requests without a second
-    // hidden verification pass over the same pages.
-    for (const probeURL of missavClient.accessProbeURLs()) {
+    // Check every top-level Browse collection. A clearance on one listing does
+    // not prove that all the routes used by the app are reachable.
+    for (const probe of missavClient.accessProbeRoutes()) {
+      const probeURL = probe.url
       const probeHost = new URL(probeURL).hostname
       await restoreCloudflareSession(controller, probeHost)
       let initialPage: WebViewPageLoad = { loaded: false, finished: false, html: null }
-      try { initialPage = await loadWebViewPage(controller, probeURL) }
+      try { initialPage = await loadWebViewPage(controller, probeURL, MISSAV_ACCESS_PROBE_TIMEOUT_MS) }
       catch { initialPage = { loaded: false, finished: false, html: await controller.getHTML().catch(() => null) } }
 
-      const needsVisibleCheck = !initialPage.loaded
-        || !initialPage.finished
-        || isCloudflareHTML(initialPage.html || "")
+      // The HTML is the source of truth; WebKit can report a redirect callback
+      // as incomplete even though a usable list is already on screen.
+      const needsVisibleCheck = isCloudflareHTML(initialPage.html || "")
         || !isLikelyMissAVListingHTML(initialPage.html)
       if (needsVisibleCheck) {
-        // Keep the exact challenged route on screen so the user can complete
-        // its verification; the action is initiated only from Settings.
+        // Reload the exact route only after its window is visible. Cloudflare's
+        // challenge scripts may stall when first loaded in a hidden WebView.
         const visibleListingConfirmed = await presentVerificationPage(controller, probeURL)
         try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
-
-        // The visible page is already the exact result route being checked.
-        // Re-navigating it and then probing the other listing duplicates the
-        // same WebKit work for this route. A single accessible route does not
-        // prove that both Home and Browse are available, so continue to the
-        // remaining probe before reporting success.
         if (visibleListingConfirmed) {
           continue
         }
-      }
 
-      // Reload the exact route after closing the WebView. This confirms that
-      // the clearance was retained and that the app's actual listing HTML is
-      // available, not merely a branded shell or redirected landing page.
-      await restoreCloudflareSession(controller, probeHost)
-      let verifiedPage: WebViewPageLoad
-      try { verifiedPage = await loadWebViewPage(controller, probeURL) }
-      catch { return "unavailable" }
-      try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
-      if (isCloudflareHTML(verifiedPage.html || "")) return "incomplete"
-      if (!verifiedPage.loaded || !verifiedPage.finished || !isLikelyMissAVListingHTML(verifiedPage.html)) return "unavailable"
+        // Never retry in the background after the user closes the challenge:
+        // doing so can finish later and falsely report that the closed page was
+        // verified. Success requires observing a real listing in this window.
+        let closedPageHTML: string | null = null
+        try { closedPageHTML = await controller.getHTML() } catch { /* The view may have released its document. */ }
+        return { status: isCloudflareHTML(closedPageHTML || "") ? "incomplete" : "unavailable", probe }
+      }
     }
     missavClient.clearSearchPageCache()
-    return "accessible"
+    return { status: "accessible" }
   } finally { controller.dispose() }
 }
 
 async function presentVerificationPage(controller: WebViewController, probeURL: string): Promise<boolean> {
   let presentationClosed = false
-  let recoveryPageHTML: string | null = null
   let listingConfirmed = false
   const presentation = controller.present({ fullscreen: true, navigationTitle: "验证访问线路" }).finally(() => { presentationClosed = true })
 
+  // Let the modal become visible before navigating so Cloudflare's interactive
+  // challenge starts in the foreground on the first tap.
+  await new Promise<void>(resolve => setTimeout(resolve, 250))
+  if (!presentationClosed) void controller.loadURL(probeURL).catch(() => undefined)
+
   while (!presentationClosed) {
     await Promise.race([
-      new Promise<void>(resolve => setTimeout(resolve, 900)),
+      new Promise<void>(resolve => setTimeout(resolve, 500)),
       presentation.then(() => undefined),
     ])
     if (presentationClosed) break
@@ -157,21 +153,6 @@ async function presentVerificationPage(controller: WebViewController, probeURL: 
       listingConfirmed = true
       if (!presentationClosed) controller.dismiss()
       break
-    }
-
-    // Some challenges first redirect to a branded landing page. Once that
-    // transition occurs, retry the exact route in the visible WebView; close
-    // only after its real result cards have loaded.
-    if (html && !isCloudflareHTML(html) && isLikelyMissAVHTML(html) && html !== recoveryPageHTML) {
-      recoveryPageHTML = html
-      try {
-        const reloaded = await loadWebViewPage(controller, probeURL)
-        if (isLikelyMissAVListingHTML(reloaded.html)) {
-          listingConfirmed = true
-          if (!presentationClosed) controller.dismiss()
-          break
-        }
-      } catch { /* Leave the page open so the user can continue or close it manually. */ }
     }
   }
 

@@ -9,6 +9,11 @@ const visibleSuccessBranch = accountSource.match(/if \(visibleListingConfirmed\)
 assert.ok(visibleSuccessBranch, "The visible verification result branch should remain explicit")
 assert.match(visibleSuccessBranch[1], /\bcontinue\b/, "A verified visible route must continue checking the remaining access probes")
 assert.doesNotMatch(visibleSuccessBranch[1], /return\s+["']accessible["']/, "One verified route must not mark the whole line as accessible")
+assert.match(accountSource, /Reload the exact route only after its window is visible/)
+assert.match(accountSource, /Never retry in the background after the user closes the challenge/)
+assert.match(accountSource, /if \(!presentationClosed\) void controller\.loadURL\(probeURL\)/)
+assert.doesNotMatch(accountSource, /const verifiedPage: WebViewPageLoad[\s\S]*?await loadWebViewPage\(controller, probeURL\)/, "Closing the challenge must not trigger a hidden retry that later reports false success")
+assert.match(accountSource, /status: "incomplete" \| "unavailable"; probe: MissAVAccessProbe/)
 
 console.log("MISSAV site verification regression test passed")
 
