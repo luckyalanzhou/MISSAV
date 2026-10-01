@@ -1,4 +1,4 @@
-import { AVPlayerView, Device, Navigation, PIPStatus, Spacer, Text, VStack, ZStack, useEffect, useObservable, useState } from "scripting"
+import { AVPlayerView, Device, Navigation, PIPStatus, Text, VStack, ZStack, useEffect, useObservable, useState } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
 
@@ -88,33 +88,36 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
     return () => clearInterval(timer)
   }, [player, subtitles])
 
-  return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
     <AVPlayerView
       player={player}
       pipStatus={pipStatus}
       allowsPictureInPicturePlayback={true}
       canStartPictureInPictureAutomaticallyFromInline={true}
       updatesNowPlayingInfoCenter={true}
-      entersFullScreenWhenPlaybackBegins={true}
+      entersFullScreenWhenPlaybackBegins={false}
       exitsFullScreenWhenPlaybackEnds={false}
       videoGravity="resizeAspect"
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       ignoresSafeArea={true}
+      overlay={subtitleText ? { alignment: "bottom", content: <SubtitleCaption text={subtitleText} /> } : undefined}
     />
-    {subtitleText ? <VStack spacing={0} alignment="center" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 28, bottom: 48 }}>
-      <Spacer />
-      <Text
-        font="headline"
-        fontWeight="semibold"
-        foregroundStyle="white"
-        lineLimit={1}
-        truncationMode="tail"
-        allowsTightening={true}
-        multilineTextAlignment="center"
-        padding={{ horizontal: 14, vertical: 8 }}
-        background="rgba(0, 0, 0, 0.72)"
-        clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
-      >{subtitleText}</Text>
-    </VStack> : undefined}
   </ZStack>
+}
+
+function SubtitleCaption({ text }: { text: string }) {
+  return <VStack spacing={0} alignment="center" padding={{ horizontal: 28, bottom: 48 }}>
+    <Text
+      font="headline"
+      fontWeight="semibold"
+      foregroundStyle="white"
+      lineLimit={1}
+      truncationMode="tail"
+      allowsTightening={true}
+      multilineTextAlignment="center"
+      padding={{ horizontal: 14, vertical: 8 }}
+      background="rgba(0, 0, 0, 0.72)"
+      clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
+    >{text}</Text>
+  </VStack>
 }
