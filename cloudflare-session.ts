@@ -36,6 +36,12 @@ export async function captureCloudflareSession(controller: WebViewController, ho
 }
 
 export async function restoreCloudflareSession(controller: WebViewController, host: string): Promise<number> {
+  try {
+    const liveCookies = cloudflareCookiesForHost(await controller.getAllCookies(), host)
+    // Default WebViews share a persistent cookie store. Do not replace a
+    // newly verified clearance with an older Keychain snapshot.
+    if (liveCookies.some(cookie => cookie.name.toLowerCase() === "cf_clearance")) return liveCookies.length
+  } catch { /* Restore the saved session if the native cookie store is unavailable. */ }
   const cookies = readCloudflareSession(host)
   for (const stored of cookies) {
     try {

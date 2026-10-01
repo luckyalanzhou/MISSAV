@@ -20,7 +20,7 @@ const buildRoute = new Function("params", "MISSAV_LOCALE", "getMissAVBaseURL", r
 const probeSort = new Function("collection", sortBody)
 const buildProbes = new Function("MISSAV_COLLECTION_OPTIONS", "collectionProbeSort", probeBody)
 for (const baseURL of ["https://missav.ws/", "https://missav.ai/"]) {
-  const collectionUrl = params => buildRoute(params, locale, () => baseURL)
+  const collectionUrl = params => buildRoute.call({ collectionPaths: new Map() }, params, locale, () => baseURL)
   for (const { value } of options) {
     const route = new URL(collectionUrl({ collection: value, page: 2, sort: "released_at", filter: "individual" }))
     assert.equal(route.origin, new URL(baseURL).origin)
@@ -38,7 +38,7 @@ for (const baseURL of ["https://missav.ws/", "https://missav.ai/"]) {
     assert.equal(route.searchParams.get("sort"), hotSorts[probe.collection] || "released_at")
   }
 }
-assert.match(clientSource, /if \(SiteHTML\.isLikelyMissAVHTML\(html\)\) return html[\s\S]*?if \(!loaded \|\| !finished \|\| !html\)/)
+assert.match(clientSource, /if \(SiteHTML\.isLikelyMissAVHTML\(html\)\) \{[\s\S]*?return html[\s\S]*?if \(!loaded \|\| !finished \|\| !html\)/)
 assert.match(discoverSource, /collection: item\.value, sort: defaultCollectionSort\(item\.value\)/)
 assert.match(discoverSource, /if \(collection === "today-hot"\) return "today_views"[\s\S]*?if \(collection === "weekly-hot"\) return "weekly_views"[\s\S]*?if \(collection === "monthly-hot"\) return "monthly_views"/)
 

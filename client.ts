@@ -34,6 +34,7 @@ const SEARCH_PAGE_CACHE_TTL_MS = 45_000
 const MAX_CACHED_SEARCH_PAGES = 24
 type CachedSearchPage = { expiresAt: number; value: MissAVSearchPage }
 type PendingSearchPage = { requestId: number; forceRefresh: boolean; promise: Promise<MissAVSearchPage> }
+class MissAVPageContentError extends Error {}
 
 export const MISSAV_COLLECTION_OPTIONS: ReadonlyArray<{ value: MissAVCollection; title: string; systemImage: string }> = [
   { value: "new", title: "最近更新", systemImage: "clock.arrow.circlepath" },
@@ -66,6 +67,7 @@ export const MISSAV_FILTER_OPTIONS: ReadonlyArray<{ value: MissAVFilter; title: 
 ]
 
 class MissAVClient {
+  private collectionPaths = new Map<string, Partial<Record<MissAVCollection, string>>>()
   private searchPageCache = new Map<string, CachedSearchPage>()
   private searchPageRequests = new Map<string, PendingSearchPage>()
   private searchRequestId = 0
@@ -88,7 +90,19 @@ class MissAVClient {
 
     const requestId = ++this.searchRequestId
     const request = (async () => {
-      const html = await this.fetchHtml(url)
+      let html: string
+      try { html = await this.fetchHtml(url) }
+      catch (error) {
+        if (!(error instanceof MissAVPageContentError) || params.query || !params.collection || params.collection === "new") throw error
+        if (new URL(getMissAVBaseURL()).origin !== new URL(url).origin) throw error
+        // On a cold launch, obtain the current menu from the working Browse
+        // entry before retrying a route that did not return a document.
+        await this.fetchHtml(this.browseProbeURL())
+        if (new URL(getMissAVBaseURL()).origin !== new URL(url).origin) throw error
+        const resolvedURL = this.collectionUrl(params)
+        if (resolvedURL === url) throw error
+        html = await this.fetchHtml(resolvedURL)
+      }
       const result = SiteHTML.parseMissAVSearchPage(html, page)
       if (!params.query && page === 1 && (params.collection === undefined || params.collection === "new" || params.collection === "today-hot") && result.items.length === 0) {
         throw new Error(`首页/浏览列表没有解析到作品（${new URL(url).pathname}）。该页面可能仍被 Cloudflare 拦截，请在设置页验证访问线路后重试。`)
@@ -117,6 +131,13 @@ class MissAVClient {
     this.searchRequestId += 1
   }
 
+  rememberCollectionRoutes(html: string | null, pageURL: string): void {
+    if (!html || SiteHTML.isCloudflareChallengeHTML(html) || !SiteHTML.isLikelyMissAVHTML(html)) return
+    const origin = new URL(pageURL).origin
+    const links = SiteHTML.parseMissAVCollectionLinks(html, pageURL)
+    this.collectionPaths.set(origin, { ...this.collectionPaths.get(origin), ...links })
+  }
+
   async getVideo(item: MissAVVideoItem | string): Promise<MissAVVideoDetail> {
     const videoCode = typeof item === "string" ? SiteHTML.extractMissAVVideoCode(item) : item.videoCode
     if (!videoCode) throw new Error("缺少 MISSAV 视频标识符。")
@@ -139,8 +160,10 @@ class MissAVClient {
 
   private collectionUrl(params: MissAVSearchParams): string {
     const query = params.query?.trim()
-    const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : `${MISSAV_LOCALE}/${params.collection || "new"}`
-    const url = new URL(path, getMissAVBaseURL())
+    const baseURL = getMissAVBaseURL()
+    const collection = params.collection || "new"
+    const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : this.collectionPaths.get(new URL(baseURL).origin)?.[collection] || `${MISSAV_LOCALE}/${collection}`
+    const url = new URL(path, baseURL)
     if (params.filter) url.searchParams.set("filters", params.filter)
     if (params.sort) url.searchParams.set("sort", params.sort)
     if ((params.page || 1) > 1) url.searchParams.set("page", String(Math.max(1, Math.floor(params.page || 1))))
@@ -162,9 +185,14 @@ class MissAVClient {
       try { await captureCloudflareSession(controller, new URL(url).hostname) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
       // A valid MISSAV document is authoritative even if WebKit reports a
       // redirect/load callback as incomplete for this route.
-      if (SiteHTML.isLikelyMissAVHTML(html)) return html
-      if (!loaded || !finished || !html) throw new Error("当前域名未返回页面内容，请在设置页切换线路后重试。")
-      throw new Error("当前域名未返回可识别的 MISSAV 页面。请在设置页切换线路后重试。")
+      if (SiteHTML.isLikelyMissAVHTML(html)) {
+        this.rememberCollectionRoutes(html, url)
+        return html
+      }
+      const route = new URL(url)
+      console.warn("MISSAV page content unavailable", { url, loaded, finished, htmlLength: html?.length || 0 })
+      if (!loaded || !finished || !html) throw new MissAVPageContentError(`页面未能载入内容（${route.host}${route.pathname}）。请重试；若仍失败，请在设置页验证访问线路。`)
+      throw new MissAVPageContentError(`页面未返回可识别的 MISSAV 内容（${route.host}${route.pathname}）。请在设置页检查访问线路。`)
     } finally {
       controller.dispose()
     }

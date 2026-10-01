@@ -91,11 +91,15 @@ export type MissAVSiteVerificationResult =
 const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
 
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
-  const controller = new WebViewController()
-  try {
-    // Check the monitored Browse collections. The optional English subtitle
-    // listing is excluded because it may be empty on the shared Japanese route.
-    for (const probe of missavClient.accessProbeRoutes()) {
+  // Check the monitored Browse collections. The optional English subtitle
+  // listing is excluded because it may be empty on the shared Japanese route.
+  for (const probe of missavClient.accessProbeRoutes()) {
+    // Share cookies, not the preceding probe's document. A cancelled load
+    // must never validate the next route using the previous listing's HTML.
+    const controller = new WebViewController()
+    try {
+      // The preceding listing can reveal updated routes for the next probes.
+      probe.url = missavClient.accessProbeRoutes().find(current => current.collection === probe.collection)?.url || probe.url
       const probeURL = probe.url
       const probeHost = new URL(probeURL).hostname
       await restoreCloudflareSession(controller, probeHost)
@@ -113,6 +117,7 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
         const visibleListingConfirmed = await presentVerificationPage(controller, probeURL)
         try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
         if (visibleListingConfirmed) {
+          missavClient.rememberCollectionRoutes(await controller.getHTML().catch(() => null), probeURL)
           continue
         }
 
@@ -123,10 +128,12 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
         try { closedPageHTML = await controller.getHTML() } catch { /* The view may have released its document. */ }
         return { status: isCloudflareHTML(closedPageHTML || "") ? "incomplete" : "unavailable", probe }
       }
-    }
-    missavClient.clearSearchPageCache()
-    return { status: "accessible" }
-  } finally { controller.dispose() }
+      missavClient.rememberCollectionRoutes(initialPage.html, probeURL)
+      try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
+    } finally { controller.dispose() }
+  }
+  missavClient.clearSearchPageCache()
+  return { status: "accessible" }
 }
 
 async function presentVerificationPage(controller: WebViewController, probeURL: string): Promise<boolean> {

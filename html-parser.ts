@@ -1,5 +1,23 @@
 import { getMissAVBaseURL, resolveMissAVURL } from "./domain"
-import type { MissAVSearchPage, MissAVVideoDetail, MissAVVideoItem, MissAVVideoSource } from "./client"
+import type { MissAVCollection, MissAVSearchPage, MissAVVideoDetail, MissAVVideoItem, MissAVVideoSource } from "./client"
+
+export function parseMissAVCollectionLinks(html: string, pageURL: string = getMissAVBaseURL()): Partial<Record<MissAVCollection, string>> {
+  const links: Partial<Record<MissAVCollection, string>> = {}
+  const selectedOrigin = new URL(pageURL).origin
+  for (const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>/gi)) {
+    try {
+      const url = new URL(decodeHtml(match[1]), pageURL)
+      if (url.origin !== selectedOrigin) continue
+      const route = /^(?:\/dm\d+)?\/ja\/(new|release|uncensored-leak|english-subtitle|fc2|today-hot|weekly-hot|monthly-hot)\/?$/i.exec(url.pathname)
+      if (!route) continue
+      const collection = route[1].toLowerCase() as MissAVCollection
+      // Prefer the site's current menu routes over bare or filtered links.
+      if (links[collection] && !/^\/dm\d+\//i.test(url.pathname)) continue
+      links[collection] = url.pathname
+    } catch { /* Ignore non-URL menu actions. */ }
+  }
+  return links
+}
 
 export function parseMissAVSearchPage(html: string, page: number): MissAVSearchPage {
   return {
