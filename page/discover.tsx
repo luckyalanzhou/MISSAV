@@ -1,5 +1,5 @@
 import { Button, HStack, Image, LazyVGrid, Menu, ProgressView, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
-import { MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, missavClient, type MissAVCollection, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../client"
+import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, missavClient, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../client"
 import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
 import { MediaGridCard } from "./components/media_cards"
@@ -10,9 +10,13 @@ const filters = MISSAV_FILTER_OPTIONS.map(item => ({ ...item }))
 const sorts = MISSAV_SORT_OPTIONS.map(item => ({ ...item }))
 
 export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryChanged: () => void; toolbar?: any }) {
-  const [collection, setCollection] = useState<MissAVCollection>("new")
+  const [group, setGroup] = useState<MissAVCollectionGroup>("subtitles")
+  const [collection, setCollection] = useState<MissAVCollection>("chinese-subtitle")
+  const [categoryPath, setCategoryPath] = useState("")
+  const [categoryTitle, setCategoryTitle] = useState("")
+  const [categories, setCategories] = useState<MissAVCategoryItem[]>([])
   const [filter, setFilter] = useState<MissAVFilter>("")
-  const [sort, setSort] = useState<MissAVSort>("released_at")
+  const [sort, setSort] = useState<MissAVSort>(defaultCollectionSort("chinese-subtitle"))
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<MissAVVideoItem[]>([])
   const [hasNext, setHasNext] = useState(true)
@@ -22,10 +26,10 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
   const detailPresented = useObservable(false)
   const firstLoad = useRef(false)
   const generation = useRef(0)
-  const query = useRef<{ page: number; collection: MissAVCollection; filter: MissAVFilter; sort: MissAVSort }>({ page: 1, collection: "new", filter: "", sort: "released_at" })
+  const query = useRef<{ page: number; collection: MissAVCollection; filter: MissAVFilter; sort: MissAVSort; categoryPath: string }>({ page: 1, collection: "chinese-subtitle", filter: "", sort: defaultCollectionSort("chinese-subtitle"), categoryPath: "" })
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
 
-  async function load(next: { page?: number; collection?: MissAVCollection; filter?: MissAVFilter; sort?: MissAVSort } = {}, forceRefresh = false) {
+  async function load(next: { page?: number; collection?: MissAVCollection; filter?: MissAVFilter; sort?: MissAVSort; categoryPath?: string } = {}, forceRefresh = false) {
     const gen = ++generation.current
     const previousQuery = query.current
     const nextQuery = {
@@ -33,25 +37,33 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
       collection: next.collection ?? previousQuery.collection,
       filter: next.filter ?? previousQuery.filter,
       sort: next.sort ?? previousQuery.sort,
+      categoryPath: next.categoryPath ?? previousQuery.categoryPath,
     }
-    const queryChanged = nextQuery.page !== previousQuery.page || nextQuery.collection !== previousQuery.collection || nextQuery.filter !== previousQuery.filter || nextQuery.sort !== previousQuery.sort
+    const queryChanged = nextQuery.page !== previousQuery.page || nextQuery.collection !== previousQuery.collection || nextQuery.filter !== previousQuery.filter || nextQuery.sort !== previousQuery.sort || nextQuery.categoryPath !== previousQuery.categoryPath
     query.current = nextQuery
     // Reflect the requested category immediately so a slow request doesn't
     // make a successful tap look like it was ignored.
     setPage(nextQuery.page); setCollection(nextQuery.collection); setFilter(nextQuery.filter); setSort(nextQuery.sort)
-    if (queryChanged) { setItems([]); setHasNext(true) }
+    setCategoryPath(nextQuery.categoryPath)
+    if (queryChanged) { setItems([]); setCategories([]); setHasNext(true) }
     setLoading(true); setError(null)
     try {
       const result = await missavClient.searchVideoPage(nextQuery, { forceRefresh })
       if (gen !== generation.current) return
-      setItems(result.items); setHasNext(result.hasNext); setPage(result.page)
+      setItems(result.items); setCategories(result.categories || []); setHasNext(result.hasNext); setPage(result.page)
     } catch (reason) { if (gen === generation.current) setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { if (gen === generation.current) setLoading(false) }
   }
-  function loadOnce() { if (firstLoad.current) return; firstLoad.current = true; void load({ page: 1, collection: "new", filter: "", sort: "released_at" }) }
+  function loadOnce() { if (firstLoad.current) return; firstLoad.current = true; void load() }
+  function selectCollection(value: MissAVCollection) {
+    setCategoryTitle("")
+    void load({ page: 1, collection: value, categoryPath: "", filter: "", sort: defaultCollectionSort(value) })
+  }
   function open(video: MissAVVideoItem) { setSelected(video); detailPresented.setValue(true) }
-  useEffect(() => { if (items.length) scrollProxy.current?.scrollTo("discover-results-top", "top") }, [page, collection, filter, sort])
-  const title = collections.find(item => item.value === collection)?.title ?? "最近更新"
+  useEffect(() => { if (items.length || categories.length) scrollProxy.current?.scrollTo("discover-results-top", "top") }, [page, collection, filter, sort, categoryPath])
+  const subcollections = collectionOptionsForGroup(group)
+  const directoryMode = isMissAVDirectoryCollection(collection) && !categoryPath
+  const title = categoryTitle || collections.find(item => item.value === collection)?.title || "中文字幕"
   const filterTitle = filters.find(item => item.value === filter)?.title ?? "全部作品"
   const sortTitle = sorts.find(item => item.value === sort)?.title ?? "发行日期"
   const hero = page === 1 ? items[0] : undefined
@@ -63,19 +75,26 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
       <VStack key="discover-results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
-            {collections.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === collection} action={() => { void load({ page: 1, collection: item.value, sort: defaultCollectionSort(item.value) }) }} />)}
+            {MISSAV_COLLECTION_GROUPS.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === group} action={() => { setGroup(item.value); selectCollection(item.defaultCollection) }} />)}
           </HStack>
         </ScrollView>
 
+        {subcollections.length > 1 ? <ScrollView axes="horizontal" scrollIndicator="hidden">
+          <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
+            {subcollections.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === collection} action={() => selectCollection(item.value)} />)}
+          </HStack>
+        </ScrollView> : undefined}
+
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
+          {categoryPath ? <Button title={`返回${collections.find(item => item.value === collection)?.title || "分类"}`} systemImage="chevron.left" action={() => selectCollection(collection)} /> : undefined}
+          {!directoryMode ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
             <Menu label={<OptionChip title={filterTitle} systemImage="line.3.horizontal.decrease" />}>{filters.map(item => <Button key={item.value || "all"} title={item.title} systemImage={item.value === filter ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, filter: item.value }) }} />)}</Menu>
             <Menu label={<OptionChip title={sortTitle} systemImage="arrow.up.arrow.down" />}>{sorts.map(item => <Button key={item.value} title={item.title} systemImage={item.value === sort ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, sort: item.value }) }} />)}</Menu>
             <Spacer />
             {loading && items.length ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : undefined}
-          </HStack>
+          </HStack> : undefined}
 
-          {loading && items.length === 0 ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 360 }} /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load({}, true) }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection: "new", filter: "", sort: "released_at" }, true) }} actionTitle="重置筛选" /> : <>
+          {directoryMode ? <DirectoryContent categories={categories} loading={loading} error={error} onRetry={() => { void load({}, true) }} onSelect={item => { setCategoryTitle(item.title); void load({ page: 1, categoryPath: item.path, filter: "", sort: "released_at" }) }} /> : loading && items.length === 0 ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 360 }} /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load({}, true) }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection, filter: "", sort: defaultCollectionSort(collection) }, true) }} actionTitle="重置筛选" /> : <>
             {hero ? <DiscoverHero video={hero} eyebrow="本栏精选" onOpen={open} /> : undefined}
             <HStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
               <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{page === 1 ? "更多作品" : title}</Text>
@@ -85,18 +104,26 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
           </>}
 
           {error && items.length ? <StateView title="刷新失败" description="正在显示上次结果。" kind="error" action={() => { void load({}, true) }} actionTitle="重试" /> : undefined}
-          {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load({ page: page - 1 }) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load({ page: page + 1 }) }} /></HStack> : undefined}
+          {items.length || categories.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load({ page: page - 1 }) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load({ page: page + 1 }) }} /></HStack> : undefined}
         </VStack>
       </VStack>
     </ScrollView>}}</ScrollViewReader>
   </ZStack>
 }
 
-function defaultCollectionSort(collection: MissAVCollection): MissAVSort {
-  if (collection === "today-hot") return "today_views"
-  if (collection === "weekly-hot") return "weekly_views"
-  if (collection === "monthly-hot") return "monthly_views"
-  return "released_at"
+function DirectoryContent(props: { categories: MissAVCategoryItem[]; loading: boolean; error: string | null; onRetry: () => void; onSelect: (item: MissAVCategoryItem) => void }) {
+  if (props.loading && !props.categories.length) return <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 360 }} />
+  if (props.error && !props.categories.length) return <StateView title="分类加载失败" description={props.error} kind="error" action={props.onRetry} />
+  if (!props.categories.length) return <StateView title="暂无分类" description="网页暂未返回可选择的分类。" kind="empty" action={props.onRetry} actionTitle="重试" />
+  return <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 240 }, spacing: 12 }]} spacing={12}>
+    {props.categories.map(item => <Button key={item.path} action={() => props.onSelect(item)} buttonStyle="plain" contentShape="rect">
+      <HStack spacing={10} padding={12} frame={{ maxWidth: "infinity", minHeight: 64, alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12 }}>
+        {item.coverUrl ? <Image imageUrl={item.coverUrl} resizable aspectRatio={{ value: 1, contentMode: "fill" }} frame={{ width: 44, height: 44 }} clipped /> : <Image systemName="folder" foregroundStyle={ACCENT} />}
+        <Text font="subheadline" lineLimit={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>{item.title}</Text>
+        <Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" />
+      </HStack>
+    </Button>)}
+  </LazyVGrid>
 }
 
 function CategoryChip(props: { title: string; active: boolean; action: () => void }) {

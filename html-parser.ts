@@ -1,5 +1,6 @@
 import { getMissAVBaseURL, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
-import type { MissAVCollection, MissAVSearchPage, MissAVVideoDetail, MissAVVideoItem, MissAVVideoSource } from "./client"
+import { MISSAV_COLLECTION_OPTIONS, type MissAVDirectoryCollection } from "./collections"
+import type { MissAVCategoryItem, MissAVCollection, MissAVSearchPage, MissAVVideoDetail, MissAVVideoItem, MissAVVideoSource } from "./client"
 
 export function parseMissAVCollectionLinks(html: string, pageURL: string = getMissAVBaseURL()): Partial<Record<MissAVCollection, string>> {
   const links: Partial<Record<MissAVCollection, string>> = {}
@@ -8,15 +9,37 @@ export function parseMissAVCollectionLinks(html: string, pageURL: string = getMi
     try {
       const url = new URL(decodeHtml(match[1]), pageURL)
       if (url.origin !== selectedOrigin) continue
-      const route = /^(?:\/dm\d+)?\/([a-z]{2,3})\/(new|release|uncensored-leak|english-subtitle|fc2|today-hot|weekly-hot|monthly-hot)\/?$/i.exec(url.pathname)
+      const route = /^(?:\/dm\d+)?\/([a-z]{2,3})\/(.+?)\/?$/i.exec(url.pathname)
       if (!route || route[1].toLowerCase() !== MISSAV_LOCALE) continue
-      const collection = route[2].toLowerCase() as MissAVCollection
+      const collection = MISSAV_COLLECTION_OPTIONS.find(option => option.value.toLowerCase() === route[2].toLowerCase())?.value
+      if (!collection) continue
       // Prefer the site's current menu routes over bare or filtered links.
       if (links[collection] && !/^\/dm\d+\//i.test(url.pathname)) continue
       links[collection] = url.pathname
     } catch { /* Ignore non-URL menu actions. */ }
   }
   return links
+}
+
+export function parseMissAVDirectoryPage(html: string, page: number, collection: MissAVDirectoryCollection, pageURL: string): MissAVSearchPage {
+  const categories: MissAVCategoryItem[] = []
+  const seen = new Set<string>()
+  const heading = /<h1\b[^>]*>[\s\S]*?<\/h1>/i.exec(html)
+  const body = heading ? html.slice(heading.index + heading[0].length).split(/<footer\b/i)[0] : ""
+  const kind = collection === "actresses/ranking" ? "actresses" : collection
+  for (const match of body.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    try {
+      const url = new URL(decodeHtml(match[1]), pageURL)
+      const route = /^\/(?:dm\d+\/)?cn\/(actresses|genres|makers)\/([^/]+)\/?$/.exec(url.pathname)
+      if (url.origin !== new URL(pageURL).origin || !route || route[1] !== kind || route[2] === "ranking" || seen.has(url.pathname)) continue
+      const image = firstMatch(match[2], /(<img\b[^>]*>)/i)
+      const title = cleanText(match[2]) || cleanText(attr(image, "alt"))
+      if (!title) continue
+      seen.add(url.pathname)
+      categories.push({ title, path: url.pathname, coverUrl: normalizeMissAVUrl(attr(image, "data-src") || attr(image, "src")) || undefined })
+    } catch { /* Ignore malformed or unrelated directory links. */ }
+  }
+  return { items: [], categories, page, hasNext: hasNextPage(html, page), title: cleanText(heading?.[0] || "") }
 }
 
 export function parseMissAVSearchPage(html: string, page: number): MissAVSearchPage {
@@ -70,7 +93,7 @@ export function extractMissAVVideoCode(value: string | undefined | null): string
   if (!value) return null
   const path = value.replace(/^https?:\/\/[^/]+/i, "").split(/[?#]/)[0].replace(/^\/dm\d+/i, "").replace(/^\/(?:ja|en|cn|ko|ms|th|de|fr|vi|id|fil|pt)\//i, "/")
   const slug = decodeURIComponent(path.replace(/^\/+|\/+$/g, ""))
-  return slug && !/^(?:new|release|uncensored-leak|english-subtitle|fc2|today-hot|weekly-hot|monthly-hot|search|genres|makers|actresses)$/i.test(slug) ? slug.toLowerCase() : null
+  return slug && !MISSAV_COLLECTION_OPTIONS.some(option => option.value.toLowerCase() === slug.toLowerCase()) && !/^(?:english-subtitle|search)$/i.test(slug) ? slug.toLowerCase() : null
 }
 
 export function parseMissAVVideoItems(html: string): MissAVVideoItem[] {
@@ -99,7 +122,7 @@ export function parseMissAVVideoItems(html: string): MissAVVideoItem[] {
     const duration = cleanText(firstMatch(cardHtml, /(\d{1,2}:\d{2}(?::\d{2})?)/i))
     if (!title || title.length < 3 || !duration || (!coverUrl && !imageTitle)) continue
     seen.add(videoCode)
-    result.push({ title, videoCode, detailPath: normalizeMissAVUrl(detailPath), coverUrl, duration, badge: /uncensored-leak/i.test(videoCode) ? "无码流出" : /english-subtitle/i.test(videoCode) ? "英文字幕" : undefined })
+    result.push({ title, videoCode, detailPath: normalizeMissAVUrl(detailPath), coverUrl, duration, badge: /chinese-subtitle/i.test(videoCode) ? "中文字幕" : /uncensored-leak/i.test(videoCode) ? "无码流出" : /english-subtitle/i.test(videoCode) ? "英文字幕" : undefined })
     index += Math.max(0, cardLinks.length - 1)
   }
   return result

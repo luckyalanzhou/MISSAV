@@ -3,6 +3,9 @@ import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVU
 import { captureCloudflareSession, restoreCloudflareSession } from "./cloudflare-session"
 import * as SiteHTML from "./html-parser"
 import { loadWebViewPage } from "./webview"
+import { defaultMissAVCollectionSort, isMissAVDirectoryCollection, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, type MissAVCollection, type MissAVFilter, type MissAVSort } from "./collections"
+
+export { collectionOptionsForGroup, defaultMissAVCollectionSort, isMissAVDirectoryCollection, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort } from "./collections"
 
 export {
   cleanText,
@@ -12,6 +15,7 @@ export {
   isLikelyMissAVHTML,
   isLikelyMissAVListingHTML,
   normalizeMissAVUrl,
+  parseMissAVDirectoryPage,
   parseMissAVSources,
   parseMissAVVideoItems,
 } from "./html-parser"
@@ -20,15 +24,13 @@ export const MISSAV_BASE_URL = () => getMissAVBaseURL()
 export { MISSAV_LOCALE } from "./domain"
 const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
 
-export type MissAVCollection = "new" | "release" | "uncensored-leak" | "english-subtitle" | "fc2" | "today-hot" | "weekly-hot" | "monthly-hot"
-export type MissAVSort = "released_at" | "published_at" | "today_views" | "weekly_views" | "monthly_views" | "views" | "saved"
-export type MissAVFilter = "" | "individual" | "multiple" | "uncensored" | "uncensored-leak" | "english-subtitle" | "chinese-subtitle" | "jav"
 export type MissAVVideoItem = { title: string; videoCode: string; detailPath: string; coverUrl: string; duration?: string; badge?: string }
 export type MissAVVideoSource = { label: string; qualityHeight?: number; url: string; type: "application/vnd.apple.mpegurl" | "video/mp4" }
 export type MissAVVideoDetail = { title: string; videoCode: string; coverUrl: string; duration?: string; releaseDate?: string; actress?: string; genres: string[]; maker?: string; sources: MissAVVideoSource[]; watchUrl: string }
-export type MissAVSearchParams = { collection?: MissAVCollection; query?: string; page?: number; sort?: MissAVSort; filter?: MissAVFilter }
-export type MissAVSearchPage = { items: MissAVVideoItem[]; page: number; hasNext: boolean; title: string }
-export type MissAVAccessProbe = { collection: MissAVCollection; title: string; url: string }
+export type MissAVCategoryItem = { title: string; path: string; coverUrl?: string }
+export type MissAVSearchParams = { collection?: MissAVCollection; query?: string; page?: number; sort?: MissAVSort; filter?: MissAVFilter; categoryPath?: string }
+export type MissAVSearchPage = { items: MissAVVideoItem[]; categories?: MissAVCategoryItem[]; page: number; hasNext: boolean; title: string }
+export type MissAVAccessProbe = { collection: MissAVCollection; title: string; url: string; params: MissAVSearchParams }
 
 const SEARCH_PAGE_CACHE_TTL_MS = 45_000
 const MAX_CACHED_SEARCH_PAGES = 24
@@ -36,19 +38,9 @@ type CachedSearchPage = { expiresAt: number; value: MissAVSearchPage }
 type PendingSearchPage = { requestId: number; forceRefresh: boolean; promise: Promise<MissAVSearchPage> }
 class MissAVPageContentError extends Error {}
 
-export const MISSAV_COLLECTION_OPTIONS: ReadonlyArray<{ value: MissAVCollection; title: string; systemImage: string }> = [
-  { value: "new", title: "最近更新", systemImage: "clock.arrow.circlepath" },
-  { value: "release", title: "新作", systemImage: "sparkles" },
-  { value: "uncensored-leak", title: "无码流出", systemImage: "lock.open" },
-  { value: "english-subtitle", title: "英文字幕", systemImage: "captions.bubble" },
-  { value: "fc2", title: "FC2", systemImage: "person.crop.rectangle.stack" },
-  { value: "today-hot", title: "今日观看最多", systemImage: "flame" },
-  { value: "weekly-hot", title: "本周观看最多", systemImage: "chart.line.uptrend.xyaxis" },
-  { value: "monthly-hot", title: "本月观看最多", systemImage: "calendar" },
-]
 export const MISSAV_SORT_OPTIONS: ReadonlyArray<{ value: MissAVSort; title: string; systemImage: string }> = [
   { value: "released_at", title: "发行日期", systemImage: "calendar.badge.clock" },
-  { value: "published_at", title: "最近收录", systemImage: "clock" },
+  { value: "published_at", title: "最近更新", systemImage: "clock" },
   { value: "today_views", title: "今日观看", systemImage: "sun.max" },
   { value: "weekly_views", title: "本周观看", systemImage: "calendar.day.timeline.left" },
   { value: "monthly_views", title: "本月观看", systemImage: "calendar" },
@@ -57,17 +49,14 @@ export const MISSAV_SORT_OPTIONS: ReadonlyArray<{ value: MissAVSort; title: stri
 ]
 export const MISSAV_FILTER_OPTIONS: ReadonlyArray<{ value: MissAVFilter; title: string; systemImage: string }> = [
   { value: "", title: "全部作品", systemImage: "rectangle.grid.1x2" },
-  { value: "individual", title: "单体作品", systemImage: "person" },
+  { value: "individual", title: "单人作品", systemImage: "person" },
   { value: "multiple", title: "多人作品", systemImage: "person.3" },
-  { value: "jav", title: "日本 AV", systemImage: "film" },
-  { value: "uncensored", title: "无码", systemImage: "lock.open" },
-  { value: "uncensored-leak", title: "无码流出", systemImage: "arrow.down.circle" },
-  { value: "english-subtitle", title: "英文字幕", systemImage: "captions.bubble" },
   { value: "chinese-subtitle", title: "中文字幕", systemImage: "character.book.closed" },
 ]
 
 class MissAVClient {
   private collectionPaths = new Map<string, Partial<Record<MissAVCollection, string>>>()
+  private verificationRequests = new Map<string, MissAVSearchParams>()
   private searchPageCache = new Map<string, CachedSearchPage>()
   private searchPageRequests = new Map<string, PendingSearchPage>()
   private searchRequestId = 0
@@ -93,7 +82,7 @@ class MissAVClient {
       let html: string
       try { html = await this.fetchHtml(url) }
       catch (error) {
-        if (!(error instanceof MissAVPageContentError) || params.query || !params.collection || params.collection === "new") throw error
+        if (!(error instanceof MissAVPageContentError) || params.query || params.categoryPath || !params.collection || params.collection === "new") throw error
         if (new URL(getMissAVBaseURL()).origin !== new URL(url).origin) throw error
         // On a cold launch, obtain the current menu from the working Browse
         // entry before retrying a route that did not return a document.
@@ -103,7 +92,9 @@ class MissAVClient {
         if (resolvedURL === url) throw error
         html = await this.fetchHtml(resolvedURL)
       }
-      const result = SiteHTML.parseMissAVSearchPage(html, page)
+      const result = params.collection && isMissAVDirectoryCollection(params.collection) && !params.categoryPath && !params.query
+        ? SiteHTML.parseMissAVDirectoryPage(html, page, params.collection, url)
+        : SiteHTML.parseMissAVSearchPage(html, page)
       if (!params.query && page === 1 && (params.collection === undefined || params.collection === "new" || params.collection === "today-hot") && result.items.length === 0) {
         throw new Error(`首页/浏览列表没有解析到作品（${new URL(url).pathname}）。该页面可能仍被 Cloudflare 拦截，请在设置页验证访问线路后重试。`)
       }
@@ -118,6 +109,9 @@ class MissAVClient {
         this.searchPageCache.set(url, { expiresAt: Date.now() + SEARCH_PAGE_CACHE_TTL_MS, value })
       }
       return value
+    }).catch(error => {
+      if (params.collection && error instanceof Error && error.message.includes("当前线路需要 Cloudflare 验证")) this.verificationRequests.set(url, { ...params })
+      throw error
     }).finally(() => {
       if (this.searchPageRequests.get(url)?.requestId === requestId) this.searchPageRequests.delete(url)
     })
@@ -129,6 +123,11 @@ class MissAVClient {
     this.searchPageCache.clear()
     this.searchPageRequests.clear()
     this.searchRequestId += 1
+  }
+
+  clearVerificationCollections(): void {
+    const origin = new URL(getMissAVBaseURL()).origin
+    for (const url of this.verificationRequests.keys()) if (new URL(url).origin === origin) this.verificationRequests.delete(url)
   }
 
   rememberCollectionRoutes(html: string | null, pageURL: string): void {
@@ -147,14 +146,25 @@ class MissAVClient {
   }
 
   watchUrl(videoCode: string): string { return new URL(`${MISSAV_LOCALE}/${SiteHTML.extractMissAVVideoCode(videoCode) || videoCode}`, getMissAVBaseURL()).toString() }
-  browseProbeURL(): string { return this.collectionUrl({ collection: "new", page: 1, sort: "released_at" }) }
+  browseProbeURL(): string { return this.collectionUrl({ collection: "new", page: 1, sort: defaultMissAVCollectionSort("new") }) }
   accessProbeRoutes(): MissAVAccessProbe[] {
-    return MISSAV_COLLECTION_OPTIONS.filter(({ value }) => value !== "english-subtitle").map(({ value, title }) => ({
-      collection: value,
-      title,
-      url: this.collectionUrl({ collection: value, page: 1, sort: collectionProbeSort(value) }),
-    }))
+    // Check one real entry per group and any routes that actually challenged
+    // the user, rather than adding dozens of hidden requests on every check.
+    const origin = new URL(getMissAVBaseURL()).origin
+    const requests: MissAVSearchParams[] = MISSAV_COLLECTION_GROUPS.map(group => ({ collection: group.defaultCollection, page: 1, sort: defaultMissAVCollectionSort(group.defaultCollection) }))
+    for (const [url, params] of this.verificationRequests) if (new URL(url).origin === origin) requests.push(params)
+    const seen = new Set<string>()
+    const probes: MissAVAccessProbe[] = []
+    for (const params of requests) {
+      const url = this.collectionUrl(params)
+      if (seen.has(url)) continue
+      seen.add(url)
+      const collection = params.collection!
+      probes.push({ collection, title: MISSAV_COLLECTION_OPTIONS.find(option => option.value === collection)!.title, url, params: { ...params } })
+    }
+    return probes
   }
+  accessProbeURL(probe: MissAVAccessProbe): string { return this.collectionUrl(probe.params) }
   playbackHeaders(watchUrl: string, resourceUrl: string): Record<string, string> {
     const localizedWatchURL = resolveMissAVURL(watchUrl)
     return { ...this.requestHeaders(localizedWatchURL), Referer: localizedWatchURL, Origin: new URL(localizedWatchURL).origin, Accept: "*/*" }
@@ -167,8 +177,14 @@ class MissAVClient {
     const collection = params.collection || "new"
     const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : this.collectionPaths.get(new URL(baseURL).origin)?.[collection] || `${MISSAV_LOCALE}/${collection}`
     const url = new URL(path, baseURL)
-    if (params.filter) url.searchParams.set("filters", params.filter)
-    if (params.sort) url.searchParams.set("sort", params.sort)
+    if (params.categoryPath && !query) {
+      const categoryURL = new URL(params.categoryPath, baseURL)
+      if (categoryURL.origin !== url.origin || !/^\/(?:dm\d+\/)?cn\/(?:actresses|genres|makers)\/[^/]+\/?$/.test(categoryURL.pathname) || /\/ranking\/?$/.test(categoryURL.pathname)) throw new Error("分类链接不属于当前中文站点。")
+      url.pathname = categoryURL.pathname
+    }
+    const directory = isMissAVDirectoryCollection(collection) && !params.categoryPath && !query
+    if (!directory && params.filter) url.searchParams.set("filters", params.filter)
+    if (!directory && params.sort) url.searchParams.set("sort", params.sort)
     if ((params.page || 1) > 1) url.searchParams.set("page", String(Math.max(1, Math.floor(params.page || 1))))
     return url.toString()
   }
@@ -205,14 +221,7 @@ class MissAVClient {
 }
 
 function copySearchPage(value: MissAVSearchPage): MissAVSearchPage {
-  return { ...value, items: value.items.map(item => ({ ...item })) }
+  return { ...value, items: value.items.map(item => ({ ...item })), ...(value.categories ? { categories: value.categories.map(item => ({ ...item })) } : {}) }
 }
 
 export const missavClient = new MissAVClient()
-
-function collectionProbeSort(collection: MissAVCollection): MissAVSort {
-  if (collection === "today-hot") return "today_views"
-  if (collection === "weekly-hot") return "weekly_views"
-  if (collection === "monthly-hot") return "monthly_views"
-  return "released_at"
-}

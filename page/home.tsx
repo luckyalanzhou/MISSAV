@@ -31,7 +31,7 @@ export function MediaHomePage(props: { revision: number; onFavouriteChanged: () 
     setRemoteError(null)
     const results = await Promise.allSettled([
       missavClient.searchVideoPage({ collection: "today-hot", page: 1, sort: "today_views", filter: "" }, { forceRefresh: force }),
-      missavClient.searchVideoPage({ collection: "new", page: 1, sort: "released_at", filter: "" }, { forceRefresh: force }),
+      missavClient.searchVideoPage({ collection: "new", page: 1, sort: "published_at", filter: "" }, { forceRefresh: force }),
     ])
     if (current !== remoteGeneration.current) return
     setRemote(previous => ({

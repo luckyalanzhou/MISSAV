@@ -1,5 +1,5 @@
 import { getMissAVBaseURL, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
-import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVListingHTML, missavClient, parseMissAVVideoItems, type MissAVAccessProbe, type MissAVVideoItem } from "./client"
+import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, isLikelyMissAVListingHTML, isMissAVDirectoryCollection, missavClient, parseMissAVDirectoryPage, parseMissAVVideoItems, type MissAVAccessProbe, type MissAVVideoItem } from "./client"
 import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
 import { loadWebViewPage, type WebViewPageLoad } from "./webview"
 
@@ -90,15 +90,15 @@ export type MissAVSiteVerificationResult =
 const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
 
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
-  // Check the monitored Browse collections. The optional English subtitle
-  // listing is excluded because it may be empty on the shared Chinese route.
+  // Check real group entries and recently challenged subcategories.
+  // Group headings are never treated as page URLs.
   for (const probe of missavClient.accessProbeRoutes()) {
     // Share cookies, not the preceding probe's document. A cancelled load
     // must never validate the next route using the previous listing's HTML.
     const controller = new WebViewController()
     try {
       // The preceding listing can reveal updated routes for the next probes.
-      probe.url = missavClient.accessProbeRoutes().find(current => current.collection === probe.collection)?.url || probe.url
+      probe.url = missavClient.accessProbeURL(probe)
       const probeURL = probe.url
       const probeHost = new URL(probeURL).hostname
       await restoreCloudflareSession(controller, probeHost)
@@ -109,11 +109,11 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
       // The HTML is the source of truth; WebKit can report a redirect callback
       // as incomplete even though a usable list is already on screen.
       const needsVisibleCheck = isCloudflareHTML(initialPage.html || "")
-        || !isLikelyMissAVListingHTML(initialPage.html)
+        || !isProbePageHTML(initialPage.html, probe)
       if (needsVisibleCheck) {
         // Reload the exact route only after its window is visible. Cloudflare's
         // challenge scripts may stall when first loaded in a hidden WebView.
-        const visibleListingConfirmed = await presentVerificationPage(controller, probeURL)
+        const visibleListingConfirmed = await presentVerificationPage(controller, probe)
         try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
         if (visibleListingConfirmed) {
           missavClient.rememberCollectionRoutes(await controller.getHTML().catch(() => null), probeURL)
@@ -132,10 +132,19 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
     } finally { controller.dispose() }
   }
   missavClient.clearSearchPageCache()
+  missavClient.clearVerificationCollections()
   return { status: "accessible" }
 }
 
-async function presentVerificationPage(controller: WebViewController, probeURL: string): Promise<boolean> {
+function isProbePageHTML(html: string | null, probe: MissAVAccessProbe): boolean {
+  if (!isLikelyMissAVHTML(html) || isCloudflareHTML(html)) return false
+  return isMissAVDirectoryCollection(probe.collection) && !probe.params.categoryPath
+    ? Boolean(parseMissAVDirectoryPage(html, 1, probe.collection, probe.url).categories?.length)
+    : isLikelyMissAVListingHTML(html)
+}
+
+async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe): Promise<boolean> {
+  const probeURL = probe.url
   let presentationClosed = false
   let listingConfirmed = false
   const presentation = controller.present({ fullscreen: true, navigationTitle: "验证访问线路" }).finally(() => { presentationClosed = true })
@@ -155,7 +164,7 @@ async function presentVerificationPage(controller: WebViewController, probeURL: 
     try { html = await controller.getHTML() } catch { /* Keep waiting for the page to update. */ }
     if (presentationClosed) break
 
-    if (isLikelyMissAVListingHTML(html)) {
+    if (isProbePageHTML(html, probe)) {
       listingConfirmed = true
       if (!presentationClosed) controller.dismiss()
       break
@@ -167,7 +176,7 @@ async function presentVerificationPage(controller: WebViewController, probeURL: 
   // If the user dismissed manually just after the challenge completed, inspect
   // the page already in the WebView before deciding to perform another request.
   if (!listingConfirmed) {
-    try { listingConfirmed = isLikelyMissAVListingHTML(await controller.getHTML()) }
+    try { listingConfirmed = isProbePageHTML(await controller.getHTML(), probe) }
     catch { /* The WebView may already have released its document on dismissal. */ }
   }
   return listingConfirmed

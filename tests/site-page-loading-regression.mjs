@@ -1,29 +1,6 @@
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
-import { stripTypeScriptTypes } from "node:module"
-
-// Execute production modules with only the iOS native bridge mocked.
-const modules = new Map()
-const scriptingStub = moduleURL(`
-  export function fetch() { throw new Error("Unexpected HTTP fetch") }
-  export const Script = { exit(result) {
-    if (!result.passed || result.error) throw new Error(result.error || "Regression failed")
-    console.log(result.message)
-  } }
-`)
-function moduleURL(source) { return `data:text/javascript;base64,${Buffer.from(source).toString("base64")}` }
-function compile(relative) {
-  const url = new URL(relative, import.meta.url)
-  if (modules.has(url.href)) return modules.get(url.href)
-  const source = stripTypeScriptTypes(readFileSync(url, "utf8"))
-    .replace(/\bfrom\s+["']([^"']+)["']/g, (_, specifier) => {
-      const dependency = specifier === "scripting" ? scriptingStub : compile(new URL(`${specifier}.ts`, url))
-      return `from ${JSON.stringify(dependency)}`
-    })
-  const compiled = moduleURL(source)
-  modules.set(url.href, compiled)
-  return compiled
-}
+import { compileProductionModule as compile } from "./production-module.mjs"
 
 const storage = new Map()
 const keychain = new Map()
@@ -34,6 +11,7 @@ const parser = await import(compile("../html-parser.ts"))
 const session = await import(compile("../cloudflare-session.ts"))
 const { setMissAVBaseURL, getMissAVLandingURL, resolveMissAVURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE } = await import(compile("../domain.ts"))
 const { missavClient } = await import(compile("../client.ts"))
+const { MISSAV_COLLECTION_OPTIONS, isMissAVDirectoryCollection } = await import(compile("../collections.ts"))
 const { openMissAVSiteVerification } = await import(compile("../account.ts"))
 
 const nativeTimeout = globalThis.setTimeout
@@ -211,22 +189,23 @@ try {
 
   // Settings refreshes the next probe's dynamic path after reading the first menu.
   missavClient.collectionPaths.clear()
+  missavClient.clearVerificationCollections()
   requests.length = 0
   const probeMenu = menu + '<a href="/dm333/cn/fc2">FC2</a>'
   sharedCookies = [cookie("verified-live")]
   responseFor = url => listing("verified-005", probeMenu)
   assert.equal((await openMissAVSiteVerification()).status, "accessible")
-  assert.equal(requests.length, 7)
+  assert.equal(requests.length, 5)
   assert.ok(requests.every(value => /^\/(?:dm\d+\/)?cn\//.test(new URL(value).pathname)), "Every Settings verification probe uses cn")
-  assert.equal(new URL(requests[1]).pathname, "/dm635/cn/release")
-  assert.equal(new URL(requests[2]).pathname, "/dm817/cn/uncensored-leak")
-  assert.equal(new URL(requests[3]).pathname, "/dm333/cn/fc2")
+  assert.deepEqual(requests.map(value => new URL(value).pathname), ["/cn/chinese-subtitle", "/cn/new", "/cn/siro", "/dm817/cn/uncensored-leak", "/cn/madou"])
   assert.ok(controllers.every(controller => controller.disposed))
   sharedCookies = []
   await session.restoreCloudflareSession(jar, "missav.ws")
   assert.equal(writes.pop().value, "verified-live", "Settings must persist already accessible native sessions as well")
 
   let needsChallenge = true
+  responseFor = () => challenge
+  await assert.rejects(missavClient.searchVideoPage({ collection: "release" }, { forceRefresh: true }), /Cloudflare/)
   const nativePresent = MockWebView.prototype.present
   MockWebView.prototype.present = function() {
     needsChallenge = false
@@ -237,17 +216,77 @@ try {
   requests.length = 0
   assert.equal((await openMissAVSiteVerification()).status, "accessible")
   assert.equal(modalCount, 1, "A Settings challenge presents the exact route, then auto dismisses on real listing content")
-  assert.equal(requests.length, 8, "One visible successful route must still check all remaining probes")
+  assert.equal(requests.length, 7, "Check five group entries and the recently challenged subcategory, with one visible reload")
+  assert.equal(missavClient.accessProbeRoutes().length, 5, "Successful verification clears remembered challenge routes")
 
   // A failed later probe must not read the preceding controller's listing.
   modalCount = 0
-  responseFor = url => url.pathname.endsWith("/new") ? finalHTML : null
+  responseFor = url => url.pathname.endsWith("/chinese-subtitle") ? finalHTML : null
   modalContent = null
   MockWebView.prototype.present = function() { modalCount++; return Promise.resolve() }
   const unavailable = await openMissAVSiteVerification()
   assert.equal(unavailable.status, "unavailable")
-  assert.equal(unavailable.probe.collection, "release")
+  assert.equal(unavailable.probe.collection, "new")
   assert.equal(modalCount, 1)
+  assert.ok(controllers.every(controller => controller.disposed))
+  // Every video subcategory uses its own menu URL, retaining Chinese versions.
+  modalCount = 0
+  const siteMenu = MISSAV_COLLECTION_OPTIONS.map((option, index) => `<a href="/dm${100 + index}/cn/${option.value}">${option.title}</a>`).join("")
+  missavClient.rememberCollectionRoutes(listing("bootstrap-000", siteMenu), "https://missav.ws/cn/new")
+  responseFor = url => {
+    const index = MISSAV_COLLECTION_OPTIONS.findIndex(option => url.pathname.endsWith(`/cn/${option.value}`))
+    assert.ok(index >= 0)
+    return listing(`fixture-${index}-chinese-subtitle`, siteMenu)
+  }
+  for (const [index, option] of MISSAV_COLLECTION_OPTIONS.entries()) {
+    if (isMissAVDirectoryCollection(option.value)) continue
+    const result = await missavClient.searchVideoPage({ collection: option.value, page: 2, filter: "individual", sort: "views" }, { forceRefresh: true })
+    const route = new URL(requests.at(-1))
+    assert.equal(route.pathname, `/dm${100 + index}/cn/${option.value}`)
+    assert.equal(route.searchParams.get("page"), "2")
+    assert.equal(route.searchParams.get("filters"), "individual")
+    assert.equal(route.searchParams.get("sort"), "views")
+    assert.deepEqual(result.items.map(item => item.videoCode), [`fixture-${index}-chinese-subtitle`])
+    assert.equal(result.items[0].badge, "中文字幕")
+    assert.match(result.items[0].detailPath, /\/cn\/fixture-\d+-chinese-subtitle$/)
+  }
+  assert.equal(modalCount, 0, "Browsing any subcategory cannot present verification UI")
+
+  // Native directory pages exclude menu links and open actual leaf listings.
+  for (const collection of ["actresses", "actresses/ranking", "genres", "makers"]) {
+    const kind = collection === "actresses/ranking" ? "actresses" : collection
+    responseFor = () => `<html><header>MISSAV<a href="/cn/${kind}/menu-only">Menu</a></header><h1>分类目录</h1>
+      <a href="/dm22/cn/${kind}/example"><img src="/cover.jpg" alt="分类测试">分类测试</a>
+      <a href="/dm22/cn/${kind}/example">duplicate</a><a href="/cn/${kind}/ranking">ranking</a>
+      <a href="https://other.example/cn/${kind}/external">external</a>
+      <a href="/cn/${collection}?page=2">下一页</a>${"fixture ".repeat(80)}<footer></footer></html>`
+    const directory = await missavClient.searchVideoPage({ collection, sort: "views", filter: "multiple" }, { forceRefresh: true })
+    assert.deepEqual(directory.items, [])
+    assert.deepEqual(directory.categories, [{ title: "分类测试", path: `/dm22/cn/${kind}/example`, coverUrl: "https://missav.ws/cover.jpg" }])
+    assert.equal(directory.hasNext, true)
+    assert.equal(new URL(requests.at(-1)).searchParams.get("sort"), null)
+    responseFor = () => listing("category-001", siteMenu)
+    const leaf = await missavClient.searchVideoPage({ collection, categoryPath: directory.categories[0].path, page: 2, filter: "chinese-subtitle", sort: "saved" }, { forceRefresh: true })
+    assert.equal(leaf.items[0].videoCode, "category-001")
+    const route = new URL(requests.at(-1))
+    assert.equal(route.pathname, `/dm22/cn/${kind}/example`)
+    assert.equal(route.searchParams.get("filters"), "chinese-subtitle")
+    assert.equal(route.searchParams.get("sort"), "saved")
+    assert.equal(route.searchParams.get("page"), "2")
+  }
+  // A challenged category leaf must not be "verified" using its directory root.
+  responseFor = () => challenge
+  await assert.rejects(missavClient.searchVideoPage({ collection: "genres", categoryPath: "/dm22/cn/genres/example", page: 2, filter: "multiple", sort: "views" }, { forceRefresh: true }), /Cloudflare/)
+  requests.length = 0
+  responseFor = () => listing("verified-leaf-001", siteMenu)
+  assert.equal((await openMissAVSiteVerification()).status, "accessible")
+  assert.equal(requests.length, 6)
+  const verifiedLeafURL = new URL(requests.at(-1))
+  assert.equal(verifiedLeafURL.pathname, "/dm22/cn/genres/example")
+  assert.equal(verifiedLeafURL.searchParams.get("page"), "2")
+  assert.equal(verifiedLeafURL.searchParams.get("filters"), "multiple")
+  assert.equal(verifiedLeafURL.searchParams.get("sort"), "views")
+  assert.equal(modalCount, 0, "An accessible category leaf is a video listing, not an empty directory")
   assert.ok(controllers.every(controller => controller.disposed))
   // Existing pure parser/session/account tests use only Script.exit reporting.
   // Execute them here without pretending to run the native Scripting host.

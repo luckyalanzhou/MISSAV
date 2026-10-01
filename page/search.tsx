@@ -1,5 +1,5 @@
 import { Button, Divider, HStack, Image, LazyHStack, LazyVGrid, LazyVStack, Picker, ProgressView, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
-import { missavClient, type MissAVCollection, type MissAVVideoItem } from "../client"
+import { defaultMissAVCollectionSort, missavClient, type MissAVCollection, type MissAVVideoItem } from "../client"
 import { ACCESSORY_ALIGNMENT_WIDTH, ACCENT, MEDIA_ROW_HEIGHT, MEDIA_ROW_RADIUS, MEDIA_ROW_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
 import { MediaArtwork, MediaTile } from "./components/media_cards"
@@ -15,10 +15,11 @@ function initialSearchResultLayout(): SearchResultLayout {
 }
 
 const discoveryCollections: ReadonlyArray<{ collection: MissAVCollection; title: string; subtitle: string; systemImage: string }> = [
-  { collection: "new", title: "最近更新", subtitle: "按收录时间浏览近期内容", systemImage: "clock.arrow.circlepath" },
-  { collection: "release", title: "新作", subtitle: "浏览近期发行的作品", systemImage: "sparkles" },
-  { collection: "english-subtitle", title: "英文字幕", subtitle: "浏览带英文字幕的作品", systemImage: "captions.bubble" },
-  { collection: "weekly-hot", title: "本周热门", subtitle: "浏览本周观看较多的作品", systemImage: "chart.line.uptrend.xyaxis" },
+  { collection: "chinese-subtitle", title: "中文字幕", subtitle: "浏览网站中文字幕栏目", systemImage: "captions.bubble" },
+  { collection: "new", title: "日本 AV", subtitle: "浏览最近更新，更多分类见浏览页", systemImage: "film" },
+  { collection: "siro", title: "素人", subtitle: "浏览 SIRO，更多分类见浏览页", systemImage: "person" },
+  { collection: "uncensored-leak", title: "无码影片", subtitle: "浏览无码流出，更多分类见浏览页", systemImage: "lock.open" },
+  { collection: "madou", title: "亚洲 AV", subtitle: "浏览麻豆传媒，更多子栏目见浏览页", systemImage: "globe.asia.australia" },
 ]
 
 export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryChanged: () => void; toolbar?: any }) {
@@ -60,7 +61,7 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
     try {
       const result = nextSource.kind === "query"
         ? await missavClient.searchVideoPage({ query: nextSource.query, page: nextPage, sort: "released_at", filter: "" }, { forceRefresh })
-        : await missavClient.searchVideoPage({ collection: nextSource.collection, page: nextPage, sort: "released_at", filter: "" }, { forceRefresh })
+        : await missavClient.searchVideoPage({ collection: nextSource.collection, page: nextPage, sort: defaultMissAVCollectionSort(nextSource.collection), filter: "" }, { forceRefresh })
       if (gen !== generation.current) return
       setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1)
     } catch (reason) {
