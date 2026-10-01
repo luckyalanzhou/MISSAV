@@ -111,7 +111,7 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
     {subtitleText ? <SubtitleCaption text={subtitleText} /> : undefined}
     <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 14, top: 12 }}>
       <HStack frame={{ maxWidth: "infinity", alignment: "leading" }}>
-        <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" background="rgba(0, 0, 0, 0.62)" clipShape={{ type: "rect", cornerRadius: 22, style: "continuous" }} accessibilityLabel="关闭播放器">
+        <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭播放器">
           <Image systemName="xmark" font="headline" foregroundStyle="white" />
         </Button>
         <Spacer />

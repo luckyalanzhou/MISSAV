@@ -11,7 +11,7 @@ export type SubtitleTrack = {
   prefixMaxEndSeconds: number[]
 }
 
-const SUBTITLE_DIRECTORY = Path.join(FileManager.documentsDirectory, "MISSAV Subtitles")
+const SUBTITLE_DIRECTORY_NAME = "MISSAV Subtitles"
 const SUBTITLE_ENABLED_KEY_PREFIX = "missav_subtitle_enabled_v1_"
 const MAX_SUBTITLE_CHARACTERS = 8_000_000
 const MAX_SUBTITLE_CUES = 25_000
@@ -97,7 +97,7 @@ export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTra
 export async function saveMissAVSubtitle(videoCode: string, source: string): Promise<number> {
   const track = parseSubtitleTrack(source)
   if (!track.cues.length) throw new Error("没有识别到有效字幕。请选择标准 SRT 或 WebVTT 字幕文件。")
-  await FileManager.createDirectory(SUBTITLE_DIRECTORY, true)
+  await FileManager.createDirectory(subtitleDirectoryPath(), true)
   await FileManager.writeAsString(subtitleFilePath(videoCode), serializeSubtitleTrack(track))
   return track.cues.length
 }
@@ -107,7 +107,11 @@ function serializeSubtitleTrack(track: SubtitleTrack): string {
 }
 
 function subtitleFilePath(videoCode: string): string {
-  return Path.join(SUBTITLE_DIRECTORY, `${normalizeVideoCode(videoCode)}.srt`)
+  return Path.join(subtitleDirectoryPath(), `${normalizeVideoCode(videoCode)}.srt`)
+}
+
+function subtitleDirectoryPath(): string {
+  return Path.join(FileManager.documentsDirectory, SUBTITLE_DIRECTORY_NAME)
 }
 
 function subtitleEnabledKey(videoCode: string): string {
