@@ -4,6 +4,8 @@ import { ACCENT, Badge, MEDIA_HERO_RADIUS, PAGE_BOTTOM_PADDING, PAGE_PADDING, PR
 import { chooseAndPresentMissAVPlayer } from "../player"
 import { getMissAVAccountSnapshot, getMissAVWebsiteSavedState, setMissAVWebsiteSaved } from "../account"
 import { isMissAVFavourite, rememberMissAVDetail, toggleMissAVFavourite } from "../storage"
+import { hasMissAVSubtitle, isMissAVSubtitleEnabled, saveMissAVSubtitle, setMissAVSubtitleEnabled } from "../subtitles"
+import { loadWebViewPage } from "../webview"
 import { MediaArtwork } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
@@ -14,6 +16,9 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
   const [detailError, setDetailError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [openingSource, setOpeningSource] = useState<string | null>(null)
+  const [subtitleAvailable, setSubtitleAvailable] = useState(false)
+  const [subtitleEnabled, setSubtitleEnabled] = useState(true)
+  const [subtitleBusy, setSubtitleBusy] = useState(false)
   const [favourite, setFavourite] = useState<boolean | null>(null)
   const [favouriteError, setFavouriteError] = useState<string | null>(null)
   const [websiteSaved, setWebsiteSaved] = useState<boolean | null>(null)
@@ -23,6 +28,7 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
   const tagSearchPresented = useObservable(false)
   const generation = useRef(0)
   const favouriteGeneration = useRef(0)
+  const subtitleGeneration = useRef(0)
 
   async function load() {
     const current = ++generation.current
@@ -40,6 +46,14 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
 
   useEffect(() => {
     setDetail(null); setOpeningSource(null); void load()
+    setSubtitleAvailable(false)
+    setSubtitleEnabled(true)
+    const subtitleRequest = ++subtitleGeneration.current
+    void hasMissAVSubtitle(props.video.videoCode).then(available => {
+      if (subtitleRequest !== subtitleGeneration.current) return
+      setSubtitleAvailable(available)
+      setSubtitleEnabled(isMissAVSubtitleEnabled(props.video.videoCode))
+    }).catch(reason => console.error("读取字幕状态失败:", reason))
     const current = ++favouriteGeneration.current
     setFavourite(null)
     setFavouriteError(null)
@@ -63,6 +77,80 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
     }
     catch (reason) { await Dialog.alert({ title: "播放失败", message: reason instanceof Error ? reason.message : String(reason) }) }
     finally { setOpeningSource(null) }
+  }
+
+  async function importSubtitleFile() {
+    if (subtitleBusy) return
+    setSubtitleBusy(true)
+    let pickedFile = false
+    let importedCount: number | null = null
+    let importError: string | null = null
+    try {
+      const paths = await DocumentPicker.pickFiles()
+      if (!paths?.length) return
+      pickedFile = true
+      const content = await FileManager.readAsString(paths[0])
+      importedCount = await saveMissAVSubtitle(props.video.videoCode, content)
+      setMissAVSubtitleEnabled(props.video.videoCode, true)
+      setSubtitleAvailable(true)
+      setSubtitleEnabled(true)
+    } catch (reason) {
+      importError = reason instanceof Error ? reason.message : String(reason)
+    } finally {
+      if (pickedFile) {
+        try { DocumentPicker.stopAcessingSecurityScopedResources() }
+        catch (reason) { console.error("释放字幕文件权限失败:", reason) }
+      }
+      setSubtitleBusy(false)
+    }
+    if (importError) await Dialog.alert({ title: "字幕导入失败", message: importError })
+    else if (importedCount !== null) await Dialog.alert({ title: "字幕已导入", message: `已为 ${code} 保存 ${importedCount} 条字幕；播放时将按视频时间显示。` })
+  }
+
+  function toggleSubtitle() {
+    const next = !subtitleEnabled
+    try {
+      setMissAVSubtitleEnabled(props.video.videoCode, next)
+      setSubtitleEnabled(next)
+    } catch (reason) {
+      void Dialog.alert({ title: "字幕设置保存失败", message: reason instanceof Error ? reason.message : String(reason) })
+    }
+  }
+
+  async function searchSubtitleCat() {
+    if (subtitleBusy) return
+    setSubtitleBusy(true)
+    const controller = new WebViewController()
+    let opened = false
+    try {
+      await Dialog.alert({ title: "搜索外挂字幕", message: `将打开 SubtitleCat 并搜索作品番号 ${code}。请下载匹配的 SRT/VTT 字幕文件；关闭网页后选择下载文件导入。` })
+      const page = await loadWebViewPage(controller, "https://subtitlecat.com/")
+      if (!page.loaded || !page.finished || !page.html) throw new Error("SubtitleCat 页面加载失败，请检查网络后重试。")
+      try {
+        await controller.evaluateJavaScript<string>(`(() => {
+          const value = ${JSON.stringify(code)};
+          const inputs = Array.from(document.querySelectorAll("input"));
+          const input = inputs.find(item => item.type !== "hidden" && /search|subtitle/i.test([item.type, item.name, item.placeholder, item.getAttribute("aria-label") || ""].join(" ")))
+            || inputs.find(item => item.type === "text");
+          if (!input) return "search-field-not-found";
+          input.value = value;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+          if (input.form) { input.form.requestSubmit(); return "submitted"; }
+          const button = input.closest("form")?.querySelector("button[type=submit], input[type=submit]") || document.querySelector("button[type=submit], input[type=submit]");
+          if (button) { button.click(); return "submitted"; }
+          return "filled";
+        })()`)
+      } catch (reason) { console.error("自动填写 SubtitleCat 搜索词失败:", reason) }
+      await controller.present({ fullscreen: true, navigationTitle: `SubtitleCat · ${code}` })
+      opened = true
+    } catch (reason) {
+      await Dialog.alert({ title: "无法打开字幕搜索", message: reason instanceof Error ? reason.message : String(reason) })
+    } finally {
+      controller.dispose()
+      setSubtitleBusy(false)
+    }
+    if (opened) await importSubtitleFile()
   }
 
   async function changeFavourite() {
@@ -100,6 +188,11 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
 
       <VStack spacing={10} frame={{ maxWidth: "infinity" }}>
         {primarySource ? <Button action={() => { void play(primarySource) }} disabled={Boolean(openingSource)} buttonStyle="borderedProminent" controlSize="large" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: PRIMARY_ACTION_HEIGHT }} accessibilityLabel={openingSource === primarySource.url ? `正在打开 ${primarySource.label}` : `播放 ${primarySource.label}`}><HStack spacing={8}>{openingSource === primarySource.url ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="play.fill" />}<Text font="headline" fontWeight="bold">{openingSource === primarySource.url ? "正在打开" : `播放 ${primarySource.label}`}</Text></HStack></Button> : loading ? <StateView title="正在获取播放信息" loading presentation="row" /> : undefined}
+        {primarySource ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
+          <Button action={() => { void searchSubtitleCat() }} disabled={subtitleBusy || Boolean(openingSource)} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`在 SubtitleCat 搜索 ${code}`}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>{subtitleBusy ? "正在搜索…" : "搜索字幕"}</Text></HStack></Button>
+          <Button action={() => { void importSubtitleFile() }} disabled={subtitleBusy || Boolean(openingSource)} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel="从文件导入 SRT 或 WebVTT 字幕"><HStack spacing={7}><Image systemName="captions.bubble" /><Text>{subtitleBusy ? "请稍候" : subtitleAvailable ? "替换字幕" : "导入字幕"}</Text></HStack></Button>
+        </HStack> : undefined}
+        {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle="plain" frame={{ maxWidth: "infinity", alignment: "leading" }} accessibilityLabel={subtitleEnabled ? "关闭本作品外挂字幕" : "开启本作品外挂字幕"><HStack spacing={6}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text font="caption" foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"}>{subtitleEnabled ? "已关联字幕，播放时按进度显示（轻点关闭）" : "已关联字幕，当前关闭（轻点开启）"}</Text></HStack></Button> : <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">先按番号搜索并下载字幕，再导入 .srt 或 .vtt 文件；播放器会按播放进度显示字幕。</Text>}
         {primarySource ? <Button title="本地字幕叠层测试" systemImage="captions.bubble" buttonStyle="bordered" disabled={Boolean(openingSource)} action={() => { void play(primarySource, true) }} /> : undefined}
         <EnvironmentValuesReader keys={["horizontalSizeClass", "dynamicTypeSize"]}>{environment => {
           const vertical = environment.horizontalSizeClass === "compact" || isAccessibilityTypeSize(environment.dynamicTypeSize)

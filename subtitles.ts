@@ -1,3 +1,5 @@
+import { Path } from "scripting"
+
 export type SubtitleCue = {
   startSeconds: number
   endSeconds: number
@@ -8,6 +10,11 @@ export type SubtitleTrack = {
   cues: SubtitleCue[]
   prefixMaxEndSeconds: number[]
 }
+
+const SUBTITLE_DIRECTORY = Path.join(FileManager.documentsDirectory, "MISSAV Subtitles")
+const SUBTITLE_ENABLED_KEY_PREFIX = "missav_subtitle_enabled_v1_"
+const MAX_SUBTITLE_CHARACTERS = 8_000_000
+const MAX_SUBTITLE_CUES = 25_000
 
 const parseTimestamp = (value: string): number | null => {
   const long = value.trim().match(/^(\d+):(\d{2}):(\d{2})[,.](\d{1,3})$/)
@@ -40,6 +47,7 @@ const normalizeCueText = (lines: string[]): string => lines
 
 export function parseSubtitleTrack(source: string): SubtitleTrack {
   const normalized = source.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n")
+  if (normalized.length > MAX_SUBTITLE_CHARACTERS) throw new Error("字幕文件过大，无法导入。")
   const cues: SubtitleCue[] = []
 
   for (const block of normalized.split(/\n\s*\n/)) {
@@ -54,6 +62,7 @@ export function parseSubtitleTrack(source: string): SubtitleTrack {
     const text = normalizeCueText(lines.slice(timingIndex + 1))
     if (startSeconds === null || endSeconds === null || endSeconds <= startSeconds || !text) continue
     cues.push({ startSeconds, endSeconds, text })
+    if (cues.length > MAX_SUBTITLE_CUES) throw new Error("字幕条目过多，无法导入。")
   }
 
   cues.sort((left, right) => left.startSeconds - right.startSeconds || left.endSeconds - right.endSeconds)
@@ -63,6 +72,61 @@ export function parseSubtitleTrack(source: string): SubtitleTrack {
     return maxEndSeconds
   })
   return { cues, prefixMaxEndSeconds }
+}
+
+export async function hasMissAVSubtitle(videoCode: string): Promise<boolean> {
+  return FileManager.exists(subtitleFilePath(videoCode))
+}
+
+export function isMissAVSubtitleEnabled(videoCode: string): boolean {
+  return Storage.get<boolean>(subtitleEnabledKey(videoCode)) !== false
+}
+
+export function setMissAVSubtitleEnabled(videoCode: string, enabled: boolean): void {
+  Storage.set(subtitleEnabledKey(videoCode), enabled)
+}
+
+export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTrack | null> {
+  const path = subtitleFilePath(videoCode)
+  if (!await FileManager.exists(path)) return null
+  const track = parseSubtitleTrack(await FileManager.readAsString(path))
+  if (!track.cues.length) throw new Error("已保存的字幕文件没有有效字幕，请重新导入。")
+  return track
+}
+
+export async function saveMissAVSubtitle(videoCode: string, source: string): Promise<number> {
+  const track = parseSubtitleTrack(source)
+  if (!track.cues.length) throw new Error("没有识别到有效字幕。请选择标准 SRT 或 WebVTT 字幕文件。")
+  await FileManager.createDirectory(SUBTITLE_DIRECTORY, true)
+  await FileManager.writeAsString(subtitleFilePath(videoCode), serializeSubtitleTrack(track))
+  return track.cues.length
+}
+
+function serializeSubtitleTrack(track: SubtitleTrack): string {
+  return track.cues.map((cue, index) => `${index + 1}\n${formatTimestamp(cue.startSeconds)} --> ${formatTimestamp(cue.endSeconds)}\n${cue.text}`).join("\n\n")
+}
+
+function subtitleFilePath(videoCode: string): string {
+  return Path.join(SUBTITLE_DIRECTORY, `${normalizeVideoCode(videoCode)}.srt`)
+}
+
+function subtitleEnabledKey(videoCode: string): string {
+  return `${SUBTITLE_ENABLED_KEY_PREFIX}${normalizeVideoCode(videoCode)}`
+}
+
+function normalizeVideoCode(videoCode: string): string {
+  const safeCode = videoCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "")
+  if (!safeCode) throw new Error("作品番号无效，无法关联字幕。")
+  return safeCode
+}
+
+function formatTimestamp(seconds: number): string {
+  const totalMilliseconds = Math.max(0, Math.round(seconds * 1000))
+  const hours = Math.floor(totalMilliseconds / 3_600_000)
+  const minutes = Math.floor(totalMilliseconds / 60_000) % 60
+  const wholeSeconds = Math.floor(totalMilliseconds / 1000) % 60
+  const milliseconds = totalMilliseconds % 1000
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(wholeSeconds).padStart(2, "0")},${String(milliseconds).padStart(3, "0")}`
 }
 
 export function findSubtitleCue(track: SubtitleTrack, timeSeconds: number): SubtitleCue | null {

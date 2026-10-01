@@ -1,4 +1,4 @@
-import { AVPlayerView, Device, Navigation, PIPStatus, Text, VStack, VideoPlayer, ZStack, useEffect, useObservable, useState } from "scripting"
+import { AVPlayerView, Button, Device, HStack, Image, Navigation, PIPStatus, Spacer, Text, VStack, VideoPlayer, ZStack, useEffect, useObservable, useState } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
 
@@ -68,6 +68,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
 }
 
 function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subtitles?: SubtitleTrack }) {
+  const dismiss = Navigation.useDismiss()
   const pipStatus = useObservable<PIPStatus>()
   const [subtitleText, setSubtitleText] = useState("")
 
@@ -88,12 +89,10 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
     return () => clearInterval(timer)
   }, [player, subtitles])
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
-    {/* VideoPlayer owns the subtitle layer; AVPlayerView remains for native PiP when no subtitle track is attached. */}
+  return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
     {subtitles
       ? <VideoPlayer
         player={player}
-        overlay={subtitleText ? { alignment: "bottom", content: <SubtitleCaption text={subtitleText} /> } : undefined}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         ignoresSafeArea={true}
       />
@@ -109,6 +108,16 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         ignoresSafeArea={true}
       />}
+    {subtitleText ? <SubtitleCaption text={subtitleText} /> : undefined}
+    <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 14, top: 12 }}>
+      <HStack frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" background="rgba(0, 0, 0, 0.62)" clipShape={{ type: "rect", cornerRadius: 22, style: "continuous" }} accessibilityLabel="关闭播放器">
+          <Image systemName="xmark" font="headline" foregroundStyle="white" />
+        </Button>
+        <Spacer />
+      </HStack>
+      <Spacer />
+    </VStack>
   </ZStack>
 }
 
