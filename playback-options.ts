@@ -7,7 +7,7 @@ export type PlaybackOptions = {
 }
 
 export const SUBTITLE_FONT_RANGE = { min: 14, max: 32, step: 1 }
-export const SUBTITLE_POSITION_RANGE = { min: 24, max: 160, step: 4 }
+export const SUBTITLE_POSITION_RANGE = { min: 24, max: 160, step: 1 }
 export const DEFAULT_PLAYBACK_OPTIONS: PlaybackOptions = {
   subtitleFontSize: 17,
   subtitleBottomInset: 64,
