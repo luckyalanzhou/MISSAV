@@ -1,5 +1,5 @@
 import { Script } from "scripting"
-import { findSubtitleCue, parseSubtitleTrack } from "../subtitles"
+import { findSubtitleCue, MISSAV_SUBTITLE_PREVIEW, parseSubtitleTrack } from "../subtitles"
 
 const assert = (condition: boolean, message: string): void => {
   if (!condition) throw new Error(message)
@@ -19,8 +19,9 @@ const run = (): void => {
   const overlapping = parseSubtitleTrack(`1\n00:00:01,000 --> 00:00:05,000\n较早但较长\n\n2\n00:00:03,000 --> 00:00:04,000\n较新的重叠字幕`)
   assert(findSubtitleCue(overlapping, 3.5)?.text === "较新的重叠字幕", "重叠区间应优先选择最近开始的字幕")
   assert(findSubtitleCue(overlapping, Number.NaN) === null, "无效播放时间不应显示字幕")
+  assert(findSubtitleCue(MISSAV_SUBTITLE_PREVIEW, 30)?.text === "暂停时字幕保持，继续播放后按时间更新", "本地叠层预览应在视频播放超过 20 秒后仍可见")
 
-  Script.exit({ passed: 8, message: "MISSAV subtitle parser and timing regression tests passed" })
+  Script.exit({ passed: 9, message: "MISSAV subtitle parser and timing regression tests passed" })
 }
 
 try { run() } catch (error) { Script.exit({ passed: 0, error: error instanceof Error ? error.message : String(error) }) }

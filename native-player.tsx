@@ -1,4 +1,4 @@
-import { AVPlayerView, Device, Navigation, PIPStatus, Text, VStack, ZStack, useEffect, useObservable, useState } from "scripting"
+import { AVPlayerView, Device, Navigation, PIPStatus, Text, VStack, VideoPlayer, ZStack, useEffect, useObservable, useState } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
 
@@ -89,19 +89,26 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
   }, [player, subtitles])
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
-    <AVPlayerView
-      player={player}
-      pipStatus={pipStatus}
-      allowsPictureInPicturePlayback={true}
-      canStartPictureInPictureAutomaticallyFromInline={true}
-      updatesNowPlayingInfoCenter={true}
-      entersFullScreenWhenPlaybackBegins={false}
-      exitsFullScreenWhenPlaybackEnds={false}
-      videoGravity="resizeAspect"
-      frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      ignoresSafeArea={true}
-      overlay={subtitleText ? { alignment: "bottom", content: <SubtitleCaption text={subtitleText} /> } : undefined}
-    />
+    {/* VideoPlayer owns the subtitle layer; AVPlayerView remains for native PiP when no subtitle track is attached. */}
+    {subtitles
+      ? <VideoPlayer
+        player={player}
+        overlay={subtitleText ? { alignment: "bottom", content: <SubtitleCaption text={subtitleText} /> } : undefined}
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+        ignoresSafeArea={true}
+      />
+      : <AVPlayerView
+        player={player}
+        pipStatus={pipStatus}
+        allowsPictureInPicturePlayback={true}
+        canStartPictureInPictureAutomaticallyFromInline={true}
+        updatesNowPlayingInfoCenter={true}
+        entersFullScreenWhenPlaybackBegins={false}
+        exitsFullScreenWhenPlaybackEnds={false}
+        videoGravity="resizeAspect"
+        frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+        ignoresSafeArea={true}
+      />}
   </ZStack>
 }
 

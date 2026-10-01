@@ -93,6 +93,6 @@ export const MISSAV_SUBTITLE_PREVIEW = parseSubtitleTrack(`1
 拖动播放进度，字幕应切换到这一行
 
 3
-00:00:11,500 --> 00:00:19,500
+00:00:11,500 --> 99:59:59,999
 暂停时字幕保持，继续播放后按时间更新
 `)
