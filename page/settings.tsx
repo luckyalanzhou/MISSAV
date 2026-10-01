@@ -5,7 +5,7 @@ import { ACCENT } from "../design"
 import { getMissAVBaseURL, getMissAVDomainLabel, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../domain"
 import { ChangelogPage } from "./changelog"
 
-export function SettingsPage(props: { onDomainChanged: () => void; onAccountChanged?: () => void; onAccessReady?: () => void; accessRequired?: boolean }) {
+export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerified?: () => void; onAccountChanged?: () => void; onAccessReady?: () => void; accessRequired?: boolean }) {
   const dismiss = Navigation.useDismiss()
   const [domain, setDomain] = useState<MissAVBaseURL>(() => getMissAVBaseURL())
   const [customDomain, setCustomDomain] = useState("")
@@ -50,7 +50,8 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccountChan
     setAccountMessage(null)
     try {
       const result = await openMissAVSiteVerification()
-      setAccountMessage(result === "accessible" ? "验证通过：所选域名的首页热门和浏览列表均可载入。" : result === "incomplete" ? "仍检测到 Cloudflare 验证。请在弹出的页面完成验证，关闭后再试。" : "验证窗口未返回有效作品列表；可能是线路拦截或网络异常，请完成验证或切换域名后重试。")
+      setAccountMessage(result === "accessible" ? "验证通过：所选域名的首页热门和浏览列表均可载入，内容已刷新。" : result === "incomplete" ? "Cloudflare 验证尚未完成。请重新点击“验证访问线路”完成挑战；验证通过后页面会自动关闭并刷新内容。" : "验证窗口未返回有效作品列表；可能是线路拦截或网络异常，请完成验证或切换域名后重试。")
+      if (result === "accessible") props.onAccessVerified?.()
     } catch (reason) {
       setAccountMessage(reason instanceof Error ? reason.message : "访问线路验证窗口当前无法打开。")
     } finally { setAccountBusy(false) }

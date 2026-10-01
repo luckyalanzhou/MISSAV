@@ -93,7 +93,6 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
     // Verify the same two result routes used by the home and Browse screens.
     // Passing only one category can incorrectly report success while another
     // category still receives a Cloudflare challenge.
-    let verificationWindowShown = false
     for (const probeURL of missavClient.accessProbeURLs()) {
       const probeHost = new URL(probeURL).hostname
       await restoreCloudflareSession(controller, probeHost)
@@ -101,16 +100,14 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
       try { initialPage = await loadWebViewPage(controller, probeURL) }
       catch { initialPage = { loaded: false, finished: false, html: await controller.getHTML().catch(() => null) } }
 
-      const needsVisibleCheck = !verificationWindowShown
-        || !initialPage.loaded
+      const needsVisibleCheck = !initialPage.loaded
         || !initialPage.finished
         || isCloudflareHTML(initialPage.html || "")
         || !isLikelyMissAVListingHTML(initialPage.html)
       if (needsVisibleCheck) {
         // Keep the exact challenged route on screen so the user can complete
         // its verification; the action is initiated only from Settings.
-        await controller.present({ fullscreen: true, navigationTitle: "验证访问线路" })
-        verificationWindowShown = true
+        await presentVerificationPage(controller, probeURL, probeHost)
         try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
       }
 
@@ -125,8 +122,47 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
       if (isCloudflareHTML(verifiedPage.html || "")) return "incomplete"
       if (!verifiedPage.loaded || !verifiedPage.finished || !isLikelyMissAVListingHTML(verifiedPage.html)) return "unavailable"
     }
+    missavClient.clearSearchPageCache()
     return "accessible"
   } finally { controller.dispose() }
+}
+
+async function presentVerificationPage(controller: WebViewController, probeURL: string, probeHost: string): Promise<void> {
+  let presentationClosed = false
+  let recoveryPageHTML: string | null = null
+  const presentation = controller.present({ fullscreen: true, navigationTitle: "验证访问线路" }).finally(() => { presentationClosed = true })
+
+  while (!presentationClosed) {
+    await new Promise<void>(resolve => setTimeout(resolve, 900))
+    if (presentationClosed) break
+    let html: string | null = null
+    try { html = await controller.getHTML() } catch { /* Keep waiting for the page to update. */ }
+    if (presentationClosed) break
+
+    if (isLikelyMissAVListingHTML(html)) {
+      try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
+      if (!presentationClosed) controller.dismiss()
+      break
+    }
+
+    // Some challenges first redirect to a branded landing page. Once that
+    // transition occurs, retry the exact route in the visible WebView; close
+    // only after its real result cards have loaded.
+    if (html && !isCloudflareHTML(html) && isLikelyMissAVHTML(html) && html !== recoveryPageHTML) {
+      recoveryPageHTML = html
+      try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
+      try {
+        const reloaded = await loadWebViewPage(controller, probeURL)
+        if (isLikelyMissAVListingHTML(reloaded.html)) {
+          try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
+          if (!presentationClosed) controller.dismiss()
+          break
+        }
+      } catch { /* Leave the page open so the user can continue or close it manually. */ }
+    }
+  }
+
+  await presentation
 }
 
 export function signOutMissAV(): void {

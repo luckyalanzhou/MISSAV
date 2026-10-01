@@ -32,6 +32,7 @@ export default function MISSAVHomeScreenView() {
   const bumpHistory = () => setHistoryRevision(value => value + 1)
   const bumpDomain = () => setDomainRevision(value => value + 1)
   const bumpAccount = () => setAccountRevision(value => value + 1)
+  const refreshAfterDomainOrAccessChange = () => { lastRemoteLoad.current = 0; bumpDomain() }
 
   async function load(forceRemote = false) {
     const current = ++loadGeneration.current
@@ -94,7 +95,7 @@ export default function MISSAVHomeScreenView() {
       {data.trending.length ? <VideoSection title="今日热门" subtitle="今日观看较多的作品" items={data.trending} {...common} /> : undefined}
       {!loading && !data.recent.length && !data.trending.length ? <StateView title="暂时没有可显示的内容" description={error || "前往浏览或搜索页面开始探索。"} systemImage="play.rectangle" /> : undefined}
       {error && (data.recent.length || data.trending.length) ? <HStack spacing={8}><Image systemName="wifi.exclamationmark" foregroundStyle="secondaryLabel" /><Text font="footnote" foregroundStyle="secondaryLabel">{error}</Text></HStack> : undefined}
-      <NavigationLink destination={<SettingsPage onDomainChanged={bumpDomain} onAccountChanged={bumpAccount} />} buttonStyle="plain"><HStack spacing={12} padding={{ vertical: 8 }} frame={{ maxWidth: "infinity", minHeight: 54 }} contentShape="rect"><Image systemName="gearshape" foregroundStyle="secondaryLabel" frame={{ width: 28 }} /><Text font="body" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }}>设置</Text><Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" /></HStack></NavigationLink>
+      <NavigationLink destination={<SettingsPage onDomainChanged={refreshAfterDomainOrAccessChange} onAccessVerified={refreshAfterDomainOrAccessChange} onAccountChanged={bumpAccount} />} buttonStyle="plain"><HStack spacing={12} padding={{ vertical: 8 }} frame={{ maxWidth: "infinity", minHeight: 54 }} contentShape="rect"><Image systemName="gearshape" foregroundStyle="secondaryLabel" frame={{ width: 28 }} /><Text font="body" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }}>设置</Text><Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" /></HStack></NavigationLink>
     </VStack>
   </ScrollView></ZStack></NavigationStack>
 }

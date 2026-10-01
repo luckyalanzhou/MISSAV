@@ -27,7 +27,7 @@ export function HomePage() {
     </ToolbarItem>
     <ToolbarItem placement="principal"><Text font="headline" fontWeight="semibold">{["首页", "浏览", "资料库", "搜索"][selection.value] || "MISSAV"}</Text></ToolbarItem>
     <ToolbarItem placement="topBarTrailing" sharedBackgroundVisibility="visible">
-      <Button action={() => settingsPresented.setValue(true)} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" navigationDestination={{ isPresented: settingsPresented, content: <SettingsPage onDomainChanged={bumpDomain} onAccountChanged={bumpAccount} /> }} accessibilityLabel="设置"><Image systemName="gearshape" font="headline" foregroundStyle="label" /></Button>
+      <Button action={() => settingsPresented.setValue(true)} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" navigationDestination={{ isPresented: settingsPresented, content: <SettingsPage onDomainChanged={bumpDomain} onAccessVerified={bumpDomain} onAccountChanged={bumpAccount} /> }} accessibilityLabel="设置"><Image systemName="gearshape" font="headline" foregroundStyle="label" /></Button>
     </ToolbarItem>
     {supportsMinimization ? <ToolbarItem placement="topBarTrailing" sharedBackgroundVisibility="visible">
       <Button action={() => { if (!Script.isMinimized()) Script.minimize().catch(() => {}) }} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="最小化浏览器"><Image systemName="arrow.down.right.and.arrow.up.left" font="headline" foregroundStyle="label" /></Button>

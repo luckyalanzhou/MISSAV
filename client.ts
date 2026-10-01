@@ -110,6 +110,12 @@ class MissAVClient {
     return tracked.then(copySearchPage)
   }
 
+  clearSearchPageCache(): void {
+    this.searchPageCache.clear()
+    this.searchPageRequests.clear()
+    this.searchRequestId += 1
+  }
+
   async getVideo(item: MissAVVideoItem | string): Promise<MissAVVideoDetail> {
     const videoCode = typeof item === "string" ? SiteHTML.extractMissAVVideoCode(item) : item.videoCode
     if (!videoCode) throw new Error("缺少 MISSAV 视频标识符。")
