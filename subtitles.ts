@@ -58,7 +58,7 @@ export function parseSubtitleTrack(source: string): SubtitleTrack {
     const endToken = endValue?.trim().split(/\s+/, 1)[0]
     const endSeconds = endToken ? parseTimestamp(endToken) : null
     const text = normalizeCueText(lines.slice(timingIndex + 1))
-    if (startSeconds === null || endSeconds === null || endSeconds <= startSeconds || !text) continue
+    if (startSeconds === null || endSeconds === null || endSeconds <= startSeconds || !text || isSubtitleAttributionCue(text)) continue
     cues.push({ startSeconds, endSeconds, text })
     if (cues.length > MAX_SUBTITLE_CUES) throw new Error("字幕条目过多，无法导入。")
   }
@@ -73,7 +73,7 @@ export function parseSubtitleTrack(source: string): SubtitleTrack {
 }
 
 export async function hasMissAVSubtitle(videoCode: string): Promise<boolean> {
-  return FileManager.exists(subtitleFilePath(videoCode))
+  return (await loadMissAVSubtitle(videoCode)) !== null
 }
 
 export function isMissAVSubtitleEnabled(videoCode: string): boolean {
@@ -88,13 +88,13 @@ export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTra
   const path = subtitleFilePath(videoCode)
   if (!await FileManager.exists(path)) return null
   const track = parseSubtitleTrack(await FileManager.readAsString(path))
-  if (!track.cues.length) throw new Error("已保存的字幕文件没有有效字幕，请重新导入。")
+  if (!track.cues.length) return null
   return track
 }
 
 export async function saveMissAVSubtitle(videoCode: string, source: string): Promise<number> {
   const track = parseSubtitleTrack(source)
-  if (!track.cues.length) throw new Error("没有识别到有效字幕。请选择标准 SRT 或 WebVTT 字幕文件。")
+  if (!track.cues.length) throw new Error("没有识别到对白字幕。请确认文件不是只有“Transub Pro”署名提示，再选择标准 SRT 或 WebVTT 字幕文件。")
   await FileManager.createDirectory(subtitleDirectoryPath(), true)
   await FileManager.writeAsString(subtitleFilePath(videoCode), serializeSubtitleTrack(track))
   return track.cues.length
@@ -121,6 +121,11 @@ function normalizeVideoCode(videoCode: string): string {
   const safeCode = videoCode.trim().toUpperCase().replace(/[^A-Z0-9_-]/g, "")
   if (!safeCode) throw new Error("作品番号无效，无法关联字幕。")
   return safeCode
+}
+
+function isSubtitleAttributionCue(text: string): boolean {
+  return /(?:字幕由|generated\s+by|subtitles?\s+by)/i.test(text)
+    && /(?:transub(?:\s+pro)?|transub\.cc)/i.test(text)
 }
 
 function formatTimestamp(seconds: number): string {

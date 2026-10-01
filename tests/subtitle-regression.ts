@@ -16,12 +16,16 @@ const run = (): void => {
   const vtt = parseSubtitleTrack(`WEBVTT\n\nintro\n00:01.000 --> 00:02.250 align:start\nVTT 字幕`)
   assert(vtt.cues.length === 1 && findSubtitleCue(vtt, 1.5)?.text === "VTT 字幕", "WebVTT 时间戳和设置应正确解析")
 
+  const generated = parseSubtitleTrack(`1\n00:00:01,000 --> 00:00:03,000\n字幕由 Transub Pro 生成 [www.transub.cc]\n\n2\n00:00:03,000 --> 00:00:05,000\n正常对白字幕`)
+  assert(generated.cues.length === 1 && generated.cues[0].text === "正常对白字幕", "Transub 署名提示不应显示为视频字幕")
+  assert(parseSubtitleTrack(`1\n00:00:01,000 --> 00:00:03,000\n字幕由 Transub Pro 生成 [www.transub.cc]`).cues.length === 0, "只有 Transub 署名的字幕文件应识别为无有效对白")
+
   const overlapping = parseSubtitleTrack(`1\n00:00:01,000 --> 00:00:05,000\n较早但较长\n\n2\n00:00:03,000 --> 00:00:04,000\n较新的重叠字幕`)
   assert(findSubtitleCue(overlapping, 3.5)?.text === "较新的重叠字幕", "重叠区间应优先选择最近开始的字幕")
   assert(findSubtitleCue(overlapping, Number.NaN) === null, "无效播放时间不应显示字幕")
   assert(findSubtitleCue(MISSAV_SUBTITLE_PREVIEW, 30)?.text === "暂停时字幕保持，继续播放后按时间更新", "本地叠层预览应在视频播放超过 20 秒后仍可见")
 
-  Script.exit({ passed: 9, message: "MISSAV subtitle parser and timing regression tests passed" })
+  Script.exit({ passed: 11, message: "MISSAV subtitle parser and timing regression tests passed" })
 }
 
 try { run() } catch (error) { Script.exit({ passed: 0, error: error instanceof Error ? error.message : String(error) }) }
