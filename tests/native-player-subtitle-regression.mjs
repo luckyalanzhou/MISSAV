@@ -20,16 +20,13 @@ let player
 let presented
 let dismiss
 let dismissCount = 0
-let subtitleInfo
 let mountedModal
 const hookContexts = new Map()
 let hookContext
 
 const jsx = (type, props, key) => ({ type, props: props || {}, key })
 const scripting = {
-  ...Object.fromEntries(["AVPlayerView", "Button", "ForEach", "HStack", "Image", "ScrollView", "Slider", "Spacer", "Text", "VStack", "ZStack"].map(name => [name, name])),
-  TimeControlStatus: { paused: "paused", playing: "playing", waitingToPlayAtSpecifiedRate: "waitingToPlayAtSpecifiedRate" },
-  TapGesture: () => ({ onEnded(callback) { this.callback = callback; return this } }),
+  ...Object.fromEntries(["AVPlayerView", "Button", "ForEach", "NavigationStack", "Text", "VStack", "ZStack"].map(name => [name, name])),
   Device: { supportedInterfaceOrientations: ["portrait"] },
   Navigation: {
     useDismiss: () => () => { dismissCount += 1; dismiss() },
@@ -45,17 +42,6 @@ const scripting = {
       }
     }
     return hookContext.states[index]
-  },
-  useRef: initial => {
-    const index = hookContext.index++
-    if (!(index in hookContext.states)) hookContext.states[index] = { current: initial }
-    return hookContext.states[index]
-  },
-  useState: initial => {
-    const context = hookContext
-    const index = context.index++
-    if (!(index in context.states)) context.states[index] = typeof initial === "function" ? initial() : initial
-    return [context.states[index], value => { context.states[index] = typeof value === "function" ? value(context.states[index]) : value }]
   },
   useEffect: (effect, dependencies) => {
     const index = hookContext.index++
@@ -131,15 +117,16 @@ function currentCaption() {
   // Keep the originally presented tree: caption updates must not require replaying
   // the parent function or re-presenting/replacing AVPlayerView.
   const modal = mountedModal
-  const video = find(modal, "AVPlayerView")
-  const overlay = children(modal)[1]
-  assert.equal(children(modal)[0], video)
-  assert.ok(children(modal).length >= 2, "Caption must follow the video even while side controls are hidden")
+  const surface = find(modal, "ZStack")
+  const video = find(surface, "AVPlayerView")
+  const overlay = children(surface)[1]
+  assert.equal(children(surface)[0], video)
+  assert.ok(children(surface).length >= 2, "Caption must be layered after the native video")
   assert.equal(video.props.overlay, undefined, "Do not rely on a separately bridged native video overlay")
   assert.equal(overlay.type, "ZStack")
   assert.equal(overlay.props.alignment, "bottom", "Caption position must not depend on Spacer sizing")
   assert.equal(overlay.props.frame.alignment, "bottom", "Expanded caption frame must not center its intrinsic ZStack")
-  assert.deepEqual(overlay.props.padding, { horizontal: 56, bottom: load("playback-options.ts").loadPlaybackOptions().subtitleBottomInset }, "Caption must use the selected safe bottom inset")
+  assert.deepEqual(overlay.props.padding, { horizontal: 56, bottom: 25 }, "Caption must stay 25 points above the bottom")
   assert.equal(find(overlay, "Spacer"), undefined)
   const binding = find(overlay, "ForEach")
   assert.ok(binding, "Caption must use the native observable ForEach data binding")
@@ -150,12 +137,13 @@ function currentCaption() {
     assert.equal(caption.key, binding.props.data.value[0].id, "Cue identity must reach the native Text key")
     assert.equal(caption.props.opacity, undefined, "Matched captions must not inherit a hidden initial opacity")
     assert.equal(caption.props.styledText.content, binding.props.data.value[0].text)
-    assert.equal(caption.props.styledText.font, load("playback-options.ts").loadPlaybackOptions().subtitleFontSize)
+    assert.equal(caption.props.styledText.font, 27, "Caption font must stay fixed at 27 points")
     assert.equal(caption.props.styledText.foregroundColor, "white")
     assert.equal(caption.props.styledText.strokeColor, "black")
     assert.equal(caption.props.styledText.strokeWidth, -4, "Native attributed text must fill white glyphs and draw the black outline")
     assert.equal(caption.props.background, undefined, "Outlined subtitle must not retain the black background box")
     assert.equal(caption.props.clipShape, undefined)
+    assert.deepEqual(caption.props.padding, { horizontal: 4 }, "Text must not add extra vertical spacing to the fixed bottom position")
     assert.equal(caption.props.lineLimit, 1)
     assert.equal(caption.props.minScaleFactor, 0.8)
     assert.equal(caption.props.frame.alignment, "center")
@@ -176,24 +164,6 @@ function fireTimers(delay) {
 
 function tickCaptions() {
   fireTimers(250)
-}
-
-function tapVideo() {
-  const video = find(mountedModal, "AVPlayerView")
-  assert.equal(video.props.onTapGesture, undefined, "Use simultaneous gesture, not an exclusive tap or transparent blocking layer")
-  video.props.simultaneousGesture.callback()
-  mountedModal = renderOverlay(presented)
-}
-
-function press(label) {
-  const button = findAll(mountedModal, "Button").find(node => node.props.accessibilityLabel === label || node.props.title === label)
-  assert.ok(button, `Missing button: ${label}`)
-  button.props.action()
-  mountedModal = renderOverlay(presented)
-}
-
-function pressRepeated(label, count) {
-  for (let index = 0; index < count; index += 1) press(label)
 }
 
 async function waitForPresentation(playback) {
@@ -217,7 +187,7 @@ try {
     dispose() { this.disposed = true }
   }
   globalThis.SharedAudioSession = { setCategory() {}, setActive() {} }
-  globalThis.Dialog = { alert: async value => { if (value.title === "字幕信息") subtitleInfo = value; else throw new Error(value.message) } }
+  globalThis.Dialog = { alert: async value => { throw new Error(value.message) } }
   // Scripting only guarantees setTimeout/clearTimeout. Node's interval APIs must
   // not make an unsupported host API accidentally pass the playback tests.
   globalThis.setInterval = undefined
@@ -249,35 +219,6 @@ try {
   stopFailing()
   assert.equal(timers.size, 0)
 
-  const { createPlaybackControls } = load("playback-controls.ts")
-  const visibility = []
-  const idleControls = createPlaybackControls(value => visibility.push(value))
-  idleControls.setPlaying(true)
-  const staleHide = [...timers.values()][0].callback
-  idleControls.show() // Cancel an already-queued hide and schedule a new one.
-  staleHide()
-  assert.deepEqual(visibility, [])
-  assert.equal(timers.size, 1)
-  fireTimers(3000)
-  assert.deepEqual(visibility, [false])
-  idleControls.toggle()
-  assert.deepEqual(visibility, [false, true])
-  idleControls.setPinned(true)
-  assert.equal(timers.size, 0, "An open settings panel must suspend auto-hide")
-  idleControls.toggle()
-  assert.deepEqual(visibility, [false, true], "A pinned panel cannot be hidden by a video tap")
-  idleControls.setPinned(false)
-  idleControls.setPlaying(false)
-  assert.equal(timers.size, 0, "Paused or waiting playback must not hide its buttons")
-  idleControls.setPlaying(true)
-  const disposedHide = [...timers.values()][0].callback
-  idleControls.dispose()
-  disposedHide()
-  idleControls.show()
-  idleControls.toggle()
-  assert.equal(timers.size, 0)
-  assert.deepEqual(visibility, [false, true], "Disposed/queued callbacks must not mutate UI or restart timers")
-
   const subtitles = load("subtitles.ts")
   const { chooseAndPresentMissAVPlayer } = load("player.tsx")
   const downloaded = "1\n00:00:01,000 --> 00:00:03,000\n第一句对白\n\n2\n00:00:08,000 --> 00:00:12,000\n第二句对白\n\n3\n00:01:10,570 --> 00:01:12,370\n担心的话你也一起来吧?"
@@ -291,45 +232,30 @@ try {
   assert.equal(player.currentTime, 8, "Resume must use video time, not elapsed timer time")
   const modal = renderOverlay(presented)
   mountedModal = modal
-  assert.equal(modal.type, "ZStack", "Floating close control must not shrink the video with a separate header row")
-  assert.equal(modal.props.background, "black")
+  assert.equal(modal.type, "NavigationStack", "Playback must use Scripting's native navigation container")
   assert.equal(modal.props.preferredColorScheme, "dark")
-  assert.equal(modal.props.ignoresSafeArea, true, "Black playback root must cover white system safe-area margins")
-  assert.equal(modal.props.statusBarHidden, true)
-  assert.equal(modal.props.alignment, "leading", "Close control must sit at the side middle, away from top/bottom toolbars")
-  const controls = children(modal)[2]
-  assert.equal(renderOverlay(controls).props.frame?.height, undefined, "Close control must not reserve a 52-point video header")
-  const video = find(modal, "AVPlayerView")
-  assert.equal(children(modal)[0], video)
+  const playerContainer = find(modal, "VStack")
+  assert.equal(playerContainer.props.background, "black")
+  assert.equal(playerContainer.props.navigationBarTitleDisplayMode, "inline")
+  assert.equal(playerContainer.props.statusBarHidden, true)
+  const nativeCloseButton = playerContainer.props.toolbar.cancellationAction
+  assert.equal(nativeCloseButton.type, "Button")
+  assert.equal(nativeCloseButton.props.title, "完成", "Dismissal must use the native navigation cancellation action")
+  assert.equal(nativeCloseButton.props.action instanceof Function, true)
+  const surface = find(modal, "ZStack")
+  const video = find(surface, "AVPlayerView")
+  assert.equal(children(surface)[0], video)
   assert.equal(video.props.videoGravity, undefined, "Leave aspect ratio handling to AVPlayerView native defaults")
   assert.equal(video.props.allowsPictureInPicturePlayback, false, "Custom page captions cannot follow native PiP")
   assert.equal(video.props.ignoresSafeArea, true)
   let current = currentCaption()
   assert.ok(texts(current.overlay).includes("第二句对白"), "Resume must immediately show the matching dialogue")
-  assert.ok(texts(renderOverlay(controls)).includes("字幕已加载 · 3 条"))
-  assert.equal(find(current.overlay, "Button"), undefined, "Caption overlay must not contain another close button")
+  assert.equal(find(current.overlay, "Button"), undefined, "Caption overlay must not contain app controls")
   assert.equal(current.caption.props.lineLimit, 1)
-  // All script buttons hide as a group, but video and subtitle binding stay mounted.
-  fireTimers(3000)
-  mountedModal = renderOverlay(presented)
-  assert.equal(find(mountedModal, "Button"), undefined)
+  assert.equal(findAll(surface, "Button").length, 0, "Playback surface must not add a custom close or subtitle-settings button")
+  assert.equal(find(modal, "Button"), undefined, "The native toolbar action must not be duplicated in the content tree")
   assert.ok(texts(currentCaption().overlay).includes("第二句对白"))
   assert.equal(find(mountedModal, "AVPlayerView").props.player, player)
-  tapVideo()
-  assert.ok(findAll(mountedModal, "Button").some(node => node.props.accessibilityLabel === "关闭播放器"))
-  assert.ok(findAll(mountedModal, "Button").some(node => node.props.accessibilityLabel?.startsWith("字幕选项")))
-  assert.equal(findAll(mountedModal, "Button").some(node => node.props.accessibilityLabel === "画面比例"), false)
-  tapVideo()
-  assert.equal(find(mountedModal, "Button"), undefined)
-  player.pause()
-  mountedModal = renderOverlay(presented)
-  fireTimers(3000)
-  assert.ok(find(mountedModal, "Button"), "Pausing must reveal and retain controls")
-  player.timeControlStatus = "waitingToPlayAtSpecifiedRate"
-  player.onTimeControlStatusChanged(player.timeControlStatus)
-  fireTimers(3000)
-  mountedModal = renderOverlay(presented)
-  assert.ok(find(mountedModal, "Button"), "Buffering must retain controls")
   player.play()
   const resumedKey = current.caption.key
   player.currentTime = 0
@@ -350,21 +276,7 @@ try {
   tickCaptions()
   assert.deepEqual(texts(currentCaption().overlay), pausedTexts, "Pausing must preserve the matching dialogue")
   assert.equal(currentCaption().binding.props.data.writes, pausedWrites, "The same cue must not rebuild every 250 ms")
-  fireTimers(5000)
-  mountedModal = renderOverlay(presented)
-  assert.ok(!texts(mountedModal).includes("字幕已加载 · 3 条"), "Load notice must disappear without clearing dialogue")
   assert.ok(texts(currentCaption().overlay).includes("第二句对白"))
-  const closeButton = find(renderOverlay(controls), "Button")
-  assert.equal(closeButton.props.accessibilityLabel, "关闭播放器")
-  assert.deepEqual(closeButton.props.frame, { width: 44, height: 44 }, "Close hit target must remain accessible")
-  closeButton.props.contextMenu.menuItems.props.action()
-  assert.match(subtitleInfo.message, /当前视频时间：9.00 秒/)
-  assert.match(subtitleInfo.message, /第二句对白/)
-  assert.match(subtitleInfo.message, /显示路径：原生绑定 \/ 底部对齐/)
-  assert.match(subtitleInfo.message, /定时器：递归 setTimeout/)
-  assert.match(subtitleInfo.message, /自动采样：[1-9]\d* 次，最近 9.00 秒/)
-  assert.match(subtitleInfo.message, /送往显示层：第二句对白/)
-  assert.match(subtitleInfo.message, /文本节点构建：第二句对白/)
   // Reproduce the user's 71.26-second screenshot after an initially empty cue.
   player.currentTime = 0
   tickCaptions()
@@ -372,92 +284,14 @@ try {
   player.currentTime = 71.26
   tickCaptions()
   assert.ok(texts(currentCaption().overlay).includes("担心的话你也一起来吧?"))
-  closeButton.props.contextMenu.menuItems.props.action()
-  assert.match(subtitleInfo.message, /最近 71.26 秒/)
-  assert.match(subtitleInfo.message, /送往显示层：担心的话你也一起来吧/)
+  assert.equal(currentCaption().caption.props.styledText.font, 27)
+  assert.equal(currentCaption().overlay.props.padding.bottom, 25)
   assert.equal([...timers.values()].filter(timer => timer.delay === 250).length, 1, "Each one-shot subtitle timeout must schedule exactly one successor")
   fireTimers(5000)
   for (let attempt = 0; attempt < 50 && !progressSaves.some(args => args.includes(71.26)); attempt += 1) await Promise.resolve()
   assert.ok(progressSaves.some(args => args.includes(71.26)), "Progress must keep saving while playing without interval APIs")
 
-  // Open the real subtitle options panel and change styles while paused on a cue.
-  // Rerender only for user settings changes, not for the 250ms caption polling.
-  const controlsTree = mountedModal
-  const subtitleButton = findAll(controlsTree, "Button").find(node => node.props.accessibilityLabel?.startsWith("字幕选项"))
-  assert.deepEqual(subtitleButton.props.frame, { width: 44, height: 44 })
-  assert.equal(subtitleButton.props.disabled, false)
-  subtitleButton.props.action()
-  mountedModal = renderOverlay(presented)
-  assert.equal(find(mountedModal, "Slider"), undefined, "Subtitle settings must use minus/value/plus, not sliders")
-  const panel = find(mountedModal, "ScrollView")
-  const valueRows = findAll(panel, "HStack").filter(node => children(node)[0]?.type === "Button")
-  assert.equal(valueRows.length, 2)
-  assert.deepEqual(children(valueRows[0]).map(node => node.type), ["Button", "Text", "Button"])
-  assert.equal(children(valueRows[0])[1].props.children, "17 点")
-  assert.equal(children(valueRows[1])[1].props.children, "64 点")
-  assert.deepEqual(children(valueRows[0])[0].props.frame, { width: 44, height: 44 })
-  fireTimers(3000)
-  mountedModal = renderOverlay(presented)
-  assert.ok(find(mountedModal, "ScrollView"), "Open subtitle settings must not auto-hide")
-  tapVideo()
-  assert.ok(find(mountedModal, "ScrollView"))
-  const originalCueKey = currentCaption().caption.key
-  pressRepeated("增大字体大小", 11)
-  assert.equal(currentCaption().caption.props.styledText.font, 28)
-  assert.notEqual(currentCaption().caption.key, originalCueKey, "Font changes must rebuild even a paused native cue")
-  assert.equal(currentCaption().caption.props.styledText.content, "担心的话你也一起来吧?")
-  press("增大距底部")
-  assert.equal(currentCaption().overlay.props.padding.bottom, 65, "Position must increase by exactly one point")
-  press("减小距底部")
-  assert.equal(currentCaption().overlay.props.padding.bottom, 64, "Position must decrease by exactly one point")
-  pressRepeated("增大距底部", 56)
-  assert.equal(currentCaption().overlay.props.padding.bottom, 120)
-  assert.equal(currentCaption().caption.props.styledText.font, 28)
-  // Polling reads the ref, not the settings snapshot captured by the first effect.
-  player.currentTime = 2
-  tickCaptions()
-  assert.equal(currentCaption().caption.props.styledText.font, 28)
-  assert.equal(currentCaption().caption.props.styledText.content, "第一句对白")
-
-  // Bounds disable the corresponding buttons and invoking a disabled callback is a no-op.
-  pressRepeated("增大字体大小", 8)
-  assert.equal(load("playback-options.ts").loadPlaybackOptions().subtitleFontSize, 32)
-  assert.equal(findAll(mountedModal, "Button").find(node => node.props.accessibilityLabel === "增大字体大小").props.disabled, true)
-  pressRepeated("减小字体大小", 22)
-  assert.equal(load("playback-options.ts").loadPlaybackOptions().subtitleFontSize, 14)
-  assert.equal(findAll(mountedModal, "Button").find(node => node.props.accessibilityLabel === "减小字体大小").props.disabled, true)
-  pressRepeated("增大字体大小", 14)
-  pressRepeated("增大距底部", 45)
-  assert.equal(load("playback-options.ts").loadPlaybackOptions().subtitleBottomInset, 160)
-  assert.equal(findAll(mountedModal, "Button").find(node => node.props.accessibilityLabel === "增大距底部").props.disabled, true)
-  pressRepeated("减小距底部", 140)
-  assert.equal(load("playback-options.ts").loadPlaybackOptions().subtitleBottomInset, 24)
-  assert.equal(findAll(mountedModal, "Button").find(node => node.props.accessibilityLabel === "减小距底部").props.disabled, true)
-  pressRepeated("增大距底部", 96)
-  press("关闭字幕选项")
-
-  assert.equal(findAll(mountedModal, "Button").some(node => node.props.accessibilityLabel === "画面比例"), false, "The custom aspect-ratio entry must be removed")
-  assert.equal(currentCaption().caption.props.styledText.font, 28)
-  press("字幕选项：调整字号和上下位置")
-  const resetButton = findAll(mountedModal, "Button").find(node => node.props.title === "恢复默认字幕样式")
-  resetButton.props.action()
-  mountedModal = renderOverlay(presented)
-  assert.equal(currentCaption().caption.props.styledText.font, 17)
-  assert.equal(currentCaption().overlay.props.padding.bottom, 64)
-  pressRepeated("增大字体大小", 6)
-  pressRepeated("增大距底部", 24)
-  findAll(mountedModal, "Button").find(node => node.props.accessibilityLabel === "关闭字幕选项").props.action()
-  mountedModal = renderOverlay(presented)
-  assert.equal(find(mountedModal, "ScrollView"), undefined, "Closing options must dismiss only the panel")
-  assert.equal(dismissCount, 0)
-  assert.equal([...timers.values()].filter(timer => timer.delay === 250).length, 1, "Style edits must not multiply subtitle timers")
-  fireTimers(3000)
-  mountedModal = renderOverlay(presented)
-  assert.equal(find(mountedModal, "Button"), undefined, "Closing a panel must resume idle hiding")
-  tapVideo()
-  assert.ok(!texts(mountedModal).includes("字幕已加载 · 3 条"), "Revealing controls must not restart the expired load notice")
-
-  closeButton.props.action()
+  nativeCloseButton.props.action()
   unmount()
   assert.equal((await playback).opened, true)
   assert.equal(dismissCount, 1)
@@ -471,23 +305,20 @@ try {
   await waitForPresentation(withoutSubtitles)
   assert.equal(presented.props.subtitles, undefined)
   const plainModal = renderOverlay(presented)
-  assert.equal(plainModal.type, "ZStack")
-  assert.equal(plainModal.props.ignoresSafeArea, true)
-  assert.equal(children(plainModal).length, 2)
+  assert.equal(plainModal.type, "NavigationStack")
+  const plainSurface = find(plainModal, "ZStack")
+  assert.equal(children(plainSurface).length, 1, "No-subtitle playback must not create a caption layer")
   assert.ok(find(plainModal, "AVPlayerView"), "No-subtitle playback must retain native PiP-capable player")
   assert.equal(find(plainModal, "AVPlayerView").props.allowsPictureInPicturePlayback, true)
   assert.equal(find(plainModal, "AVPlayerView").props.ignoresSafeArea, true)
-  assert.ok(find(plainModal, "Button"), "No-subtitle playback must retain close control")
-  assert.equal(findAll(plainModal, "Button").find(node => node.props.accessibilityLabel?.startsWith("字幕选项")).props.disabled, true)
+  const plainCloseButton = find(plainModal, "VStack").props.toolbar.cancellationAction
+  assert.equal(plainCloseButton.props.title, "完成")
+  assert.equal(find(plainModal, "Button"), undefined, "No-subtitle playback must also avoid custom content buttons")
   mountedModal = plainModal
-  fireTimers(3000)
-  mountedModal = renderOverlay(presented)
-  assert.equal(find(mountedModal, "Button"), undefined, "Plain playback must also hide all side buttons")
-  tapVideo()
   assert.equal(find(mountedModal, "AVPlayerView").props.videoGravity, undefined)
   player.onEnded()
   assert.equal([...timers.values()].filter(timer => timer.delay === 5000).length, 0, "Playback end must stop the recurring progress timeout")
-  dismiss()
+  plainCloseButton.props.action()
   unmount()
   await withoutSubtitles
   assert.equal(timers.size, 0)
@@ -497,8 +328,6 @@ try {
   await waitForPresentation(preview)
   mountedModal = renderOverlay(presented)
   assert.equal(find(mountedModal, "AVPlayerView").props.videoGravity, undefined, "Native aspect handling must be used for every playback session")
-  assert.equal(load("playback-options.ts").loadPlaybackOptions().subtitleFontSize, 23)
-  assert.equal(load("playback-options.ts").loadPlaybackOptions().subtitleBottomInset, 88)
   assert.equal(player.currentTime, 0)
   assert.equal(currentCaption().caption, undefined)
   player.currentTime = 1.2
@@ -511,15 +340,13 @@ try {
   player.currentTime = 62.6
   tickCaptions()
   assert.ok(texts(currentCaption().overlay).includes("暂停时字幕保持，继续播放后按时间更新"), "The user's 62.60-second preview case must have a native caption node")
-  const previewControls = children(mountedModal)[2]
-  find(renderOverlay(previewControls), "Button").props.contextMenu.menuItems.props.action()
-  assert.match(subtitleInfo.message, /最近 62.60 秒/)
-  assert.match(subtitleInfo.message, /送往显示层：暂停时字幕保持/)
-  dismiss()
+  assert.equal(currentCaption().caption.props.styledText.font, 27)
+  assert.equal(currentCaption().overlay.props.padding.bottom, 25)
+  find(mountedModal, "VStack").props.toolbar.cancellationAction.props.action()
   unmount()
   await preview
   assert.equal(timers.size, 0)
-  console.log("PASS: minus/value/plus options and bounds; tap/idle/paused/pinned controls; cancelled hide races and cleanup; persistence/native aspect default/caption/polling/import/preview/resume/seek/PiP")
+  console.log("PASS: fixed 27-point captions at 25-point bottom inset; native toolbar dismissal; caption polling/import/preview/resume/seek/PiP")
 } finally {
   unmount()
   for (const [name, value] of Object.entries(oldGlobals)) {

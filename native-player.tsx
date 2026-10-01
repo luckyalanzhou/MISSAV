@@ -1,10 +1,7 @@
-import { AVPlayerView, Button, Device, ForEach, Image, Navigation, PIPStatus, TapGesture, Text, TimeControlStatus, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
+import { AVPlayerView, Button, Device, ForEach, Navigation, NavigationStack, PIPStatus, Text, VStack, ZStack, useEffect, useObservable } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
 import { startPlaybackPolling } from "./playback-polling"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
-import { loadPlaybackOptions, normalizePlaybackOptions, savePlaybackOptions, type PlaybackOptions } from "./playback-options"
-import { createPlaybackControls } from "./playback-controls"
-import { SubtitleOptionsPanel } from "./page/components/subtitle_options"
 
 export type NativePlaybackRequest = {
   url: string
@@ -71,160 +68,78 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
   }
 }
 
-type SubtitleDisplayRow = { id: string; text: string; fontSize: number }
+const SUBTITLE_FONT_SIZE = 27
+const SUBTITLE_BOTTOM_INSET = 25
+type SubtitleDisplayRow = { id: string; text: string }
 
-function subtitleDisplayRows(subtitles: SubtitleTrack | undefined, time: number, options: PlaybackOptions): SubtitleDisplayRow[] {
+function subtitleDisplayRows(subtitles: SubtitleTrack | undefined, time: number): SubtitleDisplayRow[] {
   const cue = subtitles ? findSubtitleCue(subtitles, time) : null
-  // A size change must rebuild the native text even while paused on the same cue.
-  return cue ? [{ id: `${cue.startSeconds}:${cue.endSeconds}:${cue.text}:${options.subtitleFontSize}`, text: cue.text, fontSize: options.subtitleFontSize }] : []
+  return cue ? [{ id: `${cue.startSeconds}:${cue.endSeconds}:${cue.text}`, text: cue.text }] : []
 }
 
 function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subtitles?: SubtitleTrack }) {
   const dismiss = Navigation.useDismiss()
   const pipStatus = useObservable<PIPStatus>()
-  const [options, setOptions] = useState(loadPlaybackOptions)
-  const optionsRef = useRef(options)
-  const [activePanel, setActivePanel] = useState<"subtitle" | null>(null)
-  const [controlsVisible, setControlsVisible] = useState(true)
-  const [showLoadNotice, setShowLoadNotice] = useState(true)
-  const controlsRef = useRef<ReturnType<typeof createPlaybackControls> | null>(null)
-  if (!controlsRef.current) controlsRef.current = createPlaybackControls(setControlsVisible)
-  const controls = controlsRef.current
   // ForEach observes this native data binding even when the initial time has no cue.
   // Do not leave a blank Text at opacity=0 and rely on parent props diffing to reveal it.
-  const captionRows = useObservable<SubtitleDisplayRow[]>(() => subtitleDisplayRows(subtitles, player.currentTime, optionsRef.current))
-  const displayStatus = useRef({ polls: 0, sampledTime: player.currentTime, builtText: "" })
-
-  useEffect(() => {
-    const previous = player.onTimeControlStatusChanged
-    const update = (status: TimeControlStatus) => {
-      controls.setPlaying(status === TimeControlStatus.playing)
-      previous?.(status)
-    }
-    player.onTimeControlStatusChanged = update
-    controls.setPlaying(player.timeControlStatus === TimeControlStatus.playing)
-    return () => {
-      controls.dispose()
-      if (player.onTimeControlStatusChanged === update) player.onTimeControlStatusChanged = previous
-    }
-  }, [player])
-
-  useEffect(() => {
-    if (!subtitles) return
-    const timer = setTimeout(() => setShowLoadNotice(false), 5_000)
-    return () => clearTimeout(timer)
-  }, [subtitles])
-
-  const openPanel = () => {
-    controls.setPinned(true)
-    setActivePanel("subtitle")
-  }
-  const closePanel = () => {
-    setActivePanel(null)
-    controls.setPinned(false)
-  }
+  const captionRows = useObservable<SubtitleDisplayRow[]>(() => subtitleDisplayRows(subtitles, player.currentTime))
 
   useEffect(() => {
     if (!subtitles) { captionRows.setValue([]); return }
     const refreshSubtitle = () => {
       const time = player.currentTime
-      displayStatus.current.polls += 1
-      displayStatus.current.sampledTime = time
-      const nextRows = subtitleDisplayRows(subtitles, time, optionsRef.current)
+      const nextRows = subtitleDisplayRows(subtitles, time)
       if (nextRows[0]?.id === captionRows.value[0]?.id) return
-      if (!nextRows.length) displayStatus.current.builtText = ""
       captionRows.setValue(nextRows)
     }
     refreshSubtitle()
     return startPlaybackPolling(refreshSubtitle, 250)
   }, [player, subtitles])
 
-  const changeOptions = (value: PlaybackOptions) => {
-    controls.show()
-    const next = normalizePlaybackOptions(value)
-    optionsRef.current = next
-    setOptions(next)
-    savePlaybackOptions(next)
-    const nextRows = subtitleDisplayRows(subtitles, player.currentTime, next)
-    if (nextRows[0]?.id !== captionRows.value[0]?.id) captionRows.setValue(nextRows)
-  }
-
-  const subtitleDisplayInfo = () => {
-    const status = displayStatus.current
-    return `显示路径：原生绑定 / 底部对齐\n定时器：递归 setTimeout（250 毫秒）\n自动采样：${status.polls} 次，最近 ${status.sampledTime.toFixed(2)} 秒\n送往显示层：${captionRows.value[0]?.text ?? "当前空档"}\n文本节点构建：${status.builtText || "尚未构建或当前空档"}`
-  }
-
-  return <ZStack alignment="leading" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" ignoresSafeArea={true} preferredColorScheme="dark" statusBarHidden={true}>
-    {/* Leave videoGravity unset to retain AVPlayerView's native aspect-fit behavior. */}
-    <AVPlayerView
-      player={player}
-      pipStatus={pipStatus}
-      allowsPictureInPicturePlayback={!subtitles}
-      canStartPictureInPictureAutomaticallyFromInline={!subtitles}
-      updatesNowPlayingInfoCenter={true}
-      entersFullScreenWhenPlaybackBegins={false}
-      exitsFullScreenWhenPlaybackEnds={false}
-      simultaneousGesture={TapGesture().onEnded(() => controls.toggle())}
+  return <NavigationStack preferredColorScheme="dark">
+    <VStack
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      ignoresSafeArea={true}
-    />
-    {/* ZStack's alignment only aligns its children; its expanded frame must also
-        align the intrinsic subtitle stack to the bottom instead of the center. */}
-    {subtitles ? <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 56, bottom: options.subtitleBottomInset }}>
-      <ForEach data={captionRows} builder={row => {
-        displayStatus.current.builtText = row.text
-        return <Text
-          key={row.id}
-          styledText={{
-            content: row.text,
-            font: row.fontSize,
-            fontDesign: "default",
-            fontWeight: "semibold",
-            foregroundColor: "white",
-            strokeColor: "black",
-            // Apple's attributed-text convention: negative width draws fill + outline.
-            strokeWidth: -4,
-          }}
-          lineLimit={1}
-          truncationMode="tail"
-          allowsTightening={true}
-          minScaleFactor={0.8}
-          multilineTextAlignment="center"
-          frame={{ maxWidth: "infinity", alignment: "center" }}
-          padding={{ horizontal: 4, vertical: 4 }}
-          shadow={{ color: "black", radius: 1, x: 0, y: 1 }}
+      background="black"
+      navigationBarTitleDisplayMode="inline"
+      statusBarHidden={true}
+      toolbar={{ cancellationAction: <Button title="完成" action={dismiss} /> }}
+    >
+      <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" ignoresSafeArea={true}>
+        <AVPlayerView
+          player={player}
+          pipStatus={pipStatus}
+          allowsPictureInPicturePlayback={!subtitles}
+          canStartPictureInPictureAutomaticallyFromInline={!subtitles}
+          updatesNowPlayingInfoCenter={true}
+          entersFullScreenWhenPlaybackBegins={false}
+          exitsFullScreenWhenPlaybackEnds={false}
+          frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
+          ignoresSafeArea={true}
         />
-      }} />
-    </ZStack> : undefined}
-    {controlsVisible ? <PlayerCloseControl dismiss={dismiss} player={player} subtitles={subtitles} subtitleDisplayInfo={subtitleDisplayInfo} showLoadNotice={showLoadNotice} onInteraction={() => controls.show()} onSubtitleOptions={openPanel} /> : undefined}
-    {activePanel ? <ZStack alignment="trailing" frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "trailing" }} padding={{ trailing: 64 }}>
-      <SubtitleOptionsPanel options={options} onChanged={changeOptions} onClose={closePanel} />
-    </ZStack> : undefined}
-  </ZStack>
-}
-
-function PlayerCloseControl({ dismiss, player, subtitles, subtitleDisplayInfo, showLoadNotice, onInteraction, onSubtitleOptions }: { dismiss: () => void; player: AVPlayer; subtitles?: SubtitleTrack; subtitleDisplayInfo: () => string; showLoadNotice: boolean; onInteraction: () => void; onSubtitleOptions: () => void }) {
-  async function showSubtitleInfo() {
-    onInteraction()
-    const time = player.currentTime
-    const cue = subtitles ? findSubtitleCue(subtitles, time) : null
-    const first = subtitles?.cues[0]
-    await Dialog.alert({
-      title: "字幕信息",
-      message: subtitles
-        ? `已读取 ${subtitles.cues.length} 条对白\n当前视频时间：${time.toFixed(2)} 秒\n首句时间：${first?.startSeconds.toFixed(2) ?? "无"} 秒\n当前匹配：${cue ? `${cue.startSeconds.toFixed(2)}–${cue.endSeconds.toFixed(2)} 秒\n${cue.text}` : "当前时间没有对白；字幕可能有空档或与视频版本不一致。"}\n\n${subtitleDisplayInfo()}`
-        : "播放器没有收到字幕。请确认详情页已导入字幕，并且字幕开关已开启。",
-    })
-  }
-
-  // Float in the leading-side middle, away from native top/bottom/central transport controls.
-  return <VStack spacing={8} alignment="leading" padding={{ leading: 64 }}>
-    <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" background="rgba(0, 0, 0, 0.72)" clipShape={{ type: "rect", cornerRadius: 22 }} accessibilityLabel="关闭播放器" contextMenu={{ menuItems: <Button title="字幕信息" systemImage="captions.bubble" action={() => { void showSubtitleInfo() }} /> }}>
-      <Image systemName="xmark" font="headline" foregroundStyle="white" />
-    </Button>
-    <Button action={onSubtitleOptions} disabled={!subtitles} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" background="rgba(0, 0, 0, 0.72)" clipShape={{ type: "rect", cornerRadius: 22 }} accessibilityLabel={subtitles ? "字幕选项：调整字号和上下位置" : "字幕选项：请先导入并开启字幕"}>
-      <Image systemName="captions.bubble" font="headline" foregroundStyle={subtitles ? "white" : "secondaryLabel"} />
-    </Button>
-    {subtitles && showLoadNotice ? <Text font="caption" foregroundStyle="white" lineLimit={1}>{`字幕已加载 · ${subtitles.cues.length} 条`}</Text> : undefined}
-  </VStack>
+        {subtitles ? <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 56, bottom: SUBTITLE_BOTTOM_INSET }}>
+          <ForEach data={captionRows} builder={row => <Text
+            key={row.id}
+            styledText={{
+              content: row.text,
+              font: SUBTITLE_FONT_SIZE,
+              fontDesign: "default",
+              fontWeight: "semibold",
+              foregroundColor: "white",
+              strokeColor: "black",
+              // Apple's attributed-text convention: negative width draws fill + outline.
+              strokeWidth: -4,
+            }}
+            lineLimit={1}
+            truncationMode="tail"
+            allowsTightening={true}
+            minScaleFactor={0.8}
+            multilineTextAlignment="center"
+            frame={{ maxWidth: "infinity", alignment: "center" }}
+            padding={{ horizontal: 4 }}
+            shadow={{ color: "black", radius: 1, x: 0, y: 1 }}
+          />} />
+        </ZStack> : undefined}
+      </ZStack>
+    </VStack>
+  </NavigationStack>
 }
