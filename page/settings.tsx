@@ -49,7 +49,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     try {
       const result = await openMissAVSiteVerification()
       setAccountMessage(result.status === "accessible"
-        ? "验证通过：所有栏目均已载入真实作品列表，正在刷新首页和浏览内容。"
+        ? "验证通过：常用栏目访问检查通过，正在刷新首页和浏览内容。"
         : result.status === "incomplete"
           ? `${result.probe.title}栏目仍显示 Cloudflare 验证。请在弹出的页面完成验证，页面确认载入作品后会自动关闭。`
           : `${result.probe.title}栏目未返回有效作品列表。请检查网络或切换访问域名后重试。`)

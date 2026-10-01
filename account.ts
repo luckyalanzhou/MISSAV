@@ -93,8 +93,8 @@ const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
   const controller = new WebViewController()
   try {
-    // Check every top-level Browse collection. A clearance on one listing does
-    // not prove that all the routes used by the app are reachable.
+    // Check the monitored Browse collections. The optional English subtitle
+    // listing is excluded because it may be empty on the shared Japanese route.
     for (const probe of missavClient.accessProbeRoutes()) {
       const probeURL = probe.url
       const probeHost = new URL(probeURL).hostname

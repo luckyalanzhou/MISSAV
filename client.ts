@@ -128,7 +128,7 @@ class MissAVClient {
   watchUrl(videoCode: string): string { return new URL(`${MISSAV_LOCALE}/${SiteHTML.extractMissAVVideoCode(videoCode) || videoCode}`, getMissAVBaseURL()).toString() }
   browseProbeURL(): string { return this.collectionUrl({ collection: "new", page: 1, sort: "released_at" }) }
   accessProbeRoutes(): MissAVAccessProbe[] {
-    return MISSAV_COLLECTION_OPTIONS.map(({ value, title }) => ({
+    return MISSAV_COLLECTION_OPTIONS.filter(({ value }) => value !== "english-subtitle").map(({ value, title }) => ({
       collection: value,
       title,
       url: this.collectionUrl({ collection: value, page: 1, sort: collectionProbeSort(value) }),
@@ -139,8 +139,7 @@ class MissAVClient {
 
   private collectionUrl(params: MissAVSearchParams): string {
     const query = params.query?.trim()
-    const collectionLocale = !query && params.collection === "english-subtitle" ? "en" : MISSAV_LOCALE
-    const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : `${collectionLocale}/${params.collection || "new"}`
+    const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : `${MISSAV_LOCALE}/${params.collection || "new"}`
     const url = new URL(path, getMissAVBaseURL())
     if (params.filter) url.searchParams.set("filters", params.filter)
     if (params.sort) url.searchParams.set("sort", params.sort)
@@ -171,7 +170,7 @@ class MissAVClient {
     }
   }
 
-  private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ja,en;q=0.8", ...(referer ? { Referer: referer } : {}) } }
+  private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": "ja", ...(referer ? { Referer: referer } : {}) } }
 }
 
 function copySearchPage(value: MissAVSearchPage): MissAVSearchPage {
