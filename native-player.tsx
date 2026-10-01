@@ -1,5 +1,6 @@
-import { AVPlayerView, Device, Navigation, PIPStatus, ZStack, useObservable } from "scripting"
+import { AVPlayerView, Device, Navigation, PIPStatus, Spacer, Text, VStack, ZStack, useEffect, useObservable, useState } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
+import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
 
 export type NativePlaybackRequest = {
   url: string
@@ -9,6 +10,7 @@ export type NativePlaybackRequest = {
   qualityLabel: string
   resumePositionSeconds?: number
   resumeDurationSeconds?: number
+  subtitles?: SubtitleTrack
   onProgress?: (positionSeconds: number, durationSeconds: number) => Promise<void> | void
 }
 
@@ -50,7 +52,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
     try {
       await Navigation.present({
-        element: <NativeOnlinePlayerModal player={player} />,
+        element: <NativeOnlinePlayerModal player={player} subtitles={request.subtitles} />,
         modalPresentationStyle: "fullScreen",
       })
     } finally {
@@ -65,9 +67,28 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
   }
 }
 
-function NativeOnlinePlayerModal({ player }: { player: AVPlayer }) {
+function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subtitles?: SubtitleTrack }) {
   const pipStatus = useObservable<PIPStatus>()
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
+  const [subtitleText, setSubtitleText] = useState("")
+
+  useEffect(() => {
+    if (!subtitles) {
+      setSubtitleText("")
+      return
+    }
+    let previousText = ""
+    const refreshSubtitle = () => {
+      const nextText = findSubtitleCue(subtitles, player.currentTime)?.text ?? ""
+      if (nextText === previousText) return
+      previousText = nextText
+      setSubtitleText(nextText)
+    }
+    refreshSubtitle()
+    const timer = setInterval(refreshSubtitle, 250)
+    return () => clearInterval(timer)
+  }, [player, subtitles])
+
+  return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
     <AVPlayerView
       player={player}
       pipStatus={pipStatus}
@@ -80,5 +101,20 @@ function NativeOnlinePlayerModal({ player }: { player: AVPlayer }) {
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
       ignoresSafeArea={true}
     />
+    {subtitleText ? <VStack spacing={0} alignment="center" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 28, bottom: 48 }}>
+      <Spacer />
+      <Text
+        font="headline"
+        fontWeight="semibold"
+        foregroundStyle="white"
+        lineLimit={1}
+        truncationMode="tail"
+        allowsTightening={true}
+        multilineTextAlignment="center"
+        padding={{ horizontal: 14, vertical: 8 }}
+        background="rgba(0, 0, 0, 0.72)"
+        clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
+      >{subtitleText}</Text>
+    </VStack> : undefined}
   </ZStack>
 }

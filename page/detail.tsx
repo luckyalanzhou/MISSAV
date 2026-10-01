@@ -7,6 +7,7 @@ import { isMissAVFavourite, rememberMissAVDetail, toggleMissAVFavourite } from "
 import { MediaArtwork } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
+import { MISSAV_SUBTITLE_PREVIEW } from "../subtitles"
 
 export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: () => void; onHistoryChanged: () => void }) {
   const [detail, setDetail] = useState<MissAVVideoDetail | null>(null)
@@ -53,10 +54,13 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
     }
   }, [props.video.videoCode])
 
-  async function play(source: MissAVVideoSource) {
+  async function play(source: MissAVVideoSource, subtitlePreview = false) {
     if (!detail || openingSource) return
     setOpeningSource(source.url)
-    try { const result = await chooseAndPresentMissAVPlayer(props.video, source); if (result.opened) props.onHistoryChanged() }
+    try {
+      const result = await chooseAndPresentMissAVPlayer(props.video, source, subtitlePreview ? { subtitles: MISSAV_SUBTITLE_PREVIEW, preview: true } : undefined)
+      if (result.opened && !subtitlePreview) props.onHistoryChanged()
+    }
     catch (reason) { await Dialog.alert({ title: "播放失败", message: reason instanceof Error ? reason.message : String(reason) }) }
     finally { setOpeningSource(null) }
   }
@@ -96,6 +100,7 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
 
       <VStack spacing={10} frame={{ maxWidth: "infinity" }}>
         {primarySource ? <Button action={() => { void play(primarySource) }} disabled={Boolean(openingSource)} buttonStyle="borderedProminent" controlSize="large" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: PRIMARY_ACTION_HEIGHT }} accessibilityLabel={openingSource === primarySource.url ? `正在打开 ${primarySource.label}` : `播放 ${primarySource.label}`}><HStack spacing={8}>{openingSource === primarySource.url ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="play.fill" />}<Text font="headline" fontWeight="bold">{openingSource === primarySource.url ? "正在打开" : `播放 ${primarySource.label}`}</Text></HStack></Button> : loading ? <StateView title="正在获取播放信息" loading presentation="row" /> : undefined}
+        {primarySource ? <Button title="本地字幕叠层测试" systemImage="captions.bubble" buttonStyle="bordered" disabled={Boolean(openingSource)} action={() => { void play(primarySource, true) }} /> : undefined}
         <EnvironmentValuesReader keys={["horizontalSizeClass", "dynamicTypeSize"]}>{environment => {
           const vertical = environment.horizontalSizeClass === "compact" || isAccessibilityTypeSize(environment.dynamicTypeSize)
           const local = <FavouriteButton kind="local" value={favourite} error={favouriteError} changing={changingFavourite} action={() => { void changeFavourite() }} />
