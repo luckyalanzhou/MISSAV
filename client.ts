@@ -137,9 +137,7 @@ class MissAVClient {
 
   private collectionUrl(params: MissAVSearchParams): string {
     const query = params.query?.trim()
-    const englishSubtitleCollection = !query && params.collection === "english-subtitle"
-    const locale = englishSubtitleCollection ? "en" : MISSAV_LOCALE
-    const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : `${locale}/${params.collection || "new"}`
+    const path = query ? `${MISSAV_LOCALE}/search/${encodeURIComponent(query.replace(/\\/g, ""))}` : `${MISSAV_LOCALE}/${params.collection || "new"}`
     const url = new URL(path, getMissAVBaseURL())
     if (params.filter) url.searchParams.set("filters", params.filter)
     if (params.sort) url.searchParams.set("sort", params.sort)
