@@ -37,14 +37,15 @@ assert.equal(children(left).length, 2)
 assert.equal(children(left)[1].props.lineLimit, 1)
 assert.match(children(left)[1].props.children, /JavSub.ai.*完整.*免费.*完整字幕版本说明/)
 assert.equal(button.props.disabled, false)
-assert.equal(children(children(button)[0])[1].props.children, "下载并导入")
+assert.equal(children(children(button)[0])[1].props.children, "下载字幕")
+assert.match(button.props.accessibilityLabel, /^下载JavSub\.ai的简体中文字幕$/)
 button.props.action()
 assert.deepEqual(downloads, [file])
 
 const busyButton = children(render(file, "JavSub.ai:zh-cn"))[1]
 assert.equal(busyButton.props.disabled, true)
 assert.equal(children(children(busyButton)[0])[0].type, "ProgressView")
-assert.equal(children(children(busyButton)[0])[1].props.children, "导入中…")
+assert.equal(children(children(busyButton)[0])[1].props.children, "下载中…")
 busyButton.props.action()
 assert.equal(downloads.length, 1)
 

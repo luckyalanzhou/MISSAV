@@ -45,7 +45,7 @@ const normalizeCueText = (lines: string[]): string => lines
 
 export function parseSubtitleTrack(source: string): SubtitleTrack {
   const normalized = source.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n")
-  if (normalized.length > MAX_SUBTITLE_CHARACTERS) throw new Error("字幕文件过大，无法导入。")
+  if (normalized.length > MAX_SUBTITLE_CHARACTERS) throw new Error("字幕文件过大，无法缓存。")
   const cues: SubtitleCue[] = []
 
   for (const block of normalized.split(/\n\s*\n/)) {
@@ -60,7 +60,7 @@ export function parseSubtitleTrack(source: string): SubtitleTrack {
     const text = normalizeCueText(lines.slice(timingIndex + 1))
     if (startSeconds === null || endSeconds === null || endSeconds <= startSeconds || !text || isSubtitleAttributionCue(text)) continue
     cues.push({ startSeconds, endSeconds, text })
-    if (cues.length > MAX_SUBTITLE_CUES) throw new Error("字幕条目过多，无法导入。")
+    if (cues.length > MAX_SUBTITLE_CUES) throw new Error("字幕条目过多，无法缓存。")
   }
 
   cues.sort((left, right) => left.startSeconds - right.startSeconds || left.endSeconds - right.endSeconds)
@@ -94,9 +94,10 @@ export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTra
 
 export async function saveMissAVSubtitle(videoCode: string, source: string): Promise<number> {
   const track = parseSubtitleTrack(source)
-  if (!track.cues.length) throw new Error("没有识别到对白字幕。请确认文件不是只有“Transub Pro”署名提示，再选择标准 SRT 或 WebVTT 字幕文件。")
+  if (!track.cues.length) throw new Error("没有识别到有效对白字幕，下载内容可能只有字幕生成器署名。")
   await FileManager.createDirectory(subtitleDirectoryPath(), true)
   await FileManager.writeAsString(subtitleFilePath(videoCode), serializeSubtitleTrack(track))
+  setMissAVSubtitleEnabled(videoCode, true)
   return track.cues.length
 }
 

@@ -1,4 +1,4 @@
-import { AVPlayerView, Button, Device, ForEach, Navigation, NavigationStack, PIPStatus, Text, VStack, ZStack, useEffect, useObservable } from "scripting"
+import { AVPlayerView, Device, ForEach, Navigation, PIPStatus, Text, ZStack, useEffect, useObservable } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
 import { startPlaybackPolling } from "./playback-polling"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
@@ -78,7 +78,6 @@ function subtitleDisplayRows(subtitles: SubtitleTrack | undefined, time: number)
 }
 
 function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subtitles?: SubtitleTrack }) {
-  const dismiss = Navigation.useDismiss()
   const pipStatus = useObservable<PIPStatus>()
   // ForEach observes this native data binding even when the initial time has no cue.
   // Do not leave a blank Text at opacity=0 and rely on parent props diffing to reveal it.
@@ -96,50 +95,40 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
     return startPlaybackPolling(refreshSubtitle, 250)
   }, [player, subtitles])
 
-  return <NavigationStack preferredColorScheme="dark">
-    <VStack
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" preferredColorScheme="dark" statusBarHidden={true} ignoresSafeArea={true}>
+    <AVPlayerView
+      player={player}
+      pipStatus={pipStatus}
+      allowsPictureInPicturePlayback={!subtitles}
+      canStartPictureInPictureAutomaticallyFromInline={!subtitles}
+      updatesNowPlayingInfoCenter={true}
+      entersFullScreenWhenPlaybackBegins={false}
+      exitsFullScreenWhenPlaybackEnds={false}
       frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-      background="black"
-      navigationBarTitleDisplayMode="inline"
-      statusBarHidden={true}
-      toolbar={{ cancellationAction: <Button title="完成" action={dismiss} /> }}
-    >
-      <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" ignoresSafeArea={true}>
-        <AVPlayerView
-          player={player}
-          pipStatus={pipStatus}
-          allowsPictureInPicturePlayback={!subtitles}
-          canStartPictureInPictureAutomaticallyFromInline={!subtitles}
-          updatesNowPlayingInfoCenter={true}
-          entersFullScreenWhenPlaybackBegins={false}
-          exitsFullScreenWhenPlaybackEnds={false}
-          frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-          ignoresSafeArea={true}
-        />
-        {subtitles ? <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 56, bottom: SUBTITLE_BOTTOM_INSET }}>
-          <ForEach data={captionRows} builder={row => <Text
-            key={row.id}
-            styledText={{
-              content: row.text,
-              font: SUBTITLE_FONT_SIZE,
-              fontDesign: "default",
-              fontWeight: "semibold",
-              foregroundColor: "white",
-              strokeColor: "black",
-              // Apple's attributed-text convention: negative width draws fill + outline.
-              strokeWidth: -4,
-            }}
-            lineLimit={1}
-            truncationMode="tail"
-            allowsTightening={true}
-            minScaleFactor={0.8}
-            multilineTextAlignment="center"
-            frame={{ maxWidth: "infinity", alignment: "center" }}
-            padding={{ horizontal: 4 }}
-            shadow={{ color: "black", radius: 1, x: 0, y: 1 }}
-          />} />
-        </ZStack> : undefined}
-      </ZStack>
-    </VStack>
-  </NavigationStack>
+      ignoresSafeArea={true}
+    />
+    {subtitles ? <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 56, bottom: SUBTITLE_BOTTOM_INSET }}>
+      <ForEach data={captionRows} builder={row => <Text
+        key={row.id}
+        styledText={{
+          content: row.text,
+          font: SUBTITLE_FONT_SIZE,
+          fontDesign: "default",
+          fontWeight: "semibold",
+          foregroundColor: "white",
+          strokeColor: "black",
+          // Apple's attributed-text convention: negative width draws fill + outline.
+          strokeWidth: -4,
+        }}
+        lineLimit={1}
+        truncationMode="tail"
+        allowsTightening={true}
+        minScaleFactor={0.8}
+        multilineTextAlignment="center"
+        frame={{ maxWidth: "infinity", alignment: "center" }}
+        padding={{ horizontal: 4 }}
+        shadow={{ color: "black", radius: 1, x: 0, y: 1 }}
+      />} />
+    </ZStack> : undefined}
+  </ZStack>
 }

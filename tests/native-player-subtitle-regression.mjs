@@ -19,17 +19,15 @@ let timerId = 0
 let player
 let presented
 let dismiss
-let dismissCount = 0
 let mountedModal
 const hookContexts = new Map()
 let hookContext
 
 const jsx = (type, props, key) => ({ type, props: props || {}, key })
 const scripting = {
-  ...Object.fromEntries(["AVPlayerView", "Button", "ForEach", "NavigationStack", "Text", "VStack", "ZStack"].map(name => [name, name])),
+  ...Object.fromEntries(["AVPlayerView", "Button", "ForEach", "Text", "ZStack"].map(name => [name, name])),
   Device: { supportedInterfaceOrientations: ["portrait"] },
   Navigation: {
-    useDismiss: () => () => { dismissCount += 1; dismiss() },
     present: request => { presented = request.element; return new Promise(resolve => { dismiss = resolve }) },
   },
   useObservable: initial => {
@@ -222,8 +220,9 @@ try {
   const subtitles = load("subtitles.ts")
   const { chooseAndPresentMissAVPlayer } = load("player.tsx")
   const downloaded = "1\n00:00:01,000 --> 00:00:03,000\n第一句对白\n\n2\n00:00:08,000 --> 00:00:12,000\n第二句对白\n\n3\n00:01:10,570 --> 00:01:12,370\n担心的话你也一起来吧?"
+  subtitles.setMissAVSubtitleEnabled("FNS-258", false)
   assert.equal(await subtitles.saveMissAVSubtitle("FNS-258", downloaded), 3)
-  subtitles.setMissAVSubtitleEnabled("FNS-258", true)
+  assert.equal(subtitles.isMissAVSubtitleEnabled("FNS-258"), true, "Saving a subtitle must associate and enable it automatically")
   assert.equal((await subtitles.loadMissAVSubtitle(" fns-258 ")).cues.length, 3, "Import and playback must use the same normalized file path")
 
   const playback = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source)
@@ -232,17 +231,12 @@ try {
   assert.equal(player.currentTime, 8, "Resume must use video time, not elapsed timer time")
   const modal = renderOverlay(presented)
   mountedModal = modal
-  assert.equal(modal.type, "NavigationStack", "Playback must use Scripting's native navigation container")
+  assert.equal(modal.type, "ZStack", "Use the AVPlayerView directly without a redundant navigation close bar")
+  assert.equal(modal.props.background, "black")
   assert.equal(modal.props.preferredColorScheme, "dark")
-  const playerContainer = find(modal, "VStack")
-  assert.equal(playerContainer.props.background, "black")
-  assert.equal(playerContainer.props.navigationBarTitleDisplayMode, "inline")
-  assert.equal(playerContainer.props.statusBarHidden, true)
-  const nativeCloseButton = playerContainer.props.toolbar.cancellationAction
-  assert.equal(nativeCloseButton.type, "Button")
-  assert.equal(nativeCloseButton.props.title, "完成", "Dismissal must use the native navigation cancellation action")
-  assert.equal(nativeCloseButton.props.action instanceof Function, true)
-  const surface = find(modal, "ZStack")
+  assert.equal(modal.props.ignoresSafeArea, true)
+  assert.equal(modal.props.statusBarHidden, true)
+  const surface = modal
   const video = find(surface, "AVPlayerView")
   assert.equal(children(surface)[0], video)
   assert.equal(video.props.videoGravity, undefined, "Leave aspect ratio handling to AVPlayerView native defaults")
@@ -253,7 +247,7 @@ try {
   assert.equal(find(current.overlay, "Button"), undefined, "Caption overlay must not contain app controls")
   assert.equal(current.caption.props.lineLimit, 1)
   assert.equal(findAll(surface, "Button").length, 0, "Playback surface must not add a custom close or subtitle-settings button")
-  assert.equal(find(modal, "Button"), undefined, "The native toolbar action must not be duplicated in the content tree")
+  assert.equal(find(modal, "Button"), undefined, "Do not duplicate AVPlayerView's native close control with an app button")
   assert.ok(texts(currentCaption().overlay).includes("第二句对白"))
   assert.equal(find(mountedModal, "AVPlayerView").props.player, player)
   player.play()
@@ -291,10 +285,9 @@ try {
   for (let attempt = 0; attempt < 50 && !progressSaves.some(args => args.includes(71.26)); attempt += 1) await Promise.resolve()
   assert.ok(progressSaves.some(args => args.includes(71.26)), "Progress must keep saving while playing without interval APIs")
 
-  nativeCloseButton.props.action()
+  dismiss() // The mocked presentation completes when the native player closes on-device.
   unmount()
   assert.equal((await playback).opened, true)
-  assert.equal(dismissCount, 1)
   assert.equal(timers.size, 0, "Dismiss must clear caption and progress timers")
   assert.equal(player.disposed, true)
   assert.deepEqual(scripting.Device.supportedInterfaceOrientations, ["portrait"])
@@ -305,20 +298,18 @@ try {
   await waitForPresentation(withoutSubtitles)
   assert.equal(presented.props.subtitles, undefined)
   const plainModal = renderOverlay(presented)
-  assert.equal(plainModal.type, "NavigationStack")
-  const plainSurface = find(plainModal, "ZStack")
+  assert.equal(plainModal.type, "ZStack")
+  const plainSurface = plainModal
   assert.equal(children(plainSurface).length, 1, "No-subtitle playback must not create a caption layer")
   assert.ok(find(plainModal, "AVPlayerView"), "No-subtitle playback must retain native PiP-capable player")
   assert.equal(find(plainModal, "AVPlayerView").props.allowsPictureInPicturePlayback, true)
   assert.equal(find(plainModal, "AVPlayerView").props.ignoresSafeArea, true)
-  const plainCloseButton = find(plainModal, "VStack").props.toolbar.cancellationAction
-  assert.equal(plainCloseButton.props.title, "完成")
-  assert.equal(find(plainModal, "Button"), undefined, "No-subtitle playback must also avoid custom content buttons")
+  assert.equal(find(plainModal, "Button"), undefined, "No-subtitle playback must also avoid an app-added close button")
   mountedModal = plainModal
   assert.equal(find(mountedModal, "AVPlayerView").props.videoGravity, undefined)
   player.onEnded()
   assert.equal([...timers.values()].filter(timer => timer.delay === 5000).length, 0, "Playback end must stop the recurring progress timeout")
-  plainCloseButton.props.action()
+  dismiss()
   unmount()
   await withoutSubtitles
   assert.equal(timers.size, 0)
@@ -342,11 +333,11 @@ try {
   assert.ok(texts(currentCaption().overlay).includes("暂停时字幕保持，继续播放后按时间更新"), "The user's 62.60-second preview case must have a native caption node")
   assert.equal(currentCaption().caption.props.styledText.font, 27)
   assert.equal(currentCaption().overlay.props.padding.bottom, 25)
-  find(mountedModal, "VStack").props.toolbar.cancellationAction.props.action()
+  dismiss()
   unmount()
   await preview
   assert.equal(timers.size, 0)
-  console.log("PASS: fixed 27-point captions at 25-point bottom inset; native toolbar dismissal; caption polling/import/preview/resume/seek/PiP")
+  console.log("PASS: fixed caption style; no duplicate app close/settings controls; caption polling/cache/preview/resume/seek/PiP")
 } finally {
   unmount()
   for (const [name, value] of Object.entries(oldGlobals)) {
