@@ -1,5 +1,5 @@
 import { fetch } from "scripting"
-import { loadWebViewPage } from "./webview"
+import { loadWebViewPage, submitWebViewSearch } from "./webview"
 
 const SUBTITLECAT_ORIGIN = "https://www.subtitlecat.com"
 const SUBTITLECAT_HOME = `${SUBTITLECAT_ORIGIN}/`
@@ -38,30 +38,7 @@ export async function searchSubtitleCatFiles(controller: WebViewController, valu
     }
   }
 
-  const searchScript = `(() => {
-    const code = ${JSON.stringify(videoCode)};
-    const inputs = Array.from(document.querySelectorAll("input"));
-    const input = inputs.find(item => /search subtitle|search/i.test([item.placeholder, item.name, item.id, item.getAttribute("aria-label") || ""].join(" ")))
-      || inputs.find(item => item.type === "search")
-      || inputs.find(item => item.type !== "hidden" && item.type !== "submit" && item.type !== "button");
-    if (!input) return "search-field-not-found";
-    input.focus();
-    input.value = code;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    if (input.form) {
-      if (typeof input.form.requestSubmit === "function") input.form.requestSubmit();
-      else input.form.submit();
-      return "submitted";
-    }
-    const button = Array.from(document.querySelectorAll("button, input[type=submit]")).find(item => /search/i.test([item.innerText || "", item.value || "", item.getAttribute("aria-label") || "", item.title || ""].join(" ")));
-    if (button) { button.click(); return "submitted"; }
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
-    return "submitted";
-  })()`
-  const submitted = await controller.evaluateJavaScript<string>(searchScript)
-  if (submitted !== "submitted") throw new Error("没有找到 Subtitle Cat 的番号搜索框，请稍后重试。")
+  await submitWebViewSearch(controller, videoCode, "Subtitle Cat")
 
   const entries = await waitForSubtitleCatSearchResults(controller, videoCode)
   const files: SubtitleCatSubtitleFile[] = []
@@ -80,7 +57,7 @@ export async function searchSubtitleCatFiles(controller: WebViewController, valu
         failedDetailCount += 1
         continue
       }
-      const listing = await controller.evaluateJavaScript<string>(`(() => {
+      const listing = await controller.evaluateJavaScript<string>(`return (() => {
         const files = Array.from(document.querySelectorAll("a[href]"))
           .filter(anchor => /\\.srt(?:[?#]|$)/i.test(anchor.href))
           .map(anchor => {
@@ -174,7 +151,7 @@ async function waitForSubtitleCatSearchResults(controller: WebViewController, vi
   const compactCode = compactSubtitleCatCode(videoCode)
   while (Date.now() < deadline) {
     try {
-      const raw = await controller.evaluateJavaScript<string>(`(() => {
+      const raw = await controller.evaluateJavaScript<string>(`return (() => {
         const normalize = value => (value || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
         const code = ${JSON.stringify(compactCode)};
         const entries = Array.from(document.querySelectorAll('a[href*="/subs/"]'))

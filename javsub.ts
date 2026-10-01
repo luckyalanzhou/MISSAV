@@ -1,5 +1,5 @@
 import { fetch } from "scripting"
-import { loadWebViewPage } from "./webview"
+import { loadWebViewPage, submitWebViewSearch } from "./webview"
 
 const JAVSUB_ORIGIN = "https://javsub.ai"
 const JAVSUB_HOME = `${JAVSUB_ORIGIN}/`
@@ -42,38 +42,12 @@ export async function searchJavSubSubtitleFiles(controller: WebViewController, v
     }
   }
 
-  const searchScript = `(() => {
-    const code = ${JSON.stringify(videoCode)};
-    const inputs = Array.from(document.querySelectorAll("input"));
-    const input = inputs.find(item => /search by code|search code|search by title/i.test([item.placeholder, item.name, item.id, item.getAttribute("aria-label") || ""].join(" ")))
-      || inputs.find(item => item.type === "search")
-      || inputs.find(item => item.type !== "hidden" && item.type !== "submit" && item.type !== "button");
-    if (!input) return "search-field-not-found";
-    input.focus();
-    input.value = code;
-    input.dispatchEvent(new Event("input", { bubbles: true }));
-    input.dispatchEvent(new Event("change", { bubbles: true }));
-    if (input.form) {
-      if (typeof input.form.requestSubmit === "function") input.form.requestSubmit();
-      else input.form.submit();
-      return "submitted";
-    }
-    const button = Array.from(document.querySelectorAll("button, input[type=submit]")).find(item => {
-      const label = [item.innerText || "", item.value || "", item.getAttribute("aria-label") || "", item.title || ""].join(" ");
-      return /search|find/i.test(label) || item.closest("form") === input.closest("form");
-    });
-    if (button) { button.click(); return "submitted"; }
-    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent("keyup", { key: "Enter", code: "Enter", bubbles: true }));
-    return "submitted";
-  })()`
-  const submitted = await controller.evaluateJavaScript<string>(searchScript)
-  if (submitted !== "submitted") throw new Error("没有找到 JavSub.ai 的番号搜索框，请稍后重试。")
+  await submitWebViewSearch(controller, videoCode, "JavSub.ai")
 
   const resultPage = await waitForJavSubResultPage(controller)
   if (resultPage.noResults) return { title: "", totalCount: 0, files: [], cookieHeader: await javSubCookieHeader(controller) }
 
-  const listingScript = `(() => {
+  const listingScript = `return (() => {
     const anchors = Array.from(document.querySelectorAll('a[href*="/download/"]'));
     const files = anchors.map(anchor => {
       let node = anchor.parentElement;
@@ -181,7 +155,7 @@ async function waitForJavSubResultPage(controller: WebViewController): Promise<{
   const deadline = Date.now() + SEARCH_TIMEOUT_MS
   while (Date.now() < deadline) {
     try {
-      const raw = await controller.evaluateJavaScript<string>(`JSON.stringify({ url: location.href, text: (document.body?.innerText || "").slice(0, 2000) })`)
+      const raw = await controller.evaluateJavaScript<string>(`return JSON.stringify({ url: location.href, text: (document.body?.innerText || "").slice(0, 2000) })`)
       if (raw) {
         const state = JSON.parse(raw) as { url?: unknown; text?: unknown }
         const currentURL = typeof state.url === "string" ? new URL(state.url) : null
