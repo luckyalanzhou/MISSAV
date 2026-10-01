@@ -122,22 +122,32 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
         ignoresSafeArea={true}
       />}
-    {subtitles ? <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 56, bottom: 64 }}>
+    {/* ZStack's alignment only aligns its children; its expanded frame must also
+        align the intrinsic subtitle stack to the bottom instead of the center. */}
+    {subtitles ? <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 56, bottom: 64 }}>
       <ForEach data={captionRows} builder={row => {
         displayStatus.current.builtText = row.text
         return <Text
           key={row.id}
-          font="headline"
-          fontWeight="semibold"
-          foregroundStyle="white"
+          styledText={{
+            content: row.text,
+            font: "headline",
+            fontDesign: "default",
+            fontWeight: "semibold",
+            foregroundColor: "white",
+            strokeColor: "black",
+            // Apple's attributed-text convention: negative width draws fill + outline.
+            strokeWidth: -4,
+          }}
           lineLimit={1}
           truncationMode="tail"
           allowsTightening={true}
+          minScaleFactor={0.8}
           multilineTextAlignment="center"
-          padding={{ horizontal: 14, vertical: 8 }}
-          background="rgba(0, 0, 0, 0.72)"
-          clipShape={{ type: "rect", cornerRadius: 8, style: "continuous" }}
-        >{row.text}</Text>
+          frame={{ maxWidth: "infinity", alignment: "center" }}
+          padding={{ horizontal: 4, vertical: 4 }}
+          shadow={{ color: "black", radius: 1, x: 0, y: 1 }}
+        />
       }} />
     </ZStack> : undefined}
     <PlayerCloseControl dismiss={dismiss} player={player} subtitles={subtitles} subtitleDisplayInfo={subtitleDisplayInfo} />

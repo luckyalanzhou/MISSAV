@@ -111,7 +111,7 @@ function find(node, type) {
 function texts(node) {
   if (!node || typeof node !== "object") return []
   if (typeof node.type === "function") return texts(renderComponent(node))
-  return node.type === "Text" ? children(node) : children(node).flatMap(texts)
+  return node.type === "Text" ? (node.props.styledText ? [node.props.styledText.content] : children(node)) : children(node).flatMap(texts)
 }
 
 function renderOverlay(overlay) {
@@ -130,6 +130,8 @@ function currentCaption() {
   assert.equal(video.props.overlay, undefined, "Do not rely on a separately bridged native video overlay")
   assert.equal(overlay.type, "ZStack")
   assert.equal(overlay.props.alignment, "bottom", "Caption position must not depend on Spacer sizing")
+  assert.equal(overlay.props.frame.alignment, "bottom", "Expanded caption frame must not center its intrinsic ZStack")
+  assert.deepEqual(overlay.props.padding, { horizontal: 56, bottom: 64 }, "Caption must retain room above the home indicator and transport bar")
   assert.equal(find(overlay, "Spacer"), undefined)
   const binding = find(overlay, "ForEach")
   assert.ok(binding, "Caption must use the native observable ForEach data binding")
@@ -139,6 +141,15 @@ function currentCaption() {
     assert.equal(caption.type, "Text")
     assert.equal(caption.key, binding.props.data.value[0].id, "Cue identity must reach the native Text key")
     assert.equal(caption.props.opacity, undefined, "Matched captions must not inherit a hidden initial opacity")
+    assert.equal(caption.props.styledText.content, binding.props.data.value[0].text)
+    assert.equal(caption.props.styledText.foregroundColor, "white")
+    assert.equal(caption.props.styledText.strokeColor, "black")
+    assert.equal(caption.props.styledText.strokeWidth, -4, "Native attributed text must fill white glyphs and draw the black outline")
+    assert.equal(caption.props.background, undefined, "Outlined subtitle must not retain the black background box")
+    assert.equal(caption.props.clipShape, undefined)
+    assert.equal(caption.props.lineLimit, 1)
+    assert.equal(caption.props.minScaleFactor, 0.8)
+    assert.equal(caption.props.frame.alignment, "center")
   }
   assert.equal(video.props.player, player, "Cue updates must retain the same AVPlayer instance")
   return { overlay, caption, binding }
@@ -336,7 +347,7 @@ try {
   unmount()
   await preview
   assert.equal(timers.size, 0)
-  console.log("PASS: timeout-only Scripting host; repeated subtitle/progress updates; screenshot 71.26s; unchanged player/import/preview/resume/seek/gaps/pause/cleanup/PiP")
+  console.log("PASS: bottom-aligned caption frame; native white/black outlined text without background box; timeout-only host/71.26s/import/preview/resume/seek/gaps/pause/cleanup/PiP")
 } finally {
   unmount()
   for (const [name, value] of Object.entries(oldGlobals)) {
