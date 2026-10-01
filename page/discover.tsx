@@ -22,19 +22,29 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
   const detailPresented = useObservable(false)
   const firstLoad = useRef(false)
   const generation = useRef(0)
+  const query = useRef<{ page: number; collection: MissAVCollection; filter: MissAVFilter; sort: MissAVSort }>({ page: 1, collection: "new", filter: "", sort: "released_at" })
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
 
   async function load(next: { page?: number; collection?: MissAVCollection; filter?: MissAVFilter; sort?: MissAVSort } = {}, forceRefresh = false) {
     const gen = ++generation.current
-    const nextPage = next.page ?? page
-    const nextCollection = next.collection ?? collection
-    const nextFilter = next.filter ?? filter
-    const nextSort = next.sort ?? sort
+    const previousQuery = query.current
+    const nextQuery = {
+      page: next.page ?? previousQuery.page,
+      collection: next.collection ?? previousQuery.collection,
+      filter: next.filter ?? previousQuery.filter,
+      sort: next.sort ?? previousQuery.sort,
+    }
+    const queryChanged = nextQuery.page !== previousQuery.page || nextQuery.collection !== previousQuery.collection || nextQuery.filter !== previousQuery.filter || nextQuery.sort !== previousQuery.sort
+    query.current = nextQuery
+    // Reflect the requested category immediately so a slow request doesn't
+    // make a successful tap look like it was ignored.
+    setPage(nextQuery.page); setCollection(nextQuery.collection); setFilter(nextQuery.filter); setSort(nextQuery.sort)
+    if (queryChanged) { setItems([]); setHasNext(true) }
     setLoading(true); setError(null)
     try {
-      const result = await missavClient.searchVideoPage({ page: nextPage, collection: nextCollection, filter: nextFilter, sort: nextSort }, { forceRefresh })
+      const result = await missavClient.searchVideoPage(nextQuery, { forceRefresh })
       if (gen !== generation.current) return
-      setItems(result.items); setHasNext(result.hasNext); setPage(result.page); setCollection(nextCollection); setFilter(nextFilter); setSort(nextSort)
+      setItems(result.items); setHasNext(result.hasNext); setPage(result.page)
     } catch (reason) { if (gen === generation.current) setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { if (gen === generation.current) setLoading(false) }
   }
@@ -83,7 +93,7 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
 }
 
 function CategoryChip(props: { title: string; active: boolean; action: () => void }) {
-  return <Button action={props.action} buttonStyle="plain" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
+  return <Button action={props.action} buttonStyle="plain" frame={{ minHeight: 44 }} contentShape="rect" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
     <HStack spacing={6} padding={{ horizontal: 15, vertical: 8 }} fixedSize={{ horizontal: true, vertical: false }} background={props.active ? ACCENT : "secondarySystemBackground"} clipShape="capsule">
       {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle="white" /> : undefined}
       <Text font="subheadline" fontWeight={props.active ? "bold" : "medium"} foregroundStyle={props.active ? "white" : "label"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
@@ -112,3 +122,4 @@ function DiscoverHero(props: { video: MissAVVideoItem; eyebrow: string; onOpen: 
     </ZStack>
   </Button>
 }
+
