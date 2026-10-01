@@ -8,13 +8,14 @@
 - 撤掉 52 点高顶栏，播放页恢复 `ZStack` 全屏黑色背景、深色界面和忽略安全区，不再用顶栏占用视频高度。视频仍按原始比例完整显示；比例不同产生的黑边属于正常留边，不承诺拉伸或裁剪填满画面。
 - 关闭按钮以 44 × 44 点点击区域浮在左侧中部，距离屏幕左侧 64 点，避开原生顶部、底部和中央控制区域；两种播放模式使用同一个按钮。是否与具体 iOS 版本的原生控件重叠仍需真机确认。
 - 有字幕时，每 250 毫秒读取实际 `AVPlayer.currentTime`，将当前对白写入 `useObservable` 创建的数据绑定。原生 `ForEach` 直接观察此数据，构建带唯一 `key` 的 `Text`，不再依赖父组件重新渲染后修改初始空文本的属性。
+- 重复采样使用 `playback-polling.ts` 中的递归 `setTimeout/clearTimeout`，不依赖脚本环境没有保证支持的 `setInterval/clearInterval`。播放进度每 5 秒保存也使用同一计时方式。每个循环最多保留一个待执行回调，退出/结束时取消；即使回调已进入队列，取消后也不能重启循环。
 - 字幕在视频之后、关闭按钮之前，仍处于与已显示关闭按钮相同的页面层。字幕层使用 `ZStack alignment="bottom"` 直接底部对齐，横向留 56 点、底部留 64 点；不使用 `Spacer` 推算字幕位置，也不预先挂载透明度为 0 的字幕。无对白时数据为空，移除文字；有对白时插入一条文字。同一条对白不重复写入绑定。
 - 字幕更新继续复用同一个 `AVPlayer`，不重新设置视频源，不改变已正常的全屏黑底布局、横屏或关闭按钮位置。
 - 开始播放时短暂显示“字幕已加载 · N 条”，5 秒后消失。对白仍只在匹配的时间区间内以底部单行显示。
 - 长按关闭按钮后选择“字幕信息”，除了当前时间重新匹配的对白，还能检查自动采样次数、最后采样时间、实际写入显示绑定的文字和文本节点构建内容。这些字段区分“菜单即时计算成功”与“自动显示链路已更新”，但不能单独证明屏幕像素可见；此操作本身不会关闭播放器。
 - 没有字幕或关闭字幕时，保持原来的 `AVPlayerView` 和画中画路径。自定义字幕不承诺在画中画窗口内显示。
 
-官方接口：[可观察数据列表 ForEach](https://scriptingapp.github.io/guide/Views/View%20groupings/ForEach/)、[ZStack 底部对齐](https://scriptingapp.github.io/guide/Views/Layout/ZStack/)、[Scripting VideoPlayer](https://scriptingapp.github.io/guide/Device%20Capabilities/Play%20Video/VideoPlayer/)。文档支持可观察列表更新与底部对齐；本机无法验证 iPhone 上的最终渲染。本次继续使用普通页面叠层，不改播放器内置控件。
+官方接口：[可观察数据列表 ForEach](https://scriptingapp.github.io/guide/Views/View%20groupings/ForEach/)、[ZStack 底部对齐](https://scriptingapp.github.io/guide/Views/Layout/ZStack/)、[Scripting VideoPlayer](https://scriptingapp.github.io/guide/Device%20Capabilities/Play%20Video/VideoPlayer/)。[官方完整文档](https://scriptingapp.github.io/llms-full.txt)的 `Tap-to-focus, interruptions, stabilization` 示例明确指出脚本环境只保证 `setTimeout/clearTimeout`，并用递归超时更新进度。文档支持可观察列表更新与底部对齐；本机无法验证 iPhone 上的最终渲染。本次继续使用普通页面叠层，不改播放器内置控件。
 
 ## 本机回归检查
 
@@ -34,6 +35,8 @@ node tests/native-player-subtitle-regression.mjs
 
 检查保持首次呈现的播放页树不变，再按官方 `ForEach` 数据/构建器契约读取更新后的字幕，不通过重新执行父组件掩盖绑定问题。覆盖本地测试在 0 秒、1.2 秒、30 秒和用户截图的 62.60 秒；检查空档移除文字、对白唯一键、底部对齐、无透明字幕/Spacer、暂停无重复写入，以及自动采样和显示绑定诊断。继续检查黑色全屏布局、没有占高顶栏、关闭按钮，以及字幕更新复用同一个播放器。
 
+计时模拟环境特意不提供 `setInterval/clearInterval`，只提供真正一次性的超时回调。旧代码在此环境中报 `setInterval is not a function`；修复后检查多次超时续约、一次仅有一个待执行回调、退出取消、取消与回调竞争、回调内取消、短暂错误后续约，以及字幕与进度都持续更新。还复现最新截图的 71.26 秒对白，从初始 0 秒空档跳转后检查显示绑定不再停在 0 秒。这仍是模拟宿主检查，不是 iPhone 像素测试。
+
 这不是 iPhone 上的布局、触摸或全屏动画测试，也不是完整 TypeScript 类型检查。
 
 ## iPhone 必须检查
@@ -49,7 +52,8 @@ node tests/native-player-subtitle-regression.mjs
 如果仍然不显示字幕，长按关闭按钮并选择“字幕信息”：
 
 - 当前时间有匹配对白，但视频上没有字幕：先看自动采样是否推进、送往显示层是否有文字、文本节点是否被构建。仅“当前匹配”有文字不能证明自动显示路径正常，不再重复下载。
+- “自动采样”一直为 1 次、最近 0.00 秒，但当前视频已播放到数十秒：自动计时链路没有继续运行；先确认“定时器”字段为 `递归 setTimeout（250 毫秒）`，并检查脚本控制台错误。
 - 视频已经播放，但显示的当前时间一直不动：定位播放时间读取/同步问题。
 - 本地测试可以显示，只有下载文件没有匹配对白：核对字幕时间与视频版本。
 
-用户已确认播放器全屏布局正常；本地测试 62.60 秒时，菜单即时匹配到第三条对白，但屏幕没有字幕。由此排除文件读取与该时间点无对白的问题，不能排除自动更新或底部视图渲染的问题。本次只调整显示绑定和字幕定位；此前和本次模拟检查都不能证明 iPhone 上已修复，仍需真机确认。
+用户已确认播放器全屏布局正常；最新截图中视频已到 71.26 秒且即时匹配到对白，但自动采样仍为 1 次、最近 0.00 秒，显示绑定为空且未构建文字。这将故障定位到自动更新停住，而非该时间点无对白。代码两处依赖 `setInterval`，与官方只保证超时 API 的说明和不提供 interval API 时的回归失败吻合。本次替换计时方式，不改变播放器布局；模拟检查不能证明 iPhone 上字幕已显示，仍需真机确认。

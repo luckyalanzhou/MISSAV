@@ -13,6 +13,7 @@ const files = new Map()
 const preferences = new Map()
 const timers = new Map()
 const modules = new Map()
+const progressSaves = []
 const source = { url: "https://media.example.test/video.mp4", type: "mp4", label: "1080p", qualityHeight: 1080 }
 let timerId = 0
 let player
@@ -73,7 +74,7 @@ function load(relativePath) {
     if (specifier === "scripting") return scripting
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "./client") return { missavClient: { getVideo: async () => ({ sources: [source], title: "测试作品", watchUrl: "https://example.test/watch" }), playbackHeaders: () => ({}) } }
-    if (specifier === "./storage") return { loadMissAVPlaybackProgress: async () => ({ positionSeconds: 8, durationSeconds: 100 }), recordMissAVPlayback: async () => {}, saveMissAVPlaybackProgress: async () => {} }
+    if (specifier === "./storage") return { loadMissAVPlaybackProgress: async () => ({ positionSeconds: 8, durationSeconds: 100 }), recordMissAVPlayback: async () => {}, saveMissAVPlaybackProgress: async (...args) => { progressSaves.push(args) } }
     const target = resolve(dirname(path), specifier)
     return load(existsSync(`${target}.ts`) ? `${target}.ts` : `${target}.tsx`)
   }
@@ -143,8 +144,18 @@ function currentCaption() {
   return { overlay, caption, binding }
 }
 
+function fireTimers(delay) {
+  // Real setTimeout is one-shot; remove it before callbacks schedule the next tick.
+  // Iterate a snapshot so a newly scheduled timeout does not fire immediately.
+  for (const [id, timer] of [...timers]) {
+    if (timer.delay !== delay || !timers.has(id)) continue
+    timers.delete(id)
+    timer.callback()
+  }
+}
+
 function tickCaptions() {
-  for (const timer of timers.values()) if (timer.delay === 250) timer.callback()
+  fireTimers(250)
 }
 
 async function waitForPresentation(playback) {
@@ -166,21 +177,47 @@ try {
   }
   globalThis.SharedAudioSession = { setCategory() {}, setActive() {} }
   globalThis.Dialog = { alert: async value => { if (value.title === "字幕信息") subtitleInfo = value; else throw new Error(value.message) } }
-  globalThis.setInterval = (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id }
-  globalThis.setTimeout = globalThis.setInterval
-  globalThis.clearInterval = id => timers.delete(id)
-  globalThis.clearTimeout = globalThis.clearInterval
+  // Scripting only guarantees setTimeout/clearTimeout. Node's interval APIs must
+  // not make an unsupported host API accidentally pass the playback tests.
+  globalThis.setInterval = undefined
+  globalThis.clearInterval = undefined
+  globalThis.setTimeout = (callback, delay) => { const id = ++timerId; timers.set(id, { callback, delay }); return id }
+  globalThis.clearTimeout = id => timers.delete(id)
+
+  const { startPlaybackPolling } = load("playback-polling.ts")
+  let pollingCalls = 0
+  const stopPolling = startPlaybackPolling(() => { pollingCalls += 1 }, 125)
+  for (let tick = 0; tick < 3; tick += 1) fireTimers(125)
+  assert.equal(pollingCalls, 3, "Timeout-only host must continue polling beyond its first tick")
+  assert.equal(timers.size, 1, "Polling must retain only one pending timeout")
+  const queuedCallback = [...timers.values()][0].callback
+  stopPolling()
+  stopPolling()
+  queuedCallback() // Simulate an already-queued callback racing with dismissal.
+  assert.equal(pollingCalls, 3)
+  assert.equal(timers.size, 0, "Cancelled/racing callbacks must not restart polling")
+  let cancelDuringCallback
+  cancelDuringCallback = startPlaybackPolling(() => cancelDuringCallback(), 125)
+  fireTimers(125)
+  assert.equal(timers.size, 0, "Cancellation inside a callback must prevent rescheduling")
+  let failingCalls = 0
+  const stopFailing = startPlaybackPolling(() => { if (++failingCalls === 1) throw new Error("transient polling error") }, 125)
+  assert.throws(() => fireTimers(125), /transient polling error/)
+  fireTimers(125)
+  assert.equal(failingCalls, 2, "Transient errors must not permanently stop the next timeout")
+  stopFailing()
+  assert.equal(timers.size, 0)
 
   const subtitles = load("subtitles.ts")
   const { chooseAndPresentMissAVPlayer } = load("player.tsx")
-  const downloaded = "1\n00:00:01,000 --> 00:00:03,000\n第一句对白\n\n2\n00:00:08,000 --> 00:00:12,000\n第二句对白"
-  assert.equal(await subtitles.saveMissAVSubtitle("FNS-258", downloaded), 2)
+  const downloaded = "1\n00:00:01,000 --> 00:00:03,000\n第一句对白\n\n2\n00:00:08,000 --> 00:00:12,000\n第二句对白\n\n3\n00:01:10,570 --> 00:01:12,370\n担心的话你也一起来吧?"
+  assert.equal(await subtitles.saveMissAVSubtitle("FNS-258", downloaded), 3)
   subtitles.setMissAVSubtitleEnabled("FNS-258", true)
-  assert.equal((await subtitles.loadMissAVSubtitle(" fns-258 ")).cues.length, 2, "Import and playback must use the same normalized file path")
+  assert.equal((await subtitles.loadMissAVSubtitle(" fns-258 ")).cues.length, 3, "Import and playback must use the same normalized file path")
 
   const playback = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source)
   await waitForPresentation(playback)
-  assert.equal(presented.props.subtitles.cues.length, 2, "Downloaded subtitles must reach the presented player")
+  assert.equal(presented.props.subtitles.cues.length, 3, "Downloaded subtitles must reach the presented player")
   assert.equal(player.currentTime, 8, "Resume must use video time, not elapsed timer time")
   const modal = renderOverlay(presented)
   mountedModal = modal
@@ -197,7 +234,7 @@ try {
   assert.equal(video.props.ignoresSafeArea, true)
   let current = currentCaption()
   assert.ok(texts(current.overlay).includes("第二句对白"), "Resume must immediately show the matching dialogue")
-  assert.ok(texts(renderOverlay(controls)).includes("字幕已加载 · 2 条"))
+  assert.ok(texts(renderOverlay(controls)).includes("字幕已加载 · 3 条"))
   assert.equal(find(current.overlay, "Button"), undefined, "Caption overlay must not contain another close button")
   assert.equal(current.caption.props.lineLimit, 1)
   const resumedKey = current.caption.key
@@ -219,8 +256,8 @@ try {
   tickCaptions()
   assert.deepEqual(texts(currentCaption().overlay), pausedTexts, "Pausing must preserve the matching dialogue")
   assert.equal(currentCaption().binding.props.data.writes, pausedWrites, "The same cue must not rebuild every 250 ms")
-  for (const timer of [...timers.values()]) if (timer.delay === 5000) timer.callback()
-  assert.ok(!texts(renderOverlay(controls)).includes("字幕已加载 · 2 条"), "Load notice must disappear without clearing dialogue")
+  fireTimers(5000)
+  assert.ok(!texts(renderOverlay(controls)).includes("字幕已加载 · 3 条"), "Load notice must disappear without clearing dialogue")
   assert.ok(texts(currentCaption().overlay).includes("第二句对白"))
   const closeButton = find(renderOverlay(controls), "Button")
   assert.equal(closeButton.props.accessibilityLabel, "关闭播放器")
@@ -229,9 +266,24 @@ try {
   assert.match(subtitleInfo.message, /当前视频时间：9.00 秒/)
   assert.match(subtitleInfo.message, /第二句对白/)
   assert.match(subtitleInfo.message, /显示路径：原生绑定 \/ 底部对齐/)
+  assert.match(subtitleInfo.message, /定时器：递归 setTimeout/)
   assert.match(subtitleInfo.message, /自动采样：[1-9]\d* 次，最近 9.00 秒/)
   assert.match(subtitleInfo.message, /送往显示层：第二句对白/)
   assert.match(subtitleInfo.message, /文本节点构建：第二句对白/)
+  // Reproduce the user's 71.26-second screenshot after an initially empty cue.
+  player.currentTime = 0
+  tickCaptions()
+  assert.equal(currentCaption().caption, undefined)
+  player.currentTime = 71.26
+  tickCaptions()
+  assert.ok(texts(currentCaption().overlay).includes("担心的话你也一起来吧?"))
+  closeButton.props.contextMenu.menuItems.props.action()
+  assert.match(subtitleInfo.message, /最近 71.26 秒/)
+  assert.match(subtitleInfo.message, /送往显示层：担心的话你也一起来吧/)
+  assert.equal([...timers.values()].filter(timer => timer.delay === 250).length, 1, "Each one-shot subtitle timeout must schedule exactly one successor")
+  fireTimers(5000)
+  for (let attempt = 0; attempt < 50 && !progressSaves.some(args => args.includes(71.26)); attempt += 1) await Promise.resolve()
+  assert.ok(progressSaves.some(args => args.includes(71.26)), "Progress must keep saving while playing without interval APIs")
   closeButton.props.action()
   unmount()
   assert.equal((await playback).opened, true)
@@ -253,6 +305,8 @@ try {
   assert.equal(find(plainModal, "AVPlayerView").props.allowsPictureInPicturePlayback, true)
   assert.equal(find(plainModal, "AVPlayerView").props.ignoresSafeArea, true)
   assert.ok(find(plainModal, "Button"), "No-subtitle playback must retain close control")
+  player.onEnded()
+  assert.equal([...timers.values()].filter(timer => timer.delay === 5000).length, 0, "Playback end must stop the recurring progress timeout")
   dismiss()
   unmount()
   await withoutSubtitles
@@ -282,7 +336,7 @@ try {
   unmount()
   await preview
   assert.equal(timers.size, 0)
-  console.log("PASS: unchanged immersive player; native observable caption binding without parent re-render; import/preview 62.60s/resume/seek/gaps/pause/display diagnostics/cleanup/PiP")
+  console.log("PASS: timeout-only Scripting host; repeated subtitle/progress updates; screenshot 71.26s; unchanged player/import/preview/resume/seek/gaps/pause/cleanup/PiP")
 } finally {
   unmount()
   for (const [name, value] of Object.entries(oldGlobals)) {

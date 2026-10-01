@@ -1,5 +1,6 @@
 import { AVPlayerView, Button, Device, ForEach, Image, Navigation, PIPStatus, Text, VStack, VideoPlayer, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { resolveMissAVResumePosition } from "./playback-progress"
+import { startPlaybackPolling } from "./playback-polling"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
 
 export type NativePlaybackRequest = {
@@ -19,7 +20,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
   const player = new AVPlayer()
   let hasStarted = false
   let hasEnded = false
-  let progressTimer: ReturnType<typeof setInterval> | undefined
+  let stopProgressPolling: (() => void) | undefined
   let progressWrites = Promise.resolve()
   const saveProgress = (positionSeconds: number, durationSeconds: number): void => {
     if (!request.onProgress) return
@@ -34,13 +35,13 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
       const resumePosition = resolveMissAVResumePosition(request.resumePositionSeconds, request.resumeDurationSeconds, player.duration)
       if (resumePosition > 0) player.currentTime = resumePosition
       player.play()
-      progressTimer = setInterval(() => {
+      stopProgressPolling = startPlaybackPolling(() => {
         if (!hasEnded) saveProgress(player.currentTime, player.duration)
       }, 5_000)
     }
     player.onEnded = () => {
       hasEnded = true
-      if (progressTimer !== undefined) clearInterval(progressTimer)
+      stopProgressPolling?.()
       saveProgress(0, player.duration)
     }
     player.onError = message => console.error(`${request.providerLabel} 播放失败:`, message)
@@ -59,7 +60,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
       Device.supportedInterfaceOrientations = previousOrientations
     }
   } finally {
-    if (progressTimer !== undefined) clearInterval(progressTimer)
+    stopProgressPolling?.()
     if (hasStarted) saveProgress(hasEnded ? 0 : player.currentTime, player.duration)
     await progressWrites
     player.stop()
@@ -94,13 +95,12 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
       captionRows.setValue(nextRows)
     }
     refreshSubtitle()
-    const timer = setInterval(refreshSubtitle, 250)
-    return () => clearInterval(timer)
+    return startPlaybackPolling(refreshSubtitle, 250)
   }, [player, subtitles])
 
   const subtitleDisplayInfo = () => {
     const status = displayStatus.current
-    return `显示路径：原生绑定 / 底部对齐\n自动采样：${status.polls} 次，最近 ${status.sampledTime.toFixed(2)} 秒\n送往显示层：${captionRows.value[0]?.text ?? "当前空档"}\n文本节点构建：${status.builtText || "尚未构建或当前空档"}`
+    return `显示路径：原生绑定 / 底部对齐\n定时器：递归 setTimeout（250 毫秒）\n自动采样：${status.polls} 次，最近 ${status.sampledTime.toFixed(2)} 秒\n送往显示层：${captionRows.value[0]?.text ?? "当前空档"}\n文本节点构建：${status.builtText || "尚未构建或当前空档"}`
   }
 
   return <ZStack alignment="leading" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" ignoresSafeArea={true} preferredColorScheme="dark" statusBarHidden={true}>
