@@ -113,12 +113,11 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
 
         // The visible page is already the exact result route being checked.
         // Re-navigating it and then probing the other listing duplicates the
-        // same WebKit work that the home/browse refresh immediately performs.
-        // Accept this real listing as proof of clearance, then let those screens
-        // make their normal requests and report any route-specific failure.
+        // same WebKit work for this route. A single accessible route does not
+        // prove that both Home and Browse are available, so continue to the
+        // remaining probe before reporting success.
         if (visibleListingConfirmed) {
-          missavClient.clearSearchPageCache()
-          return "accessible"
+          continue
         }
       }
 
@@ -350,3 +349,4 @@ function isAuthenticatedHTML(html: string): boolean {
 function extractAccountLabel(html: string): string | undefined { return cleanText(firstMatch(html, /(?:data-user-name|data-username)=['"]([^'"]+)/i)) || cleanText(firstMatch(html, /<meta\b[^>]*name=['"]user['"][^>]*content=['"]([^'"]+)/i)) || undefined }
 function parseMeta(value: string | null): { state?: MissAVAccountState; accountLabel?: string; accountEmail?: string; updatedAt?: number } | null { try { return value ? JSON.parse(value) : null } catch { return null } }
 function firstMatch(value: string, regex: RegExp): string { return regex.exec(value)?.[1] || "" }
+
