@@ -19,10 +19,8 @@ let player
 let presented
 let dismiss
 let dismissCount = 0
-let states = []
-let stateIndex = 0
-let effectDependencies
-let cleanup
+const hookContexts = new Map()
+let hookContext
 
 const jsx = (type, props) => ({ type, props: props || {} })
 const scripting = {
@@ -34,15 +32,17 @@ const scripting = {
   },
   useObservable: () => ({}),
   useState: initial => {
-    const index = stateIndex++
-    if (!(index in states)) states[index] = initial
-    return [states[index], value => { states[index] = value }]
+    const context = hookContext
+    const index = context.index++
+    if (!(index in context.states)) context.states[index] = initial
+    return [context.states[index], value => { context.states[index] = value }]
   },
   useEffect: (effect, dependencies) => {
-    if (effectDependencies?.every((item, index) => Object.is(item, dependencies[index]))) return
-    cleanup?.()
-    effectDependencies = dependencies
-    cleanup = effect()
+    const index = hookContext.index++
+    const previous = hookContext.effects[index]
+    if (previous?.dependencies.length === dependencies.length && previous.dependencies.every((item, index) => Object.is(item, dependencies[index]))) return
+    previous?.cleanup?.()
+    hookContext.effects[index] = { dependencies, cleanup: effect() }
   },
 }
 
@@ -68,24 +68,35 @@ function children(node) {
   return [node?.props?.children].flat().filter(Boolean)
 }
 
+function renderComponent(node) {
+  if (!hookContexts.has(node.type)) hookContexts.set(node.type, { states: [], effects: [], index: 0 })
+  const previous = hookContext
+  hookContext = hookContexts.get(node.type)
+  hookContext.index = 0
+  try { return node.type(node.props) } finally { hookContext = previous }
+}
+
+function unmount() {
+  for (const context of hookContexts.values()) for (const effect of context.effects) effect?.cleanup?.()
+  hookContexts.clear()
+}
+
 function find(node, type) {
   if (!node || typeof node !== "object") return undefined
-  if (typeof node.type === "function") return find(node.type(node.props), type)
+  if (typeof node.type === "function") return find(renderComponent(node), type)
   if (node.type === type) return node
   for (const child of children(node)) { const result = find(child, type); if (result) return result }
 }
 
 function texts(node) {
   if (!node || typeof node !== "object") return []
-  if (typeof node.type === "function") return texts(node.type(node.props))
+  if (typeof node.type === "function") return texts(renderComponent(node))
   return node.type === "Text" ? children(node) : children(node).flatMap(texts)
 }
 
 function renderOverlay(overlay) {
-  stateIndex = 0
-  overlay.type(overlay.props) // Commit initial effect/state updates, then read updated tree.
-  stateIndex = 0
-  return overlay.type(overlay.props)
+  renderComponent(overlay) // Commit initial effect/state updates, then read updated tree.
+  return renderComponent(overlay)
 }
 
 function tickCaptions() {
@@ -127,13 +138,21 @@ try {
   await waitForPresentation(playback)
   assert.equal(presented.props.subtitles.cues.length, 2, "Downloaded subtitles must reach the presented player")
   assert.equal(player.currentTime, 8, "Resume must use video time, not elapsed timer time")
-  const modal = presented.type(presented.props)
+  const modal = renderComponent(presented)
+  assert.equal(modal.type, "VStack", "Header and video must use separate layout rows, not overlap in a ZStack")
+  assert.equal(modal.props.spacing, 0)
+  assert.equal(children(modal).length, 2, "Both subtitle modes must reserve exactly one header before the video")
+  const header = children(modal)[0]
+  assert.equal(renderOverlay(header).props.frame.height, 52, "Close control must have a dedicated fixed-height row")
   const video = find(modal, "VideoPlayer")
+  assert.equal(children(modal)[1], video, "Video must be the second row, below the close control")
+  assert.notEqual(video.props.ignoresSafeArea, true, "Video must not escape the reserved safe-area layout")
   assert.ok(video?.props.overlay, "Captions must be hosted by the native VideoPlayer.overlay, not its outer sibling")
   const overlay = video.props.overlay
   let tree = renderOverlay(overlay)
   assert.ok(texts(tree).includes("第二句对白"), "Resume must immediately show the matching dialogue")
-  assert.ok(texts(tree).includes("字幕已加载 · 2 条"), "Player must confirm the loaded cue count")
+  assert.ok(texts(renderOverlay(header)).includes("字幕已加载 · 2 条"), "Header must confirm the loaded cue count")
+  assert.equal(find(tree, "Button"), undefined, "Close control must never be placed over native video controls")
   assert.equal(find(tree, "Text").props.lineLimit, 1)
   player.currentTime = 2
   tickCaptions()
@@ -148,12 +167,13 @@ try {
   assert.deepEqual(texts(renderOverlay(overlay)), pausedTexts, "Pausing must preserve the matching dialogue")
   for (const timer of [...timers.values()]) if (timer.delay === 5000) timer.callback()
   tree = renderOverlay(overlay)
-  assert.ok(!texts(tree).includes("字幕已加载 · 2 条"), "Load notice must disappear without clearing dialogue")
+  assert.ok(!texts(renderOverlay(header)).includes("字幕已加载 · 2 条"), "Load notice must disappear without clearing dialogue")
   assert.ok(texts(tree).includes("第二句对白"))
-  const closeButton = find(tree, "Button")
+  const closeButton = find(renderOverlay(header), "Button")
   assert.equal(closeButton.props.accessibilityLabel, "关闭播放器")
+  assert.deepEqual(closeButton.props.frame, { width: 44, height: 44 }, "Close hit target must remain accessible")
   closeButton.props.action()
-  cleanup()
+  unmount()
   assert.equal((await playback).opened, true)
   assert.equal(dismissCount, 1)
   assert.equal(timers.size, 0, "Dismiss must clear caption and progress timers")
@@ -165,16 +185,21 @@ try {
   const withoutSubtitles = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source)
   await waitForPresentation(withoutSubtitles)
   assert.equal(presented.props.subtitles, undefined)
-  const plainModal = presented.type(presented.props)
+  const plainModal = renderComponent(presented)
+  assert.equal(plainModal.type, "VStack")
+  assert.equal(children(plainModal).length, 2)
+  assert.equal(renderOverlay(children(plainModal)[0]).props.frame.height, 52)
   assert.ok(find(plainModal, "AVPlayerView"), "No-subtitle playback must retain native PiP-capable player")
   assert.equal(find(plainModal, "AVPlayerView").props.allowsPictureInPicturePlayback, true)
+  assert.notEqual(find(plainModal, "AVPlayerView").props.ignoresSafeArea, true)
   assert.ok(find(plainModal, "Button"), "No-subtitle playback must retain close control")
   dismiss()
+  unmount()
   await withoutSubtitles
   assert.equal(timers.size, 0)
-  console.log("PASS: import -> playback -> native overlay; resume/seek/gaps/pause/close/cleanup; subtitles-off PiP path")
+  console.log("PASS: separate close header in both playback modes; native caption overlay; import/resume/seek/gaps/pause/cleanup/PiP")
 } finally {
-  cleanup?.()
+  unmount()
   for (const [name, value] of Object.entries(oldGlobals)) {
     if (value === undefined) delete globalThis[name]
     else globalThis[name] = value

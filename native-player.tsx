@@ -71,14 +71,15 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
   const dismiss = Navigation.useDismiss()
   const pipStatus = useObservable<PIPStatus>()
 
-  return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
+  // Reserve a real row outside the video; native controls never share this hit area.
+  return <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="black" statusBarHidden={false}>
+    <PlayerCloseControl dismiss={dismiss} subtitles={subtitles} />
     {subtitles
       ? <VideoPlayer
         player={player}
         // Use the native video overlay so captions follow the system full-screen player.
-        overlay={<SubtitlePlaybackOverlay player={player} subtitles={subtitles} dismiss={dismiss} />}
+        overlay={<SubtitlePlaybackOverlay player={player} subtitles={subtitles} />}
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-        ignoresSafeArea={true}
       />
       : <AVPlayerView
         player={player}
@@ -90,15 +91,12 @@ function NativeOnlinePlayerModal({ player, subtitles }: { player: AVPlayer; subt
         exitsFullScreenWhenPlaybackEnds={false}
         videoGravity="resizeAspect"
         frame={{ maxWidth: "infinity", maxHeight: "infinity" }}
-        ignoresSafeArea={true}
       />}
-    {!subtitles ? <PlayerCloseControl dismiss={dismiss} /> : undefined}
-  </ZStack>
+  </VStack>
 }
 
-function SubtitlePlaybackOverlay({ player, subtitles, dismiss }: { player: AVPlayer; subtitles: SubtitleTrack; dismiss: () => void }) {
+function SubtitlePlaybackOverlay({ player, subtitles }: { player: AVPlayer; subtitles: SubtitleTrack }) {
   const [subtitleText, setSubtitleText] = useState("")
-  const [showLoadNotice, setShowLoadNotice] = useState(true)
 
   useEffect(() => {
     // Keep caption state in the overlay: changing a cue must not rebuild VideoPlayer.
@@ -111,28 +109,30 @@ function SubtitlePlaybackOverlay({ player, subtitles, dismiss }: { player: AVPla
     }
     refreshSubtitle()
     const timer = setInterval(refreshSubtitle, 250)
-    setShowLoadNotice(true)
-    const noticeTimer = setTimeout(() => setShowLoadNotice(false), 5_000)
-    return () => { clearInterval(timer); clearTimeout(noticeTimer) }
+    return () => clearInterval(timer)
   }, [player, subtitles])
 
   return <ZStack alignment="bottom" frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
     {subtitleText ? <SubtitleCaption text={subtitleText} /> : undefined}
-    <PlayerCloseControl dismiss={dismiss} notice={showLoadNotice ? `字幕已加载 · ${subtitles.cues.length} 条` : undefined} />
   </ZStack>
 }
 
-function PlayerCloseControl({ dismiss, notice }: { dismiss: () => void; notice?: string }) {
-  return <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={{ horizontal: 14, top: 12 }}>
-    <HStack frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭播放器">
-        <Image systemName="xmark" font="headline" foregroundStyle="white" />
-      </Button>
-      {notice ? <Text font="caption" foregroundStyle="white" lineLimit={1} padding={{ horizontal: 10, vertical: 6 }} background="rgba(0, 0, 0, 0.72)">{notice}</Text> : undefined}
-      <Spacer />
-    </HStack>
+function PlayerCloseControl({ dismiss, subtitles }: { dismiss: () => void; subtitles?: SubtitleTrack }) {
+  const [showLoadNotice, setShowLoadNotice] = useState(true)
+  useEffect(() => {
+    setShowLoadNotice(true)
+    if (!subtitles) return
+    const timer = setTimeout(() => setShowLoadNotice(false), 5_000)
+    return () => clearTimeout(timer)
+  }, [subtitles])
+
+  return <HStack spacing={10} frame={{ maxWidth: "infinity", height: 52, alignment: "leading" }} padding={{ horizontal: 14 }} background="black">
+    <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭播放器">
+      <Image systemName="xmark" font="headline" foregroundStyle="white" />
+    </Button>
+    {subtitles && showLoadNotice ? <Text font="caption" foregroundStyle="white" lineLimit={1}>{`字幕已加载 · ${subtitles.cues.length} 条`}</Text> : undefined}
     <Spacer />
-  </VStack>
+  </HStack>
 }
 
 function SubtitleCaption({ text }: { text: string }) {
