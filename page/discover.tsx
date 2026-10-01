@@ -63,7 +63,7 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
       <VStack key="discover-results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
-            {collections.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === collection} action={() => { void load({ page: 1, collection: item.value }) }} />)}
+            {collections.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === collection} action={() => { void load({ page: 1, collection: item.value, sort: defaultCollectionSort(item.value) }) }} />)}
           </HStack>
         </ScrollView>
 
@@ -90,6 +90,13 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
       </VStack>
     </ScrollView>}}</ScrollViewReader>
   </ZStack>
+}
+
+function defaultCollectionSort(collection: MissAVCollection): MissAVSort {
+  if (collection === "today-hot") return "today_views"
+  if (collection === "weekly-hot") return "weekly_views"
+  if (collection === "monthly-hot") return "monthly_views"
+  return "released_at"
 }
 
 function CategoryChip(props: { title: string; active: boolean; action: () => void }) {
