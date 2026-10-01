@@ -1,9 +1,8 @@
-import { Button, HStack, Image, List, Navigation, Picker, Section, SecureField, Text, TextField, VStack, useObservable, useState } from "scripting"
+import { Button, HStack, Image, List, Navigation, Picker, Section, SecureField, Text, TextField, VStack, useState } from "scripting"
 import { submitMissAVAccess } from "../access"
 import { getMissAVAccountSnapshot, loginMissAV, openMissAVSiteVerification, signOutMissAV, verifyMissAVAccount, type MissAVAccountSnapshot } from "../account"
 import { ACCENT } from "../design"
 import { getMissAVBaseURL, getMissAVDomainLabel, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../domain"
-import { ChangelogPage } from "./changelog"
 
 export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerified?: () => void; onAccountChanged?: () => void; onAccessReady?: () => void; accessRequired?: boolean }) {
   const dismiss = Navigation.useDismiss()
@@ -14,7 +13,6 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
   const [accountMessage, setAccountMessage] = useState<string | null>(null)
   const [loginEmail, setLoginEmail] = useState(() => getMissAVAccountSnapshot().accountEmail ?? "")
   const [loginPassword, setLoginPassword] = useState("")
-  const changelogPresented = useObservable(false)
 
   function changeDomain(value: string) {
     const next = value as MissAVBaseURL
@@ -121,8 +119,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     </Section>
 
     <Section header={<Text>关于</Text>}>
-      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="play.rectangle.fill" foregroundStyle={ACCENT} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">版本 4.1.0</Text></VStack></HStack>
-      <Button action={() => changelogPresented.setValue(true)} buttonStyle="plain" frame={{ maxWidth: "infinity" }} contentShape="rect" navigationDestination={{ isPresented: changelogPresented, content: <ChangelogPage /> }} accessibilityLabel="更新日志，查看 MISSAV 版本历史"><HStack spacing={12} frame={{ maxWidth: "infinity", minHeight: 54 }}><Image systemName="clock.arrow.trianglehead.counterclockwise.rotate.90" foregroundStyle={ACCENT} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">更新日志</Text><Text font="subheadline" foregroundStyle="secondaryLabel">查看版本 4.1.0 与历史更新</Text></VStack><Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" /></HStack></Button>
+      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="play.rectangle.fill" foregroundStyle={ACCENT} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">版本 1.0.0</Text></VStack></HStack>
       <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="network" foregroundStyle="secondaryLabel" frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">当前站点</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{getMissAVDomainLabel(domain)}</Text></VStack></HStack>
     </Section>
   </List>
