@@ -274,7 +274,10 @@ function JavSubSubtitleSearchPage(props: { videoCode: string; onDownloaded: (vid
       const content = file.source === "JavSub.ai"
         ? await downloadJavSubSubtitleFile(file, cookieHeader)
         : await downloadSubtitleCatFile(file)
-      const associatedCode = title || props.videoCode
+      // Search text is editable and may differ from this detail page's work.
+      // Always save under the displayed video's identity so its playback path
+      // and the subtitle cache use the same association key.
+      const associatedCode = props.videoCode
       await saveMissAVSubtitle(associatedCode, content)
       props.onDownloaded(associatedCode)
       dismiss()
@@ -309,7 +312,7 @@ function JavSubSubtitleSearchPage(props: { videoCode: string; onDownloaded: (vid
               {loading ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="magnifyingglass" />}
             </Button>
           </HStack>
-          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">聚合 JavSub.ai 与 Subtitle Cat 的公开字幕结果。完整免费 SRT 会缓存在应用内部并关联到搜索番号；预览条目不能下载。</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">聚合 JavSub.ai 与 Subtitle Cat 的公开字幕结果。下载的完整免费 SRT 会缓存在应用内部并关联到当前详情作品；预览条目不能下载。修改搜索番号时，请确认字幕适用于当前作品。</Text>
           {error ? <VStack spacing={8} alignment="leading" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
             <Text font="subheadline" foregroundStyle="systemRed" multilineTextAlignment="leading">{error}</Text>
             <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} action={() => { void search() }} />

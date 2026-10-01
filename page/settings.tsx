@@ -48,7 +48,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     setAccountMessage(null)
     try {
       const result = await openMissAVSiteVerification()
-      setAccountMessage(result === "accessible" ? "验证通过：所选域名的首页热门和浏览列表均可载入，内容已刷新。" : result === "incomplete" ? "Cloudflare 验证尚未完成。请重新点击“验证访问线路”完成挑战；验证通过后页面会自动关闭并刷新内容。" : "验证窗口未返回有效作品列表；可能是线路拦截或网络异常，请完成验证或切换域名后重试。")
+      setAccountMessage(result === "accessible" ? "验证通过：验证页面已载入真实作品列表，正在刷新首页和浏览内容。" : result === "incomplete" ? "Cloudflare 验证尚未完成。请重新点击“验证访问线路”完成挑战；验证通过后页面会自动关闭并刷新内容。" : "验证窗口未返回有效作品列表；可能是线路拦截或网络异常，请完成验证或切换域名后重试。")
       if (result === "accessible") props.onAccessVerified?.()
     } catch (reason) {
       setAccountMessage(reason instanceof Error ? reason.message : "访问线路验证窗口当前无法打开。")
