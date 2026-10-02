@@ -20,7 +20,6 @@ export type NativePlaybackRequest = {
 export async function presentNativeOnlinePlayer(request: NativePlaybackRequest): Promise<void> {
   if (!/^https?:\/\//i.test(request.url)) throw new Error("当前清晰度没有可用的播放地址。")
   const player = new AVPlayer()
-  let asset: AVAsset | undefined
   let hasStarted = false
   let hasEnded = false
   let closing = false
@@ -68,12 +67,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     player.onError = message => console.error(`${request.providerLabel} 播放失败:`, message)
     await SharedAudioSession.setCategory("playback", ["defaultToSpeaker"])
     await SharedAudioSession.setActive(true)
-    // AVPlayer.setSource accepts a URL or AVAsset, not a second options arg.
-    // Use AVAsset for authenticated/CDN streams that require request headers.
-    asset = typeof AVAsset !== "undefined" && request.headers
-      ? new AVAsset(request.url, { headers: request.headers })
-      : undefined
-    const accepted = player.setSource(asset ?? request.url)
+    const accepted = player.setSource(request.url, { headers: request.headers })
     if (!accepted) throw new Error("系统无法加载该视频格式。")
     const previousOrientations = Device.supportedInterfaceOrientations.slice()
     Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
@@ -90,12 +84,9 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     removeLifecycle()
     stopProgress()
     if (hasStarted) saveProgress(hasEnded ? 0 : player.currentTime, player.duration)
-    try { await progressWriter.flush() }
-    finally {
-      player.stop()
-      player.dispose()
-      asset?.dispose()
-    }
+    await progressWriter.flush()
+    player.stop()
+    player.dispose()
   }
 }
 
