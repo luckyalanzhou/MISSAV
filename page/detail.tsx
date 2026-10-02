@@ -5,7 +5,7 @@ import { chooseAndPresentMissAVPlayer } from "../player"
 import { getMissAVAccountSnapshot, getMissAVWebsiteSavedState, setMissAVWebsiteSaved } from "../account"
 import { isMissAVFavourite, rememberMissAVDetail, toggleMissAVFavourite } from "../storage"
 import { hasMissAVSubtitle, isMissAVSubtitleEnabled, saveMissAVSubtitle, setMissAVSubtitleEnabled } from "../subtitles"
-import { downloadSubtitleCatFile, searchSubtitleCatFiles, type SubtitleCatSubtitleFile } from "../subtitlecat"
+import { downloadSubtitleCatFile, searchSubtitleCatFiles, type SubtitleCatSearchResult, type SubtitleCatSubtitleFile } from "../subtitlecat"
 import { MediaArtwork } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
@@ -188,7 +188,14 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   const [downloadingId, setDownloadingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
+  const [searchProgress, setSearchProgress] = useState("")
   const controllerRef = useRef<WebViewController | null>(null)
+
+  function stopSearch() {
+    const controller = controllerRef.current
+    controllerRef.current = null
+    controller?.dispose()
+  }
 
   async function search(value = query) {
     const code = value.trim().toUpperCase().replace(/\s+/g, "-")
@@ -205,15 +212,24 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
     setHasIncompleteResults(false)
     setTitle("")
     setHasSearched(false)
-    try {
-      const result = await searchSubtitleCatFiles(controller, code)
+    setSearchProgress("正在搜索匹配条目…")
+    const updateResults = (result: SubtitleCatSearchResult) => {
       if (controllerRef.current !== controller) return
       setTitle(code)
       setFiles(result.files)
       setSourceStatus([`Subtitle Cat：${result.files.length} 个文件，${result.searchResultCount} 个匹配条目${result.failedDetailCount ? `，${result.failedDetailCount} 个详情页未能读取` : ""}`])
-      setHasSuccessfulSource(true)
-      setHasIncompleteResults(result.failedDetailCount > 0)
+      setHasSuccessfulSource(result.processedDetailCount > result.failedDetailCount || result.searchResultCount === 0)
+      setHasIncompleteResults(result.failedDetailCount > 0 || result.processedDetailCount < result.searchResultCount)
+      setSearchProgress(`已读取 ${result.processedDetailCount}/${result.searchResultCount} 个匹配条目`)
       setHasSearched(true)
+    }
+    try {
+      const result = await searchSubtitleCatFiles(controller, code, {
+        isCancelled: () => controllerRef.current !== controller,
+        onProgress: updateResults,
+      })
+      if (controllerRef.current !== controller) return
+      updateResults(result)
     } catch (reason) {
       if (controllerRef.current === controller) {
         setTitle(code)
@@ -233,6 +249,12 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   async function download(file: SubtitleCatSubtitleFile) {
     if (!file.isFree || file.isDemo || downloadingId) return
     const fileKey = `${file.source}:${file.id}`
+    if (controllerRef.current) {
+      stopSearch()
+      setLoading(false)
+      setHasIncompleteResults(true)
+      setSearchProgress("已停止剩余搜索，可下载已载入的字幕")
+    }
     setDownloadingId(fileKey)
     setError(null)
     try {
@@ -252,8 +274,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   useEffect(() => {
     void search(props.videoCode)
     return () => {
-      controllerRef.current?.dispose()
-      controllerRef.current = null
+      stopSearch()
     }
   }, [])
 
@@ -264,7 +285,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
           <Text font="headline" fontWeight="bold">按番号搜索字幕</Text>
           <Text font="caption" foregroundStyle="secondaryLabel">简体中文、繁体中文优先</Text>
         </VStack>
-        <Button action={() => { controllerRef.current?.dispose(); controllerRef.current = null; dismiss() }} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭字幕搜索"><Image systemName="xmark" foregroundStyle="secondaryLabel" /></Button>
+        <Button action={() => { stopSearch(); dismiss() }} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭字幕搜索"><Image systemName="xmark" foregroundStyle="secondaryLabel" /></Button>
       </HStack>
       <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
@@ -280,14 +301,15 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
             <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} action={() => { void search() }} />
           </VStack> : undefined}
           {loading && !hasSearched ? <HStack spacing={10} frame={{ maxWidth: "infinity", minHeight: 100 }}><ProgressView tint={ACCENT} /><Text font="subheadline" foregroundStyle="secondaryLabel">正在按番号搜索…</Text></HStack> : undefined}
+          {hasSearched ? <HStack spacing={8}>{loading ? <ProgressView tint={ACCENT} /> : undefined}<Text font="caption" foregroundStyle="secondaryLabel">{searchProgress}</Text></HStack> : undefined}
           {hasSearched ? <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}>
             <Text font="headline" fontWeight="semibold">{title || `番号 ${query}`}</Text>
-            <Text font="caption" foregroundStyle="secondaryLabel">{hasSuccessfulSource ? `共找到 ${files.length} 个可下载字幕文件；简体中文和繁体中文置顶。${hasIncompleteResults ? " 部分详情页未能读取，结果可能不完整。" : ""}` : "Subtitle Cat 搜索没有成功完成，当前无法判断该番号是否有字幕。"}</Text>
+            <Text font="caption" foregroundStyle="secondaryLabel">{hasSuccessfulSource ? `${loading ? "已" : "共"}找到 ${files.length} 个可下载字幕文件；简体中文和繁体中文置顶。${hasIncompleteResults && !loading ? " 部分详情页未能读取，结果可能不完整。" : ""}` : loading ? "正在读取字幕详情，有结果后立即显示。" : "Subtitle Cat 搜索没有成功完成，当前无法判断该番号是否有字幕。"}</Text>
             {sourceStatus.map((status, index) => <Text key={`subtitle-source-${index}`} font="caption" foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"} multilineTextAlignment="leading">{status}</Text>)}
             {files.length ? <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>{files.map((file, index) => <VStack key={`${file.source}-${file.id}`} spacing={0} frame={{ maxWidth: "infinity" }}>
               {index ? <Divider /> : undefined}
               <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} />
-            </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{!hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载文件，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的字幕文件。可以修改番号后重新搜索。"}</Text>}
+            </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{loading ? "搜索仍在进行，请稍候…" : !hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载文件，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的字幕文件。可以修改番号后重新搜索。"}</Text>}
             {hasIncompleteResults && hasSuccessfulSource ? <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading || Boolean(downloadingId)} action={() => { void search() }} /> : undefined}
           </VStack> : undefined}
           {!loading && !hasSearched && !error ? <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">将自动搜索当前作品番号；也可以编辑番号后搜索其他字幕。</Text> : undefined}

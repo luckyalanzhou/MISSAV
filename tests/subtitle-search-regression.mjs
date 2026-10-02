@@ -47,7 +47,7 @@ function harness() {
     if (specifier === "scripting") return scripting
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "../subtitlecat") return {
-      searchSubtitleCatFiles: (controller, code) => new Promise((resolve, reject) => pending.push({ controller, code, resolve, reject })),
+      searchSubtitleCatFiles: (controller, code, options) => new Promise((resolve, reject) => pending.push({ controller, code, options, resolve, reject })),
       downloadSubtitleCatFile: async value => { assert.equal(value, file); return "fixture SRT" },
     }
     if (specifier === "../subtitles") return { saveMissAVSubtitle: async (...args) => saved.push(args) }
@@ -74,12 +74,16 @@ function harness() {
   }
 }
 const texts = nodes => nodes.filter(node => node.type === "Text").map(node => node.props.children).filter(value => typeof value === "string").join("\n")
-const resolveSearch = (page, result = {}) => page.pending.at(-1).resolve({ files: [file], searchResultCount: 1, failedDetailCount: 0, ...result })
+const resolveSearch = (page, result = {}) => page.pending.at(-1).resolve({ files: [file], searchResultCount: 1, processedDetailCount: 1, failedDetailCount: 0, ...result })
 
 const page = harness()
 page.mount()
 assert.equal(page.pending.length, 1, "Search the remaining provider immediately on mount")
 assert.equal(page.pending[0].code, "FNS-258")
+page.pending[0].options.onProgress({ files: [file], searchResultCount: 3, processedDetailCount: 1, failedDetailCount: 0 })
+assert.match(texts(page.render()), /已读取 1\/3/)
+assert.ok(page.render().some(node => node.type === "SubtitleFileRow"), "Render partial files before the search finishes")
+assert.doesNotMatch(texts(page.render()), /没有找到这个番号/)
 resolveSearch(page)
 await settle()
 assert.ok(page.controllers[0].disposed)
@@ -93,7 +97,7 @@ nodes.find(node => node.type === "TextField").props.onChanged("OTHER-123")
 nodes = page.render()
 nodes.find(node => node.type === "TextField").props.onSubmit()
 assert.equal(page.pending[1].code, "OTHER-123")
-resolveSearch(page, { failedDetailCount: 1, searchResultCount: 2 })
+resolveSearch(page, { failedDetailCount: 1, searchResultCount: 2, processedDetailCount: 2 })
 await settle()
 nodes = page.render()
 assert.match(texts(nodes), /部分详情页未能读取/)
@@ -129,3 +133,16 @@ assert.equal(closed.dismissed, 1)
 assert.ok(!closed.render().some(node => node.type === "SubtitleFileRow"), "Ignore search responses after closing")
 
 console.log("PASS: single-provider immediate search; results/errors/partial results; query-independent video association; controller cleanup")
+
+const earlyDownload = harness()
+earlyDownload.mount()
+const early = earlyDownload.pending[0]
+early.options.onProgress({ files: [file], searchResultCount: 3, processedDetailCount: 1, failedDetailCount: 0 })
+earlyDownload.render().find(node => node.type === "SubtitleFileRow").props.onDownload(file)
+assert.ok(early.options.isCancelled(), "Downloading a partial result stops remaining search")
+await settle()
+assert.deepEqual(earlyDownload.saved, [["FNS-258", "fixture SRT"]])
+early.options.onProgress({ files: [], searchResultCount: 3, processedDetailCount: 3, failedDetailCount: 0 })
+assert.ok(earlyDownload.render().some(node => node.type === "SubtitleFileRow"), "Late progress must not clear downloaded results")
+resolveSearch(earlyDownload, { files: [] })
+await settle()

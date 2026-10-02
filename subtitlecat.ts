@@ -19,42 +19,97 @@ export type SubtitleCatSearchResult = {
   files: SubtitleCatSubtitleFile[]
   searchResultCount: number
   failedDetailCount: number
+  processedDetailCount: number
+  metrics: SubtitleCatSearchMetrics
+}
+
+export type SubtitleCatSearchMetrics = {
+  elapsedMs: number
+  firstResultMs: number | null
+  httpRequests: number
+  webViewLoads: number
+}
+
+export type SubtitleCatSearchOptions = {
+  onProgress?: (result: SubtitleCatSearchResult) => void
+  isCancelled?: () => boolean
+}
+
+class SubtitleCatSearchCancelledError extends Error {
+  constructor() { super("字幕搜索已停止。") }
 }
 
 export type SubtitleCatSearchEntry = { url: string; title: string }
 type SubtitleCatRawFile = { url?: unknown; details?: unknown }
 
-export async function searchSubtitleCatFiles(controller: WebViewController, value: string): Promise<SubtitleCatSearchResult> {
+export async function searchSubtitleCatFiles(controller: WebViewController, value: string, options: SubtitleCatSearchOptions = {}): Promise<SubtitleCatSearchResult> {
   const videoCode = normalizeSubtitleCatVideoCode(value)
+  const startedAt = Date.now()
+  const metrics: SubtitleCatSearchMetrics = { elapsedMs: 0, firstResultMs: null, httpRequests: 0, webViewLoads: 0 }
+  const checkCancelled = () => {
+    if (options.isCancelled?.()) throw new SubtitleCatSearchCancelledError()
+  }
+  // HTTP requests may overlap; navigation on the shared native controller must not.
+  let fallbackQueue: Promise<unknown> = Promise.resolve()
+  const readPage = async (url: string): Promise<string> => {
+    checkCancelled()
+    metrics.httpRequests += 1
+    const response = await readSubtitleCatPublicPage(url)
+    checkCancelled()
+    if (response.html) return response.html
+    const fallback = fallbackQueue.then(async () => {
+      checkCancelled()
+      metrics.webViewLoads += 1
+      return readSubtitleCatWebViewPage(controller, url, response.error, checkCancelled)
+    })
+    fallbackQueue = fallback.catch(() => {})
+    return fallback
+  }
   // The site's public GET search form uses index.php?search=...; show=1000 is its Load More link.
   const searchURL = `${SUBTITLECAT_ORIGIN}/index.php?search=${encodeURIComponent(videoCode)}&show=1000`
-  const entries = parseSubtitleCatSearchHTML(await readSubtitleCatPage(controller, searchURL), videoCode)
+  const entries = parseSubtitleCatSearchHTML(await readPage(searchURL), videoCode)
   const files: SubtitleCatSubtitleFile[] = []
   const seen = new Set<string>()
   let failedDetailCount = 0
-  for (const entry of entries) {
-    let detailURL: URL
-    try { detailURL = new URL(entry.url, SUBTITLECAT_ORIGIN) }
-    catch { continue }
-    if (detailURL.origin !== SUBTITLECAT_ORIGIN || !/^\/subs\/\d+\/[^/]+\.html$/i.test(detailURL.pathname)) continue
-
-    try {
-      const html = await readSubtitleCatPage(controller, detailURL.toString())
-      for (const file of parseSubtitleCatFileHTML(html, detailURL.toString())) {
-        if (seen.has(file.downloadURL)) continue
-        seen.add(file.downloadURL)
-        files.push(file)
+  let processedDetailCount = 0
+  let nextEntry = 0
+  const snapshot = (): SubtitleCatSearchResult => ({
+    files: [...files].sort((left, right) => subtitleCatLanguagePriority(left.language) - subtitleCatLanguagePriority(right.language)),
+    searchResultCount: entries.length,
+    failedDetailCount,
+    processedDetailCount,
+    metrics: { ...metrics, elapsedMs: Date.now() - startedAt },
+  })
+  const publish = () => { checkCancelled(); options.onProgress?.(snapshot()) }
+  publish()
+  const worker = async () => {
+    while (nextEntry < entries.length && !options.isCancelled?.()) {
+      const entry = entries[nextEntry++]
+      try {
+        const html = await readPage(entry.url)
+        checkCancelled()
+        for (const file of parseSubtitleCatFileHTML(html, entry.url)) {
+          if (seen.has(file.downloadURL)) continue
+          seen.add(file.downloadURL)
+          files.push(file)
+        }
+        if (files.length && metrics.firstResultMs === null) metrics.firstResultMs = Date.now() - startedAt
+      } catch (error) {
+        if (error instanceof SubtitleCatSearchCancelledError || options.isCancelled?.()) return
+        failedDetailCount += 1
       }
-    } catch {
-      failedDetailCount += 1
+      processedDetailCount += 1
+      publish()
     }
   }
-
+  await Promise.all(Array.from({ length: Math.min(3, entries.length) }, worker))
+  checkCancelled()
   if (entries.length && failedDetailCount === entries.length) {
     throw new Error(`Subtitle Cat 搜索到 ${entries.length} 个匹配条目，但详情页暂时无法读取，请重试。`)
   }
-  files.sort((left, right) => subtitleCatLanguagePriority(left.language) - subtitleCatLanguagePriority(right.language))
-  return { files, searchResultCount: entries.length, failedDetailCount }
+  const result = snapshot()
+  console.log("Subtitle Cat search metrics", { videoCode, ...result.metrics, matchedDetails: entries.length, processedDetailCount, failedDetailCount })
+  return result
 }
 
 export function parseSubtitleCatSearchHTML(html: string, value: string): SubtitleCatSearchEntry[] {
@@ -160,7 +215,7 @@ export async function downloadSubtitleCatFile(file: SubtitleCatSubtitleFile): Pr
   return content
 }
 
-async function readSubtitleCatPage(controller: WebViewController, url: string): Promise<string> {
+async function readSubtitleCatPublicPage(url: string): Promise<{ html?: string; error: string }> {
   let requestError = "公开页面请求失败"
   try {
     const response = await fetch(url, {
@@ -173,21 +228,32 @@ async function readSubtitleCatPage(controller: WebViewController, url: string): 
     const recognizable = new URL(url).pathname === "/index.php"
       ? /\b\d+\s+subtitles?\s+found\b/i.test(normalizeSubtitleCatText(stripSubtitleCatScripts(html)))
       : /All language subtitles|id\s*=\s*["']download_/i.test(html)
-    if (response.ok && recognizable && !isSubtitleCatChallenge(html)) return html
+    if (response.ok && recognizable && !isSubtitleCatChallenge(html)) return { html, error: "" }
     requestError = response.ok ? "页面暂时未能返回正常内容" : `公开页面请求失败（HTTP ${response.status}）`
   } catch (reason) {
     requestError = reason instanceof Error && /timeout|超时/i.test(reason.message) ? "公开页面请求超时" : requestError
   }
 
+  return { error: requestError }
+}
+
+async function readSubtitleCatWebViewPage(controller: WebViewController, url: string, requestError: string, checkCancelled: () => void): Promise<string> {
   // A failed subresource/waitForLoad flag must not discard a usable main document.
   try { await loadWebViewPage(controller, url, 20_000) } catch {}
+  checkCancelled()
   let html = await controller.getHTML()
+  checkCancelled()
   let currentURL = canonicalSubtitleCatURL(await controller.evaluateJavaScript<string>("return location.href"))
+  checkCancelled()
   if (html && currentURL && isSubtitleCatChallenge(html)) {
     await Dialog.alert({ title: "需要完成网站验证", message: "Subtitle Cat 要求先验证访问线路。请在随后打开的网页中完成验证并关闭网页，应用会继续搜索。" })
+    checkCancelled()
     await controller.present({ fullscreen: true, navigationTitle: "Subtitle Cat 验证" })
+    checkCancelled()
     html = await controller.getHTML()
+    checkCancelled()
     currentURL = canonicalSubtitleCatURL(await controller.evaluateJavaScript<string>("return location.href"))
+    checkCancelled()
   }
   const expectedURL = canonicalSubtitleCatURL(url)!
   const matchesPage = currentURL?.pathname === expectedURL.pathname
