@@ -1,7 +1,7 @@
 import { recordMissAVAccessDiagnostic, type MissAVDetailStage } from "./access-diagnostics"
 
 export const MISSAV_DETAIL_STAGE_LABELS: Record<MissAVDetailStage, string> = {
-  entered: "开始获取播放信息", "verification-wait": "等待线路验证结束", "cookie-restore": "恢复网站会话",
+  entered: "进入详情页", "verification-wait": "等待线路验证结束", "cookie-restore": "恢复网站会话",
   "page-load": "加载详情网页", "document-read": "读取详情网页", "source-parse": "提取播放地址",
   "cookie-capture": "保存网站会话", "detail-parse": "整理作品信息", "ui-update": "更新播放按钮",
   completed: "播放信息已载入", timeout: "获取播放信息超时", cancelled: "请求已取消",
