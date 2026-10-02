@@ -1,6 +1,7 @@
 import { fetch } from "scripting"
 import { loadSubtitleWebViewDocument, readSubtitleWebViewDocument } from "./subtitlecat-webview"
 import { parseMissAVSubtitle } from "./subtitles"
+import { extractSubtitleSearchCode } from "./subtitle-search-code"
 
 const SUBTITLECAT_ORIGIN = "https://www.subtitlecat.com"
 const SUBTITLECAT_HOME = `${SUBTITLECAT_ORIGIN}/`
@@ -461,7 +462,7 @@ function subtitleCatLanguagePriority(language: string): number {
 }
 
 function normalizeSubtitleCatVideoCode(value: string): string {
-  const code = value.trim().toUpperCase().replace(/\s+/g, "-")
+  const code = extractSubtitleSearchCode(value)
   if (!/^[A-Z0-9]{2,16}(?:-[A-Z0-9]{1,16}){0,2}$/.test(code)) throw new Error("请输入有效的作品番号。")
   return code
 }

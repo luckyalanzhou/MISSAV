@@ -34,6 +34,12 @@ const run = (): void => {
   catch { invalidPageRejected = true }
   assert(invalidPageRejected, "加载错误页面不得被当成没有字幕")
 
+  const suffixedSearchHTML = `<h2>3 subtitles found</h2>
+    <a href="subs/1/IPZZ-977.zh-cn.html">IPZZ-977 中文字幕</a>
+    <a href="subs/2/IPZZ-977-UNCENSORED.html">IPZZ-977-UNCENSORED</a>
+    <a href="subs/3/IPZZ-9770.zh-cn.html">IPZZ-9770</a>`
+  assert(parseSubtitleCatSearchHTML(suffixedSearchHTML, "IPZZ-977-UNCENSORED-LEAK").length === 2, "使用基础番号筛选结果，同时排除不同数字番号")
+
   const detailHTML = `<h2>All language subtitles for FNS-258.zh-cn(by transub.cc)</h2>
     <div class="sub-single"><span>Chinese (Simplified)</span><a id="download_zh-CN" href="/subs/1706/FNS-258.zh-cn(by transub.cc)-zh-CN.srt">Download</a></div>
     <div class="sub-single"><span>Chinese (Traditional)</span><a id="download_zh-TW" href="/subs/1707/FNS-258.zh-cn(by transub.cc)-zh-TW.srt">Download</a></div>
@@ -44,7 +50,7 @@ const run = (): void => {
   assert(detailFiles.map(file => file.language).join(",") === "简体中文,繁体中文", "原始文件名里的 zh-cn 不得覆盖翻译文件末尾的语言代码")
   assert(parseSubtitleCatFileListing(JSON.stringify([{ url: "/subs/1706/FNS-258.zh-cn(original)-en.srt", details: "Chinese (Simplified) original file" }])).length === 0, "文件末尾标记英语时不得因原文件名包含 zh-cn 而误收")
 
-  Script.exit({ passed: 12, message: "Subtitle Cat public search and file listing regression tests passed" })
+  Script.exit({ passed: 13, message: "Subtitle Cat public search and file listing regression tests passed" })
 }
 
 try { run() } catch (error) { Script.exit({ passed: 0, error: error instanceof Error ? error.message : String(error) }) }

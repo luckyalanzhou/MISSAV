@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import { compileProductionModule as compile } from "./production-module.mjs"
 const deadline = await import(compile("../request-deadline.ts"))
 const detailLoading = await import(compile("../detail-loading.ts"))
+const subtitleSearchCode = await import(compile("../subtitle-search-code.ts"))
 
 const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
@@ -16,7 +17,7 @@ const jsx = (type, props) => ({ type, props: props || {} })
 const settle = async () => { for (let i = 0; i < 10; i++) await Promise.resolve() }
 const file = { id: "zh-cn", source: "SubtitleCat", language: "简体中文", details: "", downloadURL: "https://www.subtitlecat.com/subs/1/FNS-258.zh-CN.srt", isFree: true, isDemo: false }
 
-function harness() {
+function harness(videoCode = "FNS-258") {
   const states = []
   const refs = []
   const effects = []
@@ -41,7 +42,7 @@ function harness() {
     QuickLook: { previewText: async content => previews.push(content) },
     useState: initial => {
       const index = hook++
-      if (!(index in states)) states[index] = initial
+      if (!(index in states)) states[index] = typeof initial === "function" ? initial() : initial
       return [states[index], value => { states[index] = value }]
     },
     useRef: initial => {
@@ -56,6 +57,7 @@ function harness() {
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "../request-deadline") return deadline
     if (specifier === "../detail-loading") return detailLoading
+    if (specifier === "../subtitle-search-code") return subtitleSearchCode
     if (specifier === "../subtitlecat") return {
       searchSubtitleCatFiles: (code, options) => new Promise((resolve, reject) => {
         const request = { code, options, controller: null,
@@ -74,7 +76,7 @@ function harness() {
   function render() {
     hook = 0
     const nodes = []
-    const tree = module.exports.SearchPage({ videoCode: "FNS-258", onDownloaded: code => associated.push(code), onClose: () => { dismissed++; unmount() } })
+    const tree = module.exports.SearchPage({ videoCode, onDownloaded: code => associated.push(code), onClose: () => { dismissed++; unmount() } })
     function visit(node) {
       if (Array.isArray(node)) { node.forEach(visit); return }
       if (!node?.props) return
@@ -208,3 +210,19 @@ for (const action of ["onDownload", "onPreview"]) {
   assert.equal(late.dismissed, 1)
 }
 console.log("PASS: late download/preview results are ignored after the search page closes")
+
+const suffixed = harness("IPZZ-977-UNCENSORED-LEAK")
+suffixed.mount()
+assert.equal(suffixed.pending[0].code, "IPZZ-977", "Auto-search uses the extracted base code")
+assert.equal(suffixed.render().find(node => node.type === "TextField").props.value, "IPZZ-977")
+resolveSearch(suffixed); await settle()
+suffixed.render().find(node => node.type === "TextField").props.onChanged("FC2-PPV-4566405-UNCENSORED")
+suffixed.render().find(node => node.type === "TextField").props.onSubmit()
+assert.equal(suffixed.pending[1].code, "FC2-PPV-4566405", "Edited searches use the same extraction rule")
+resolveSearch(suffixed); await settle()
+suffixed.render().find(node => node.type === "SubtitleFileRow").props.onDownload(file)
+await settle()
+assert.deepEqual(suffixed.saved, [["IPZZ-977-UNCENSORED-LEAK", "fixture SRT"]], "Do not replace the playback identity or subtitle storage key with the search alias")
+assert.deepEqual(suffixed.associated, ["IPZZ-977-UNCENSORED-LEAK"])
+assert.equal(suffixed.dismissed, 1)
+console.log("PASS: base-code search and edited FC2 query retain the original video's subtitle association")

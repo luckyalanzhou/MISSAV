@@ -9,6 +9,7 @@ const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/
 const deadline = await import(compile("../request-deadline.ts"))
 const requestTypes = await import(compile("../request-scope.ts"))
 const detailLoading = await import(compile("../detail-loading.ts"))
+const subtitleSearchCode = await import(compile("../subtitle-search-code.ts"))
 const timer = globalThis.setTimeout
 globalThis.setTimeout = (callback, delay, ...args) => timer(callback, delay === 6_000 ? 15 : delay, ...args)
 const settle = async () => { for (let i = 0; i < 35; i++) await Promise.resolve() }
@@ -35,6 +36,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
   if (specifier === "../request-deadline") return deadline
   if (specifier === "../detail-loading") return detailLoading
+  if (specifier === "../subtitle-search-code") return subtitleSearchCode
   if (specifier === "./detail-navigation") return {}
   if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo: (_, options) => {
     detailReads++; detailScope = options.scope

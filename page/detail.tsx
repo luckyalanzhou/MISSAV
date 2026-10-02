@@ -13,6 +13,7 @@ import { withMissAVDeadline } from "../request-deadline"
 import { createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import type { MissAVPlaybackPreparation } from "../playback-preparation"
+import { extractSubtitleSearchCode } from "../subtitle-search-code"
 
 export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: MissAVVideoDetail; preparation?: MissAVPlaybackPreparation; onHistoryChanged: () => void }) {
   const [detail, setDetail] = useState<MissAVVideoDetail | null>(props.initialDetail ?? null)
@@ -177,7 +178,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
 }
 
 function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode: string) => void; onClose: () => void }) {
-  const [query, setQuery] = useState(props.videoCode)
+  const [query, setQuery] = useState(() => extractSubtitleSearchCode(props.videoCode))
   const [title, setTitle] = useState("")
   const [files, setFiles] = useState<SubtitleCatSubtitleFile[]>([])
   const [sourceStatus, setSourceStatus] = useState<string[]>([])
@@ -204,7 +205,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   }
 
   async function search(value = query, forceRefresh = false) {
-    const code = value.trim().toUpperCase().replace(/\s+/g, "-")
+    const code = extractSubtitleSearchCode(value)
     if (!code || loading || downloadingId || subtitleOperation.current || !active.current) return
     stopSearch()
     const session = { controller: null as WebViewController | null, cancelled: false }

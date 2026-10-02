@@ -3,6 +3,8 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import { compileProductionModule as compile } from "./production-module.mjs"
+const subtitleSearchCode = await import(compile("../subtitle-search-code.ts"))
 
 const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
@@ -15,6 +17,7 @@ const detailHTML = (index, language = "en") => `<h2>All language subtitles</h2><
 
 function harness(count = 5, storage = new Map()) {
   const requests = []
+  const searchURLs = []
   const fallbacks = []
   const progress = []
   const controllers = []
@@ -29,7 +32,7 @@ function harness(count = 5, storage = new Map()) {
   const module = { exports: {} }
   new Function("require", "module", "exports", "Storage", "Date", "console", compiled)(specifier => {
     if (specifier === "scripting") return { fetch: async url => {
-      if (url.includes("index.php")) { searchRequests++; return { ok: true, text: async () => searchHTML(count) } }
+      if (url.includes("index.php")) { searchRequests++; searchURLs.push(url); return { ok: true, text: async () => searchHTML(count) } }
       active++; peak = Math.max(peak, active)
       return new Promise(resolve => requests.push({ url, finish(html, ok = true, status = ok ? 200 : 403) { active--; resolve({ ok, status, text: async () => html }) }, fail(error) { active--; resolve(Promise.reject(error)) } }))
     } }
@@ -38,11 +41,12 @@ function harness(count = 5, storage = new Map()) {
       readSubtitleWebViewDocument: async () => ({ url: currentURL, html: currentHTML, previousDocument: false }),
     }
     if (specifier === "./subtitles") return { parseMissAVSubtitle() { throw new Error("Search must not download/parse subtitle text") } }
+    if (specifier === "./subtitle-search-code") return subtitleSearchCode
     throw new Error(`Unexpected dependency: ${specifier}`)
   }, module, module.exports, { get: key => storage.get(key), set: (key, value) => storage.set(key, value) }, { now: () => clock }, { log: (_, data) => metricsLog.push(data) })
   const createController = () => { const controller = { disposed: false, dispose() { this.disposed = true } }; controllers.push(controller); return controller }
-  return { api: module.exports, requests, fallbacks, progress, storage, controllers, createController,
-    run(overrides = {}) { return module.exports.searchSubtitleCatFiles("FNS-258", { onProgress: result => progress.push(result), isCancelled: () => cancelled, createController, ...overrides }) },
+  return { api: module.exports, requests, searchURLs, fallbacks, progress, storage, controllers, createController,
+    run(overrides = {}, value = "FNS-258") { return module.exports.searchSubtitleCatFiles(value, { onProgress: result => progress.push(result), isCancelled: () => cancelled, createController, ...overrides }) },
     cancel() { cancelled = true },
     advance(ms) { clock += ms },
     get searchRequests() { return searchRequests },
@@ -221,3 +225,10 @@ await timeoutAssertion
 assert.equal(networkTimeout.controllers.length, 0, "Network timeouts must not wait for a second native request")
 assert.equal(networkTimeout.fallbacks.length, 0)
 console.log("PASS: three HTTP workers; progressive Chinese-first results; serialized native fallback; cancellation; empty results; metrics")
+
+const normalized = harness(0)
+await normalized.run({}, "IPZZ-977-UNCENSORED-LEAK")
+assert.equal(new URL(normalized.searchURLs[0]).searchParams.get("search"), "IPZZ-977", "The actual HTTP query uses the base code")
+assert.equal((await normalized.run({}, "IPZZ-977")).metrics.searchCacheHits, 1, "Versions of the same base code share the search cache")
+assert.equal(normalized.searchRequests, 1)
+console.log("PASS: base-code HTTP query and shared search cache for suffixed video identifiers")
