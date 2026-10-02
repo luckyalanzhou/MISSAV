@@ -1,4 +1,5 @@
 import { Script } from "scripting"
+import { runMissAVDataTask } from "./background-data"
 
 export type SubtitleCue = {
   startSeconds: number
@@ -93,13 +94,14 @@ export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTra
   const path = subtitleFilePath(videoCode)
   return withSubtitleFileOperation(path, async () => {
     if (await FileManager.exists(path)) {
-      const track = parseSubtitleTrack(await FileManager.readAsString(path))
+      const content = await FileManager.readAsString(path)
+      const track = await runMissAVDataTask("subtitle-parse", () => parseSubtitleTrack(content))
       return track.cues.length ? track : null
     }
     const legacyPath = `${FileManager.documentsDirectory.replace(/[\\/]+$/, "")}/${LEGACY_SUBTITLE_DIRECTORY_NAME}/${normalizeVideoCode(videoCode)}.srt`
     if (!await FileManager.exists(legacyPath)) return null
     const content = await FileManager.readAsString(legacyPath)
-    const track = parseSubtitleTrack(content)
+    const track = await runMissAVDataTask("subtitle-parse", () => parseSubtitleTrack(content))
     if (!track.cues.length) return null
     try {
       await FileManager.createDirectory(subtitleDirectoryPath(), true)
@@ -114,15 +116,18 @@ export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTra
 }
 
 export async function saveMissAVSubtitle(videoCode: string, source: string): Promise<number> {
-  const track = parseSubtitleTrack(source)
-  if (!track.cues.length) throw new Error("没有识别到有效对白字幕，下载内容可能只有字幕生成器署名。")
   const path = subtitleFilePath(videoCode)
-  await withSubtitleFileOperation(path, async () => {
+  // Queue before dispatching background work. Otherwise a slow earlier parse
+  // could finish last and overwrite a newer download for the same video.
+  return withSubtitleFileOperation(path, async () => {
+    const track = await runMissAVDataTask("subtitle-parse", () => parseSubtitleTrack(source))
+    if (!track.cues.length) throw new Error("没有识别到有效对白字幕，下载内容可能只有字幕生成器署名。")
+    const content = await runMissAVDataTask("subtitle-serialize", () => serializeSubtitleTrack(track))
     await FileManager.createDirectory(subtitleDirectoryPath(), true)
-    await FileManager.writeAsString(path, serializeSubtitleTrack(track))
+    await FileManager.writeAsString(path, content)
     setMissAVSubtitleEnabled(videoCode, true)
+    return track.cues.length
   })
-  return track.cues.length
 }
 
 function withSubtitleFileOperation<T>(path: string, operation: () => Promise<T>): Promise<T> {

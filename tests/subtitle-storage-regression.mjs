@@ -3,18 +3,23 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import { dirname, resolve } from "node:path"
 
 const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
 const path = fileURLToPath(new URL("../subtitles.ts", import.meta.url))
-const compiled = babelTransform(readFileSync(path, "utf8"), path, false, [], [], "scripting").code
+const compiledModules = new Map()
+const compile = path => {
+  if (!compiledModules.has(path)) compiledModules.set(path, babelTransform(readFileSync(path, "utf8"), path, false, [], [], "scripting").code)
+  return compiledModules.get(path)
+}
 const cue = text => `1\n00:00:01,000 --> 00:00:03,000\n${text}`
 const scriptDirectory = "/mock/scripts/MISSAV"
 const newPath = code => `${scriptDirectory}/subtitles/${code}.srt`
 const oldPath = code => `/mock/documents/MISSAV Subtitles/${code}.srt`
 const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
 
-function harness() {
+function harness(background = false) {
   const files = new Map()
   const preferences = new Map()
   const directories = []
@@ -22,19 +27,34 @@ function harness() {
   const warnings = []
   const script = { directory: `${scriptDirectory}///` }
   let writeHook = async () => {}
-  const module = { exports: {} }
-  new Function("require", "module", "exports", "FileManager", "Storage", "console", compiled)(specifier => {
-    assert.equal(specifier, "scripting")
-    return { Script: script }
-  }, module, module.exports, {
+  let backgroundTasks = 0, inBackground = false
+  let computeHook = async compute => compute()
+  const thread = background ? { async runInBackground(compute) {
+    backgroundTasks++; inBackground = true
+    try { return await computeHook(compute) } finally { inBackground = false }
+  } } : undefined
+  const nativeFiles = {
     documentsDirectory: "/mock/documents/",
     exists: async path => files.has(path),
     createDirectory: async (path, recursive) => { assert.equal(recursive, true); directories.push(path) },
     readAsString: async path => { assert.ok(files.has(path)); return files.get(path) },
-    writeAsString: async (path, content) => { await writeHook(path, content); files.set(path, content); writes.push(path) },
+    writeAsString: async (path, content) => { assert.equal(inBackground, false); await writeHook(path, content); files.set(path, content); writes.push(path) },
     remove: () => { throw new Error("Downloaded subtitles must never be evicted") },
-  }, { get: key => preferences.get(key), set: (key, value) => preferences.set(key, value) }, { warn: (...args) => warnings.push(args) })
-  return { api: module.exports, files, preferences, directories, writes, warnings, script,
+  }
+  const nativeStorage = { get: key => preferences.get(key), set: (key, value) => { assert.equal(inBackground, false); preferences.set(key, value) } }
+  const modules = new Map()
+  const load = path => {
+    if (modules.has(path)) return modules.get(path).exports
+    const module = { exports: {} }; modules.set(path, module)
+    new Function("require", "module", "exports", "FileManager", "Storage", "console", "Thread", compile(path))(specifier => {
+      if (specifier === "scripting") return { Script: script }
+      return load(resolve(dirname(path), `${specifier}.ts`))
+    }, module, module.exports, nativeFiles, nativeStorage, { warn: (...args) => warnings.push(args) }, thread)
+    return module.exports
+  }
+  return { api: load(path), files, preferences, directories, writes, warnings, script,
+    get backgroundTasks() { return backgroundTasks },
+    setComputeHook(hook) { computeHook = hook },
     setWriteHook(hook) { writeHook = hook },
   }
 }
@@ -96,4 +116,23 @@ const missingDirectory = harness()
 missingDirectory.script.directory = ""
 await assert.rejects(missingDirectory.api.saveMissAVSubtitle("TEST-1", cue("没有目录")), /无法获取当前脚本目录/)
 assert.equal(missingDirectory.files.size, 0)
-console.log("PASS: script-local subtitles folder; 121 retained downloads; legacy migration/fallback; unchanged preferences; safe concurrent migration and save")
+const threaded = harness(true)
+assert.equal(await threaded.api.saveMissAVSubtitle("THREAD-1", cue("后台解析对白")), 1)
+assert.equal((await threaded.api.loadMissAVSubtitle("THREAD-1")).cues[0].text, "后台解析对白")
+assert.equal(threaded.backgroundTasks, 3, "Parse/save serialization/load parsing use background computation; native writes stay on the caller thread")
+const slowParse = harness(true)
+let releaseParse
+slowParse.setComputeHook(async compute => {
+  if (!releaseParse) await new Promise(resolve => { releaseParse = resolve })
+  return compute()
+})
+const olderDownload = slowParse.api.saveMissAVSubtitle("ORDER-1", cue("较早的下载"))
+await settle()
+assert.equal(typeof releaseParse, "function")
+const newerDownload = slowParse.api.saveMissAVSubtitle("ORDER-1", cue("较新的下载"))
+await settle()
+assert.equal(slowParse.backgroundTasks, 1, "A later download queues before its background parse starts")
+releaseParse()
+await Promise.all([olderDownload, newerDownload])
+assert.equal((await slowParse.api.loadMissAVSubtitle("ORDER-1")).cues[0].text, "较新的下载", "A slower earlier parse cannot overwrite a newer download")
+console.log("PASS: script-local subtitles folder; 121 retained downloads; legacy migration/fallback; unchanged preferences; safe concurrent migration/save; actual background compute integration")

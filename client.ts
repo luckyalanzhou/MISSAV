@@ -87,11 +87,26 @@ class MissAVClient {
 
     const requestId = ++this.searchRequestId
     const scope = new MissAVRequestScope()
+    let parseMs = 0, parseCount = 0
+    let parseState: "normal" | "cancelled" | "load-error" = "load-error"
     const request = (async () => {
       const directory = params.collection && isMissAVDirectoryCollection(params.collection) && !params.categoryPath && !params.query ? params.collection : null
-      const parsePage = (html: string) => directory
-        ? SiteHTML.parseMissAVDirectoryPage(html, page, directory, url)
-        : SiteHTML.parseMissAVSearchPage(html, page)
+      // WebKit readiness polling can return an identical snapshot repeatedly.
+      // Retain only the last snapshot per request, not a growing HTML cache.
+      let lastHTML: string | undefined
+      let lastPage: MissAVSearchPage | undefined
+      const parsePage = (html: string): MissAVSearchPage => {
+        scope.assertActive()
+        if (html === lastHTML && lastPage) return lastPage
+        const started = Date.now()
+        try {
+          const value = directory
+            ? SiteHTML.parseMissAVDirectoryPage(html, page, directory, url)
+            : SiteHTML.parseMissAVSearchPage(html, page)
+          lastHTML = html; lastPage = value
+          return value
+        } finally { parseMs += Date.now() - started; parseCount += 1 }
+      }
       const isContentReady = (html: string) => {
         const result = parsePage(html)
         return result.items.length > 0 || Boolean(result.categories?.length)
@@ -118,7 +133,9 @@ class MissAVClient {
         if (resolvedURL === url) throw error
         html = await fetchListing(resolvedURL)
       }
-      return parsePage(html)
+      const value = parsePage(html)
+      parseState = "normal"
+      return value
     })()
     const tracked = request.then(value => {
       scope.assertActive()
@@ -131,12 +148,14 @@ class MissAVClient {
       }
       return value
     }).catch(error => {
+      parseState = isMissAVRequestCancelled(error) ? "cancelled" : "load-error"
       if (!scope.cancelled && error instanceof Error && error.message.includes("当前线路需要 Cloudflare 验证")) {
         this.verificationRequests.delete(url)
         this.verificationRequests.set(url, { ...params, collection: params.collection || "new" })
       }
       throw error
     }).finally(() => {
+      recordMissAVAccessDiagnostic("data-task", url, { state: parseState, phase: "listing-parse", parseMs, parseCount })
       if (this.searchPageRequests.get(url)?.requestId === requestId) this.searchPageRequests.delete(url)
     })
     const task: PendingSearchPage = { requestId, forceRefresh, promise: tracked, scope, consumers: 0, settled: false }
@@ -228,7 +247,14 @@ class MissAVClient {
     if (!videoCode) throw new Error("缺少 MISSAV 视频标识符。")
     const watchUrl = typeof item === "string" ? this.watchUrl(videoCode) : SiteHTML.normalizeMissAVUrl(item.detailPath)
     const html = await this.fetchHtml(watchUrl, undefined, options.scope)
-    return SiteHTML.parseMissAVVideoDetail(html, videoCode, watchUrl)
+    options.scope?.assertActive()
+    const started = Date.now()
+    let state: "normal" | "load-error" = "load-error"
+    try {
+      const value = SiteHTML.parseMissAVVideoDetail(html, videoCode, watchUrl)
+      state = "normal"
+      return value
+    } finally { recordMissAVAccessDiagnostic("data-task", watchUrl, { state, phase: "detail-parse", parseMs: Date.now() - started, parseCount: 1 }) }
   }
 
   watchUrl(videoCode: string): string { return new URL(`${MISSAV_LOCALE}/${SiteHTML.extractMissAVVideoCode(videoCode) || videoCode}`, getMissAVBaseURL()).toString() }
@@ -292,10 +318,16 @@ class MissAVClient {
     let cookieResult: CloudflareRestoreResult | undefined
     let pageState: "normal" | "challenge" | "blocked" | "unavailable" | "cancelled" | "load-error" = "load-error"
     let loaded = false, finished = false, challengeObserved = false
+    let cookieMs = 0, loadMs = 0, captureMs = 0
     try {
-      cookieResult = await scope.waitFor(restoreCloudflareSessionDetailed(controller, url, scope))
+      const cookieStarted = Date.now()
+      try { cookieResult = await scope.waitFor(restoreCloudflareSessionDetailed(controller, url, scope)) }
+      finally { cookieMs = Date.now() - cookieStarted }
       scope.assertActive()
-      const page = await loadWebViewPage(controller, url, undefined, isContentReady, scope)
+      const loadStarted = Date.now()
+      let page: Awaited<ReturnType<typeof loadWebViewPage>>
+      try { page = await loadWebViewPage(controller, url, undefined, isContentReady, scope) }
+      finally { loadMs = Date.now() - loadStarted }
       loaded = page.loaded; finished = page.finished; challengeObserved = Boolean(page.challengeObserved)
       const html = page.html
       scope.assertActive()
@@ -309,7 +341,9 @@ class MissAVClient {
         pageState = "challenge"
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }
+      const captureStarted = Date.now()
       try { await scope.waitFor(captureCloudflareSession(controller, new URL(url).hostname, scope)) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
+      finally { captureMs = Date.now() - captureStarted }
       scope.assertActive()
       // A valid MISSAV document is authoritative even if WebKit reports a
       // redirect/load callback as incomplete for this route.
@@ -329,7 +363,7 @@ class MissAVClient {
       recordMissAVAccessDiagnostic("page", url, { state: pageState, cookieState: cookieResult?.state,
         clearance: cookieResult?.clearance, expiresInSeconds: cookieResult?.expiresInSeconds,
         attempted: cookieResult?.attempted, accepted: cookieResult?.accepted, confirmed: cookieResult?.confirmed,
-        elapsedMs: Date.now() - started, loaded, finished, challengeObserved })
+        elapsedMs: Date.now() - started, cookieMs, loadMs, captureMs, loaded, finished, challengeObserved })
       removeCancellation()
       this.activePageScopes.delete(scope)
       dispose()

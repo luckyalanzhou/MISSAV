@@ -8,6 +8,7 @@ globalThis.Keychain = { get: () => null, set: () => {} }
 const { missavClient, MissAVRequestScope, isMissAVRequestCancelled } = await import(compile("../client.ts"))
 const { openMissAVSiteVerification } = await import(compile("../account.ts"))
 const { setMissAVBaseURL } = await import(compile("../domain.ts"))
+const diagnostics = await import(compile("../access-diagnostics.ts"))
 const freshClient = () => new missavClient.constructor()
 const settle = async () => { for (let i = 0; i < 35; i++) await Promise.resolve() }
 const listing = code => `<html><head><title>MISSAV</title></head><body><h1>List</h1>
@@ -169,3 +170,14 @@ assert.doesNotMatch(homeSource, /key=\{`(?:home|discover)-\$\{accessRevision/)
 const discoverSource = readFileSync(new URL("../page/discover.tsx", import.meta.url), "utf8")
 assert.match(discoverSource, /props\.accessRevision && firstLoad\.current\) void load\(\)/)
 console.log("PASS: shared-owner cancellation, disposed-controller guards, verification gate/cache reuse, exact failed-route priority, single-flight and refresh preservation")
+
+// Readiness checks and final parsing must share one parse of an identical HTML snapshot.
+diagnostics.clearMissAVAccessDiagnostics()
+response = () => listing("memo-005")
+await freshClient().searchVideoPage({ collection: "new" })
+const parsed = diagnostics.getMissAVAccessDiagnostics().findLast(entry => entry.phase === "listing-parse")
+assert.equal(parsed.state, "normal")
+assert.equal(parsed.parseCount, 1)
+const loaded = diagnostics.getMissAVAccessDiagnostics().findLast(entry => entry.event === "page")
+for (const field of ["cookieMs", "loadMs", "captureMs"]) assert.ok(Number.isFinite(loaded[field]) && loaded[field] >= 0)
+console.log("PASS: identical snapshot parsing is reused; cookie/load/capture phases are timed")
