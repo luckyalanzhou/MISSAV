@@ -66,6 +66,8 @@ try {
   await settle()
   let nodes = render()
   assert.ok(nodes.some(node => node.props.accessibilityLabel === "播放 1080p"), "Play must appear even when history persistence never settles")
+  assert.equal(nodes.some(node => node.props.title === "本地字幕叠层测试"), false, "Production detail must not show the retired subtitle overlay test")
+  assert.ok(nodes.some(node => node.props.accessibilityLabel === "按番号搜索字幕 FIXTURE-001"), "Removing the overlay test must retain subtitle search")
   assert.equal(nodes.some(node => node.props.title === "正在获取播放信息"), false)
   assert.equal(changed, 0)
   assert.equal(nodes.some(node => typeof node.type === "function" && node.type.name === "FavouriteButton"), false)

@@ -56,12 +56,7 @@ try {
     assert.equal(presented.resumePositionSeconds, undefined)
     assert.equal(presented.subtitles, undefined)
   } finally { clearTimeout(watchdog) }
-  const readsBefore = optionalReads, writesBefore = historyWrites
-  const preview = { cues: [{ text: "Test" }] }
-  await play(video, source, { detail, preview: true, subtitles: preview })
-  assert.equal(presented.subtitles, preview)
-  assert.equal(presented.resumePositionSeconds, 0)
-  assert.equal(optionalReads, readsBefore)
-  assert.equal(historyWrites, writesBefore)
-  console.log("PASS: parallel bounded subtitle/resume reads; normal data retained; history never blocks playback; isolated preview")
+  assert.equal(typeof presented.onProgress, "function", "Normal playback keeps saving progress")
+  assert.equal(typeof presented.refreshSource, "function", "Normal playback retains startup source recovery")
+  console.log("PASS: parallel bounded subtitle/resume reads; normal data retained; history never blocks playback")
 } finally { globalThis.setTimeout = timer; console.warn = warn }

@@ -9,7 +9,6 @@ import { MediaArtwork } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
 import { SubtitleFileRow } from "./components/subtitle_file_row"
-import { MISSAV_SUBTITLE_PREVIEW } from "../subtitles"
 import { withMissAVDeadline } from "../request-deadline"
 import { createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
@@ -103,12 +102,12 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
     }
   }
 
-  async function play(source: MissAVVideoSource, subtitlePreview = false) {
+  async function play(source: MissAVVideoSource) {
     if (!detail || openingSource) return
     setOpeningSource(source.url)
     try {
-      const result = await chooseAndPresentMissAVPlayer(props.video, source, { detail, preparation: props.preparation, onDetailRefreshed: next => { setDetail(next); props.preparation?.releaseAsset() }, ...(subtitlePreview ? { subtitles: MISSAV_SUBTITLE_PREVIEW, preview: true } : {}) })
-      if (result.opened && !subtitlePreview) props.onHistoryChanged()
+      const result = await chooseAndPresentMissAVPlayer(props.video, source, { detail, preparation: props.preparation, onDetailRefreshed: next => { setDetail(next); props.preparation?.releaseAsset() } })
+      if (result.opened) props.onHistoryChanged()
     }
     catch (reason) { await Dialog.alert({ title: "播放失败", message: reason instanceof Error ? reason.message : String(reason) }) }
     finally { setOpeningSource(null) }
@@ -169,7 +168,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
           {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={subtitleEnabled ? "关闭本作品字幕显示" : "开启本作品字幕显示"}><HStack spacing={7}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text>{subtitleEnabled ? "关闭字幕" : "开启字幕"}</Text></HStack></Button> : undefined}
         </HStack> : undefined}
         {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在脚本目录的 subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
-        {primarySource ? <Button title="本地字幕叠层测试" systemImage="captions.bubble" buttonStyle="bordered" disabled={Boolean(openingSource)} action={() => { void play(primarySource, true) }} /> : undefined}
       </VStack>
 
       {loading && loadProgress ? <Text font="caption" foregroundStyle="secondaryLabel">{MISSAV_DETAIL_STAGE_LABELS[loadProgress.stage]}</Text> : undefined}

@@ -364,30 +364,7 @@ try {
   await withoutSubtitles
   assert.equal(timers.size, 0)
 
-  presented = undefined
-  const preview = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source, { detail: readyDetail, subtitles: subtitles.MISSAV_SUBTITLE_PREVIEW, preview: true })
-  await waitForPresentation(preview)
-  mountedModal = renderOverlay(presented)
-  assert.equal(find(mountedModal, "AVPlayerView").props.videoGravity, undefined, "Native aspect handling must be used for every playback session")
-  assert.equal(player.currentTime, 0)
-  assert.equal(currentCaption().caption, undefined)
-  player.currentTime = 1.2
-  tickCaptions()
-  assert.ok(texts(currentCaption().overlay).includes("本地字幕测试：应在横屏底部单行显示"), "Local preview must put its first dialogue into native overlay props")
-  player.currentTime = 30
-  tickCaptions()
-  assert.ok(texts(currentCaption().overlay).includes("暂停时字幕保持，继续播放后按时间更新"), "Local preview must retain visible dialogue after 11.5 seconds")
-  assert.ok(currentCaption().caption)
-  player.currentTime = 62.6
-  tickCaptions()
-  assert.ok(texts(currentCaption().overlay).includes("暂停时字幕保持，继续播放后按时间更新"), "The user's 62.60-second preview case must have a native caption node")
-  assert.equal(currentCaption().caption.props.styledText.font, 27)
-  assert.equal(currentCaption().overlay.props.padding.bottom, 25)
-  dismiss()
-  unmount()
-  await preview
-  assert.equal(timers.size, 0)
-  console.log("PASS: fixed caption style; no duplicate app close/settings controls; caption polling/cache/preview/resume/seek/PiP")
+  console.log("PASS: fixed caption style; no duplicate app close/settings controls; caption polling/cache/resume/seek/PiP")
 } finally {
   unmount()
   for (const [name, value] of Object.entries(oldGlobals)) {

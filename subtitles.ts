@@ -273,16 +273,3 @@ export function findSubtitleCue(track: SubtitleTrack, timeSeconds: number): Subt
   }
   return null
 }
-
-export const MISSAV_SUBTITLE_PREVIEW = parseSubtitleTrack(`1
-00:00:01,000 --> 00:00:05,500
-本地字幕测试：应在横屏底部单行显示
-
-2
-00:00:05,500 --> 00:00:11,500
-拖动播放进度，字幕应切换到这一行
-
-3
-00:00:11,500 --> 99:59:59,999
-暂停时字幕保持，继续播放后按时间更新
-`)
