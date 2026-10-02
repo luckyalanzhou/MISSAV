@@ -1,4 +1,4 @@
-import { Button, Image, Navigation, NavigationStack, Script, Tab, TabView, Text, Toolbar, ToolbarItem, useObservable, useState } from "scripting"
+import { Button, Image, NavigationStack, Script, Tab, TabView, Text, Toolbar, ToolbarItem, useObservable, useState } from "scripting"
 import { isMissAVAccessReady } from "../access"
 import { MediaHomePage } from "./home"
 import { DiscoverPage } from "./discover"
@@ -7,9 +7,8 @@ import { SearchPage } from "./search"
 import { SettingsPage } from "./settings"
 import { AccessGate } from "./access_gate"
 
-export function HomePage() {
+export function HomePage(props: { onClose: () => void }) {
   const [accessReady, setAccessReady] = useState(() => isMissAVAccessReady())
-  const dismiss = Navigation.useDismiss()
   const selection = useObservable<number>(0)
   const favouritesRevision = useObservable(0)
   const historyRevision = useObservable(0)
@@ -25,7 +24,7 @@ export function HomePage() {
   const supportsMinimization = Script.supportsMinimization()
   const toolbar = <Toolbar>
     <ToolbarItem placement="topBarLeading" sharedBackgroundVisibility="visible">
-      <Button action={() => dismiss()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭 MISSAV 浏览器"><Image systemName="xmark" font="headline" foregroundStyle="label" /></Button>
+      <Button action={props.onClose} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭并结束 MISSAV 脚本"><Image systemName="xmark" font="headline" foregroundStyle="label" /></Button>
     </ToolbarItem>
     <ToolbarItem placement="principal"><Text font="headline" fontWeight="semibold">{["首页", "浏览", "资料库", "搜索"][selection.value] || "MISSAV"}</Text></ToolbarItem>
     <ToolbarItem placement="topBarTrailing" sharedBackgroundVisibility="visible">
@@ -36,7 +35,7 @@ export function HomePage() {
     </ToolbarItem> : null}
   </Toolbar>
   const localRevision = favouritesRevision.value + historyRevision.value
-  if (!accessReady) return <AccessGate onReady={() => setAccessReady(true)} onClose={() => dismiss()} />
+  if (!accessReady) return <AccessGate onReady={() => setAccessReady(true)} onClose={props.onClose} />
   return <NavigationStack>
     <TabView selection={selection} tint="systemPink" tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="onScrollDown" toolbar={toolbar}>
       <Tab title="首页" systemImage="house" value={0}><MediaHomePage key={`home-${domainRevision.value}`} accessRevision={accessRevision.value} revision={localRevision} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} onLibrary={() => selection.setValue(2)} /></Tab>

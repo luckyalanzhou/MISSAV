@@ -6,21 +6,34 @@ import { installMissAVListingCache } from "./listing-cache"
 import { missavListingCacheDatabase } from "./listing-cache-db"
 
 async function main() {
-  Script.enableMinimize()
-  const removeLifecycleListeners = installMissAVLifecycle(Script)
-  installMissAVListingCache(missavListingCacheDatabase)
-  void getMissAVDatabase().catch(error => console.error(error))
+  let removeLifecycleListeners: (() => void) | undefined
+  let exited = false
+  const exit = () => {
+    if (exited) return
+    exited = true
+    try {
+      removeLifecycleListeners?.()
+    } catch (error) {
+      console.error(error)
+    } finally {
+      // End this script instance, including its native views and pending work.
+      // This is not used by the separate minimize or player-close controls.
+      Script.exit()
+    }
+  }
   try {
+    Script.enableMinimize()
+    removeLifecycleListeners = installMissAVLifecycle(Script)
+    installMissAVListingCache(missavListingCacheDatabase)
+    void getMissAVDatabase().catch(error => console.error(error))
     await Navigation.present({
-      element: <HomePage />,
+      element: <HomePage onClose={exit} />,
       modalPresentationStyle: "overFullScreen",
     })
-    removeLifecycleListeners()
-    Script.exit()
   } catch (error) {
-    removeLifecycleListeners()
     console.error(error)
-    console.present().then(Script.exit)
+  } finally {
+    exit()
   }
 }
 
