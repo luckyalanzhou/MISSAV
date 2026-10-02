@@ -289,12 +289,40 @@ try {
   for (let attempt = 0; attempt < 50 && !progressSaves.some(args => args.includes(71.26)); attempt += 1) await Promise.resolve()
   assert.ok(progressSaves.some(args => args.includes(71.26)), "Progress must keep saving while playing without interval APIs")
 
+  const { installMissAVLifecycle } = load("lifecycle.ts")
+  let minimize, resume
+  const removeLifecycle = installMissAVLifecycle({
+    onMinimize: callback => { minimize = callback; return () => {} },
+    onResume: callback => { resume = callback; return () => {} },
+  })
+  player.currentTime = 75
+  player.pause()
+  assert.equal([...timers.values()].filter(timer => timer.delay === 5000).length, 0, "Pause saves immediately and stops redundant progress polling")
+  for (let i = 0; i < 20; i++) await Promise.resolve()
+  assert.ok(progressSaves.some(args => args.includes(75)))
+  player.currentTime = 80
+  tickCaptions()
+  assert.equal(currentCaption().caption, undefined, "Paused seeks still update subtitles")
+  minimize()
+  for (let i = 0; i < 20; i++) await Promise.resolve()
+  assert.ok(progressSaves.some(args => args.includes(80)), "Minimize captures the live position without reloading the site")
+  resume({ resumeFromMinimized: true })
+  player.play(); player.play()
+  assert.equal([...timers.values()].filter(timer => timer.delay === 5000).length, 1)
+  const lateReady = player.onReadyToPlay, lateStatus = player.onTimeControlStatusChanged
+
   dismiss() // The mocked presentation completes when the native player closes on-device.
   unmount()
   assert.equal((await playback).opened, true)
   assert.equal(timers.size, 0, "Dismiss must clear caption and progress timers")
   assert.equal(player.disposed, true)
   assert.deepEqual(scripting.Device.supportedInterfaceOrientations, ["portrait"])
+  const savedCount = progressSaves.length
+  lateReady(); lateStatus("playing"); minimize(); resume({ resumeFromMinimized: true })
+  for (let i = 0; i < 20; i++) await Promise.resolve()
+  assert.equal(progressSaves.length, savedCount)
+  assert.equal(timers.size, 0, "Late native/lifecycle callbacks cannot revive a dismissed player")
+  removeLifecycle()
 
   presented = undefined
   subtitles.setMissAVSubtitleEnabled("FNS-258", false)

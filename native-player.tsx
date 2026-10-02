@@ -2,6 +2,8 @@ import { AVPlayerView, Device, ForEach, Navigation, PIPStatus, Text, ZStack, use
 import { resolveMissAVResumePosition } from "./playback-progress"
 import { startPlaybackPolling } from "./playback-polling"
 import { findSubtitleCue, type SubtitleTrack } from "./subtitles"
+import { subscribeMissAVLifecycle } from "./lifecycle"
+import { createPlaybackProgressWriter } from "./playback-writer"
 
 export type NativePlaybackRequest = {
   url: string
@@ -20,35 +22,53 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
   const player = new AVPlayer()
   let hasStarted = false
   let hasEnded = false
+  let closing = false
   let stopProgressPolling: (() => void) | undefined
-  let progressWrites = Promise.resolve()
+  const progressWriter = createPlaybackProgressWriter((position, duration) => request.onProgress?.(position, duration), error => {
+    console.error(`${request.providerLabel} 播放进度保存失败:`, error)
+  })
   const saveProgress = (positionSeconds: number, durationSeconds: number): void => {
     if (!request.onProgress) return
-    progressWrites = progressWrites.then(() => request.onProgress?.(positionSeconds, durationSeconds)).then(() => undefined).catch(error => {
-      console.error(`${request.providerLabel} 播放进度保存失败:`, error)
-    })
+    progressWriter.enqueue(positionSeconds, durationSeconds)
   }
+  const stopProgress = () => { stopProgressPolling?.(); stopProgressPolling = undefined }
+  const startProgress = () => {
+    if (!hasStarted || hasEnded || closing || stopProgressPolling || !request.onProgress) return
+    stopProgressPolling = startPlaybackPolling(() => {
+      if (!hasEnded && !closing) saveProgress(player.currentTime, player.duration)
+    }, 5_000)
+  }
+  const removeLifecycle = subscribeMissAVLifecycle(() => {
+    if (hasStarted && !hasEnded && !closing) saveProgress(player.currentTime, player.duration)
+  })
   try {
     player.onReadyToPlay = () => {
-      if (hasStarted) return
+      if (hasStarted || closing) return
       hasStarted = true
       const resumePosition = resolveMissAVResumePosition(request.resumePositionSeconds, request.resumeDurationSeconds, player.duration)
       if (resumePosition > 0) player.currentTime = resumePosition
       player.play()
-      stopProgressPolling = startPlaybackPolling(() => {
-        if (!hasEnded) saveProgress(player.currentTime, player.duration)
-      }, 5_000)
+      startProgress()
+    }
+    player.onTimeControlStatusChanged = status => {
+      if (!hasStarted || hasEnded || closing) return
+      if (status === "playing") startProgress()
+      else {
+        stopProgress()
+        saveProgress(player.currentTime, player.duration)
+      }
     }
     player.onEnded = () => {
+      if (closing || hasEnded) return
       hasEnded = true
-      stopProgressPolling?.()
+      stopProgress()
       saveProgress(0, player.duration)
     }
     player.onError = message => console.error(`${request.providerLabel} 播放失败:`, message)
+    await SharedAudioSession.setCategory("playback", ["defaultToSpeaker"])
+    await SharedAudioSession.setActive(true)
     const accepted = player.setSource(request.url, { headers: request.headers })
     if (!accepted) throw new Error("系统无法加载该视频格式。")
-    SharedAudioSession.setCategory("playback", ["defaultToSpeaker"])
-    SharedAudioSession.setActive(true)
     const previousOrientations = Device.supportedInterfaceOrientations.slice()
     Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
     try {
@@ -60,9 +80,11 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
       Device.supportedInterfaceOrientations = previousOrientations
     }
   } finally {
-    stopProgressPolling?.()
+    closing = true
+    removeLifecycle()
+    stopProgress()
     if (hasStarted) saveProgress(hasEnded ? 0 : player.currentTime, player.duration)
-    await progressWrites
+    await progressWriter.flush()
     player.stop()
     player.dispose()
   }
