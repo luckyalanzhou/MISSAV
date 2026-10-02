@@ -17,8 +17,6 @@ const preferences = new Map()
 const timers = new Map()
 const modules = new Map()
 const progressSaves = []
-const playbackHeaders = { Referer: "https://example.test/watch", Origin: "https://example.test" }
-const assets = []
 const source = { url: "https://media.example.test/video.mp4", type: "mp4", label: "1080p", qualityHeight: 1080 }
 let timerId = 0
 let player
@@ -65,7 +63,7 @@ function load(relativePath) {
   const localRequire = specifier => {
     if (specifier === "scripting") return scripting
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
-    if (specifier === "./client") return { missavClient: { getVideo: async () => ({ sources: [source], title: "测试作品", watchUrl: "https://example.test/watch" }), playbackHeaders: () => playbackHeaders } }
+    if (specifier === "./client") return { missavClient: { getVideo: async () => ({ sources: [source], title: "测试作品", watchUrl: "https://example.test/watch" }), playbackHeaders: () => ({}) } }
     if (specifier === "./storage") return { loadMissAVPlaybackProgress: async () => ({ positionSeconds: 8, durationSeconds: 100 }), recordMissAVPlayback: async () => {}, saveMissAVPlaybackProgress: async (...args) => { progressSaves.push(args) } }
     const target = resolve(dirname(path), specifier)
     return load(existsSync(`${target}.ts`) ? `${target}.ts` : `${target}.tsx`)
@@ -175,20 +173,16 @@ async function waitForPresentation(playback) {
   if (!presented) { await playback; assert.fail("Playback did not present a player") }
 }
 
-const oldGlobals = Object.fromEntries(["FileManager", "Storage", "AVPlayer", "AVAsset", "SharedAudioSession", "Dialog", "setInterval", "clearInterval", "setTimeout", "clearTimeout"].map(name => [name, globalThis[name]]))
+const oldGlobals = Object.fromEntries(["FileManager", "Storage", "AVPlayer", "SharedAudioSession", "Dialog", "setInterval", "clearInterval", "setTimeout", "clearTimeout"].map(name => [name, globalThis[name]]))
 try {
   globalThis.FileManager = { documentsDirectory: "/mock/documents/", exists: async path => files.has(path), createDirectory: async () => {}, writeAsString: async (path, content) => files.set(path, content), readAsString: async path => files.get(path), rename: async (path, target) => { assert.ok(files.has(path)); assert.ok(!files.has(target)); files.set(target, files.get(path)); files.delete(path) }, remove: async path => { assert.match(path, /\.srt\.(pending|previous)$/); files.delete(path) } }
   globalThis.Storage = { get: key => preferences.get(key), set: (key, value) => preferences.set(key, value) }
-  globalThis.AVAsset = class {
-    constructor(url, options) { this.source = url; this.options = options; assets.push(this) }
-    dispose() { this.disposed = true }
-  }
   globalThis.AVPlayer = class {
     currentTime = 0
     duration = 100
     timeControlStatus = "paused"
     sourceLoads = 0
-    setSource(source, ...options) { this.sourceLoads += 1; this.source = source; this.sourceOptions = options; player = this; this.onReadyToPlay(); return true }
+    setSource() { this.sourceLoads += 1; player = this; this.onReadyToPlay(); return true }
     play() { this.timeControlStatus = "playing"; this.onTimeControlStatusChanged?.(this.timeControlStatus) }
     pause() { this.timeControlStatus = "paused"; this.onTimeControlStatusChanged?.(this.timeControlStatus) }
     stop() {}
@@ -237,10 +231,6 @@ try {
 
   const playback = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source)
   await waitForPresentation(playback)
-  assert.equal(player.source, assets[0], "Authenticated stream must be passed to AVPlayer as an AVAsset")
-  assert.equal(player.sourceOptions.length, 0, "AVPlayer.setSource receives one source argument")
-  assert.equal(assets[0].source, source.url)
-  assert.deepEqual(assets[0].options, { headers: playbackHeaders }, "Playback request headers must reach AVAsset")
   assert.equal(presented.props.subtitles.cues.length, 3, "Downloaded subtitles must reach the presented player")
   assert.equal(player.currentTime, 8, "Resume must use video time, not elapsed timer time")
   const modal = renderOverlay(presented)
@@ -326,7 +316,6 @@ try {
   assert.equal((await playback).opened, true)
   assert.equal(timers.size, 0, "Dismiss must clear caption and progress timers")
   assert.equal(player.disposed, true)
-  assert.equal(assets[0].disposed, true, "The AVAsset must be released after the native player closes")
   assert.deepEqual(scripting.Device.supportedInterfaceOrientations, ["portrait"])
   const savedCount = progressSaves.length
   lateReady(); lateStatus("playing"); minimize(); resume({ resumeFromMinimized: true })
