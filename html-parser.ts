@@ -199,13 +199,49 @@ function isLikelyMissAVVideoCode(value: string): boolean {
 }
 function unpackPackerMediaUrls(html: string): string[] {
   const result: string[] = []
-  for (const match of html.matchAll(/eval\(function\(p,a,c,k,e,d\)[\s\S]*?\}\('((?:\\.|[^'])*)',(\d+),(\d+),'((?:\\.|[^'])*)'\.split\('\|'\)/gi)) {
-    const payload = match[1].replace(/\\'/g, "'").replace(/\\\\/g, "\\"); const radix = Number(match[2]); const words = match[4].replace(/\\'/g, "'").split("|")
-    if (!payload || radix < 2 || radix > 36) continue
-    const decoded = payload.replace(/\b[0-9a-z]+\b/gi, token => { const index = Number.parseInt(token, radix); return Number.isFinite(index) && words[index] ? words[index] : token })
-    for (const urlMatch of decoded.matchAll(/https?:\/\/[^'"\s]+?\.(?:m3u8|mp4)(?:\?[^'"\s]*)?/gi)) result.push(urlMatch[0])
+  let blocks = 0
+  // Never execute a remote script. Work on bounded individual script blocks,
+  // with disjoint quoted-string alternatives: a backslash can only belong
+  // to an escape, not also the ordinary-character branch (exponential
+  // backtracking in the old expression on a malformed payload).
+  for (const script of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script\s*>/gi)) {
+    if (!/eval\s*\(\s*function\s*\(\s*p\s*,/.test(script[1])) continue
+    if (++blocks > 64) break
+    if (script[1].length > 512_000) continue
+    const args = /\}\s*\(\s*'((?:\\[\s\S]|[^'\\])*)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'((?:\\[\s\S]|[^'\\])*)'\s*\.\s*split\s*\(\s*'\|'\s*\)/g
+    for (const match of script[1].matchAll(args)) {
+      const payload = unpackQuotedString(match[1]), radix = Number(match[2]), count = Number(match[3])
+      if (!payload || radix < 2 || radix > 62 || !Number.isSafeInteger(count) || count < 1 || count > 20_000) continue
+      const words = unpackQuotedString(match[4]).split("|")
+      if (words.length > 20_000) continue
+      let decodedChars = payload.length, overflow = false
+      const decoded = payload.replace(/\b[0-9a-zA-Z]+\b/g, token => {
+        if (overflow) return token
+        const index = packerWordIndex(token, radix, count)
+        const word = index >= 0 ? words[index] : undefined
+        if (!word) return token
+        decodedChars += word.length - token.length
+        if (decodedChars > 2_000_000) { overflow = true; return token }
+        return word
+      })
+      if (overflow) continue
+      for (const urlMatch of decoded.matchAll(/https?:\/\/[^'"\s]+?\.(?:m3u8|mp4)(?:\?[^'"\s]*)?/gi)) result.push(urlMatch[0])
+    }
   }
   return result
+}
+
+function unpackQuotedString(value: string): string { return value.replace(/\\(['\\])/g, "$1") }
+function packerWordIndex(token: string, radix: number, count: number): number {
+  const alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+  let index = 0
+  for (const character of token) {
+    const digit = alphabet.indexOf(character)
+    if (digit < 0 || digit >= radix) return -1
+    index = index * radix + digit
+    if (index >= count) return -1
+  }
+  return index
 }
 
 function qualityLabel(url: string): string {
