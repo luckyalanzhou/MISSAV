@@ -1,14 +1,15 @@
 import { Divider, HStack, Image, LazyHStack, ScrollView, Text, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { missavClient, type MissAVVideoItem } from "../client"
 import { ActionRow, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SECTION_SPACING, SectionHeading } from "../design"
-import { loadMissAVFavourites, loadMissAVHistory } from "../storage"
+import { loadMissAVFavourites, loadMissAVHistory, type MissAVPlaybackRecord } from "../storage"
+import { formatMissAVContinueWatching } from "../playback-progress"
 import { MediaHero, MediaTile } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { DetailPage } from "./detail"
 import { RecommendationsPage } from "./recommendations"
 
 type HomeRemote = { latest: MissAVVideoItem[]; trending: MissAVVideoItem[] }
-type HomeLocal = { recent: MissAVVideoItem[]; favourites: MissAVVideoItem[] }
+type HomeLocal = { recent: MissAVPlaybackRecord[]; favourites: MissAVVideoItem[] }
 
 export function MediaHomePage(props: { revision: number; onFavouriteChanged: () => void; onHistoryChanged: () => void; onDiscover: () => void; onLibrary: () => void; toolbar?: any }) {
   const [remote, setRemote] = useState<HomeRemote>({ latest: [], trending: [] })
@@ -51,7 +52,7 @@ export function MediaHomePage(props: { revision: number; onFavouriteChanged: () 
     const results = await Promise.allSettled([loadMissAVHistory(8), loadMissAVFavourites(8)])
     if (current !== localGeneration.current) return
     setLocal(previous => ({
-      recent: results[0].status === "fulfilled" ? results[0].value.map(item => item.video) : previous.recent,
+      recent: results[0].status === "fulfilled" ? results[0].value : previous.recent,
       favourites: results[1].status === "fulfilled" ? results[1].value.map(item => item.video) : previous.favourites,
     }))
     setLocalLoading(false)
@@ -73,7 +74,7 @@ export function MediaHomePage(props: { revision: number; onFavouriteChanged: () 
         <VStack spacing={12} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <SectionHeading title="继续观看" subtitle={continueWatching ? "从最近播放的作品继续。" : "播放记录将显示在这里。"} level="primary" />
           {continueWatching
-            ? <MediaHero video={continueWatching} eyebrow="最近播放" description={[continueWatching.videoCode.toUpperCase(), continueWatching.duration].filter(Boolean).join(" · ")} onOpen={open} />
+            ? <MediaHero video={continueWatching.video} eyebrow={formatMissAVContinueWatching(continueWatching.positionSeconds)} description={[continueWatching.videoCode.toUpperCase(), continueWatching.video.duration].filter(Boolean).join(" · ")} onOpen={open} />
             : localLoading
               ? <StateView title="正在读取播放记录" loading presentation="section" />
               : <StateView title="暂无播放记录" description="浏览作品并开始播放后，可从这里继续观看。" systemImage="play.circle" action={props.onDiscover} actionTitle="前往浏览" presentation="section" />}

@@ -1,5 +1,6 @@
 import { Button, HStack, Image, Menu, Picker, ScrollView, Text, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import type { MissAVVideoItem } from "../client"
+import { formatMissAVContinueWatching } from "../playback-progress"
 import { loadMissAVSavedVideos } from "../account"
 import { PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import {
@@ -166,7 +167,7 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
   const metadata = segmentMetadata[segment]
   const items = segment === "account" ? data.account : segment === "favourites" ? data.favourites.map(item => item.video) : segment === "playback" ? data.playback.map(item => item.video) : data.browse.map(item => item.video)
   const statuses = segment === "playback"
-    ? new Map(data.playback.map(item => [item.videoCode, `上次播放 ${item.qualityLabel}`]))
+    ? new Map(data.playback.map(item => [item.videoCode, formatMissAVContinueWatching(item.positionSeconds)]))
     : segment === "browse"
       ? new Map(data.browse.map(item => [item.videoCode, item.viewCount > 1 ? `浏览 ${item.viewCount} 次` : "最近浏览"]))
       : undefined

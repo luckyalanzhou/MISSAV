@@ -2,13 +2,13 @@ import { Path } from "scripting"
 import type { MissAVVideoDetail, MissAVVideoItem, MissAVVideoSource } from "./client"
 
 export type MissAVFavouriteRecord = { sourceId: "builtin.missav"; videoCode: string; video: MissAVVideoItem; addedAt: number }
-export type MissAVPlaybackRecord = { sourceId: "builtin.missav"; videoCode: string; video: MissAVVideoItem; lastPlayedAt: number; qualityLabel: string; player?: string }
+export type MissAVPlaybackRecord = { sourceId: "builtin.missav"; videoCode: string; video: MissAVVideoItem; lastPlayedAt: number; qualityLabel: string; positionSeconds?: number; durationSeconds?: number; player?: string }
 export type MissAVPlaybackProgress = { videoCode: string; positionSeconds: number; durationSeconds?: number; updatedAt: number }
 export type MissAVBrowseRecord = { videoCode: string; video: MissAVVideoItem; lastViewedAt: number; viewCount: number }
 
 type VideoRow = { video_code: string; title: string; detail_path: string; cover_url: string; duration: string | null; badge: string | null }
 type FavouriteRow = VideoRow & { added_at: number }
-type PlaybackRow = VideoRow & { last_played_at: number; quality_label: string }
+type PlaybackRow = VideoRow & { last_played_at: number; quality_label: string; position_seconds: number | null; duration_seconds: number | null }
 type PlaybackProgressRow = { video_code: string; position_seconds: number; duration_seconds: number | null; updated_at: number }
 type BrowseRow = VideoRow & { last_viewed_at: number; view_count: number }
 
@@ -99,7 +99,8 @@ export async function recordPlayback(video: MissAVVideoItem, source: MissAVVideo
 }
 export async function loadPlaybackHistory(limit = 100): Promise<MissAVPlaybackRecord[]> {
   const db = await getMissAVDatabase()
-  return (await db.fetchAll<PlaybackRow>(`SELECT v.video_code, v.title, v.detail_path, v.cover_url, v.duration, v.badge, h.last_played_at, h.quality_label FROM playback_history h JOIN videos v USING(video_code) ORDER BY h.last_played_at DESC LIMIT ?`, [limit])).map(row => ({ sourceId: "builtin.missav", videoCode: row.video_code, video: rowToVideo(row), lastPlayedAt: row.last_played_at, qualityLabel: row.quality_label }))
+  return (await db.fetchAll<PlaybackRow>(`SELECT v.video_code, v.title, v.detail_path, v.cover_url, v.duration, v.badge, h.last_played_at, h.quality_label, p.position_seconds, p.duration_seconds
+    FROM playback_history h JOIN videos v USING(video_code) LEFT JOIN playback_progress p USING(video_code) ORDER BY h.last_played_at DESC LIMIT ?`, [limit])).map(row => ({ sourceId: "builtin.missav", videoCode: row.video_code, video: rowToVideo(row), lastPlayedAt: row.last_played_at, qualityLabel: row.quality_label, positionSeconds: row.position_seconds ?? undefined, durationSeconds: row.duration_seconds ?? undefined }))
 }
 export async function loadPlaybackProgress(videoCode: string): Promise<MissAVPlaybackProgress | null> {
   const db = await getMissAVDatabase()

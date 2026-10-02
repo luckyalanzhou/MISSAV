@@ -4,6 +4,7 @@ import { stripTypeScriptTypes } from "node:module"
 const modules = new Map()
 const moduleURL = source => `data:text/javascript;base64,${Buffer.from(source).toString("base64")}`
 const scriptingStub = moduleURL(`
+  export const Path = { join: (...parts) => parts.join("/") }
   export function fetch() { throw new Error("Unexpected HTTP fetch") }
   export const Script = { exit(result) {
     if (!result.passed || result.error) throw new Error(result.error || "Regression failed")
