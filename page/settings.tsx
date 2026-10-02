@@ -60,6 +60,8 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
         ? result.challengeCompleted
           ? "Cloudflare 验证完成，常用栏目访问检查通过。已发起首页和浏览页刷新。"
           : "常用栏目访问正常，本次无需 Cloudflare 验证。已发起首页和浏览页刷新。"
+        : result.status === "blocked"
+          ? `${result.probe.title}栏目被站点拒绝访问，不是待完成的验证。请检查网络或切换访问域名后重试。`
         : result.status === "incomplete"
           ? `${result.probe.title}栏目仍显示 Cloudflare 验证。请在弹出的页面完成验证，页面确认载入作品后会自动关闭。`
           : `${result.probe.title}栏目未返回有效作品列表。请检查网络或切换访问域名后重试。`)

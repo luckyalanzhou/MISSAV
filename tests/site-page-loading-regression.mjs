@@ -27,8 +27,13 @@ const finalHTML = listing("test-001")
 const challenge = '<html><body>Verify you are human<script src="/cdn-cgi/challenge-platform"></script></body></html>'
 const empty = '<html><head><title>Loading</title></head><body></body></html>'
 function loader(overrides = {}) {
-  return { loadURL: async () => false, waitForLoad: async () => false,
-    getHTML: async () => null, evaluateJavaScript: async () => null, ...overrides }
+  let currentURL = "about:blank"
+  const controller = { loadURL: async () => false, waitForLoad: async () => false,
+    getHTML: async () => null, ...overrides }
+  const load = controller.loadURL
+  controller.loadURL = async url => { currentURL = url; return load(url) }
+  controller.evaluateJavaScript ??= async () => ({ url: currentURL, html: await controller.getHTML() })
+  return controller
 }
 
 try {
@@ -41,7 +46,7 @@ try {
   const domFallback = await loadWebViewPage(loader({ loadURL: async () => true,
     waitForLoad: async () => { throw new Error("Navigation cancelled") },
     getHTML: async () => { throw new Error("Document not ready") },
-    evaluateJavaScript: async script => { assert.match(script, /return document\.documentElement/); return finalHTML },
+    evaluateJavaScript: async script => { assert.match(script, /url: window\.location\.href/); return { url: "https://missav.ws/cn/new", html: finalHTML } },
   }), "https://missav.ws/cn/new")
   assert.equal(domFallback.html, finalHTML)
   reads = 0
@@ -127,10 +132,10 @@ try {
     constructor() { controllers.push(this) }
     async getAllCookies() { return sharedCookies }
     async setCookie(value) { sharedCookies = [value] }
-    async loadURL(url) { requests.push(url); this.html = responseFor(new URL(url)); return Boolean(this.html) }
+    async loadURL(url) { this.url = url; requests.push(url); this.html = responseFor(new URL(url)); return Boolean(this.html) }
     async waitForLoad() { return Boolean(this.html) }
     async getHTML() { return this.html }
-    async evaluateJavaScript() { return this.html }
+    async evaluateJavaScript() { return { url: this.url, html: await this.getHTML() } }
     present() { modalCount++; this.html = modalContent; return new Promise(resolve => { this.close = resolve }) }
     dismiss() { this.close?.() }
     dispose() { this.disposed = true }
@@ -326,6 +331,31 @@ try {
   assert.equal(verifiedLeafURL.searchParams.get("sort"), "views")
   assert.equal(modalCount, 0, "An accessible category leaf is a video listing, not an empty directory")
   assert.ok(controllers.every(controller => controller.disposed))
+
+  // Production page requests and Settings both accept real content with passive JSD.
+  responseFor = () => listing("jsd-001", siteMenu).replace("</body>", '<script src="/cdn-cgi/challenge-platform/scripts/jsd/api.js"></script></body>')
+  const jsdPage = await missavClient.searchVideoPage({ collection: "new" }, { forceRefresh: true })
+  assert.equal(jsdPage.items[0].videoCode, "jsd-001")
+  modalCount = 0
+  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
+  assert.equal(modalCount, 0, "Background detection scripts cannot open a verification window")
+
+  const denied = '<html><title>Attention Required! | Cloudflare</title><body>Sorry, you have been blocked. Cloudflare Ray ID: fixture</body></html>'
+  responseFor = () => denied
+  await assert.rejects(missavClient.searchVideoPage({ collection: "new" }, { forceRefresh: true }), /站点拒绝了当前访问/)
+  const deniedVerification = await openMissAVSiteVerification()
+  assert.equal(deniedVerification.status, "blocked")
+  assert.equal(modalCount, 0, "Access denied is not a solvable challenge")
+
+  // After manual dismissal, a different domain's listing cannot produce success.
+  responseFor = () => challenge
+  MockWebView.prototype.present = function() {
+    modalCount++
+    this.url = "https://other.example/cn/new"
+    this.html = finalHTML
+    return Promise.resolve()
+  }
+  assert.equal((await openMissAVSiteVerification()).status, "unavailable")
   // Existing pure parser/session/account tests use only Script.exit reporting.
   // Execute them here without pretending to run the native Scripting host.
   await import(compile("../tests/client-parser-regression.ts"))

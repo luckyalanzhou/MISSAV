@@ -63,22 +63,49 @@ export function parseMissAVVideoDetail(html: string, videoCode: string, watchUrl
   return { title, videoCode, coverUrl, duration: durationSeconds > 0 ? formatDuration(durationSeconds) : undefined, releaseDate, actress, genres, maker, sources, watchUrl }
 }
 
-export function isCloudflareChallengeHTML(html: string | null): boolean {
-  if (!html) return false
+export type CloudflarePageState = "none" | "challenge" | "blocked"
+
+export function classifyCloudflareHTML(html: string | null): CloudflarePageState {
+  if (!html) return "none"
+  const sourceMarkup = html.replace(/<!--[\s\S]*?-->/g, "")
+  const contentMarkup = cloudflareContentMarkup(sourceMarkup)
   const title = firstMatch(html, /<title\b[^>]*>([\s\S]*?)<\/title>/i)
   const normalizedTitle = cleanText(title).toLowerCase()
-  const visibleText = html
-    .replace(/<script\b[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript\b[\s\S]*?<\/noscript>/gi, " ")
+  const visibleText = contentMarkup
     .replace(/<[^>]+>/g, " ")
     .replace(/&(?:nbsp|amp|lt|gt|quot);/gi, " ")
     .replace(/\s+/g, " ")
-  const challengeMeta = /<meta\b[^>]*(?:cf-mitigated|cf_chl|cf-chl)[^>]*(?:challenge|verify)/i.test(html)
-  const challengeTitle = /just a moment|checking (?:your )?browser|attention required|cloudflare (?:ray id|error|security)/i.test(normalizedTitle)
-  const challengeText = /just a moment|checking (?:your )?browser|checking if the site connection is secure|verify you are human|verifying you are human|human verification|performing security verification|security verification|please enable javascript and cookies|sorry, you have been blocked|人机验证|正在进行安全验证|验证您不是自动程序|请验证您是真人|確認しています|セキュリティ確認|人間であることを確認|ブラウザを確認しています/i.test(visibleText)
-  const challengeMarker = /(?:cdn-cgi\/challenge-platform|__cf_chl|cf_chl_opt|cf-turnstile|cf-chl-widget|data-cf-chl|challenges\.cloudflare\.com)/i.test(html)
-  return challengeMeta || challengeTitle || challengeText || challengeMarker
+  const cloudflareMarker = /(?:cdn-cgi\/challenge-platform|__cf_chl|cf_chl_opt|cf-turnstile|cf-chl-widget|data-cf-chl|challenges\.cloudflare\.com|cloudflare\s+ray\s+id)/i.test(sourceMarkup)
+  if (/sorry,? you have been blocked|access denied|error\s*(?:1020|1015)|you are being rate limited|您已被阻止|访问被拒绝/i.test(visibleText)
+    && (cloudflareMarker || /cloudflare/i.test(visibleText))) return "blocked"
+  const challengeTitle = /just a moment|checking (?:your )?browser|attention required|cloudflare security/i.test(normalizedTitle)
+  const interstitial = /<(?:form|div)\b[^>]*\bid\s*=\s*["'](?:challenge-form|cf-challenge-running|cf-chl-widget[^"']*)["']/i.test(contentMarkup)
+  if (challengeTitle || interstitial) return "challenge"
+
+  // JSD and a Turnstile loader can be present on an ordinary content page.
+  // Neither a script URL nor a cf-mitigated HTML meta tag is an HTTP response header.
+  const hasContent = parseMissAVVideoItems(contentMarkup).length > 0 || /<video\b/i.test(contentMarkup)
+    || /<form\b[\s\S]*?<input\b[^>]*\b(?:name|type)\s*=\s*["'](?:email|password)["']/i.test(contentMarkup)
+  const challengeText = /just a moment|checking (?:your )?browser|checking if the site connection is secure|verify you are human|verifying you are human|human verification|performing security verification|security verification|please enable javascript and cookies|人机验证|正在进行安全验证|验证您不是自动程序|请验证您是真人|接続を確認しています|セキュリティ確認|人間であることを確認|ブラウザを確認しています/i.test(visibleText)
+  const challengeConfiguration = /\b(?:window\.)?_cf_chl_opt\s*=/i.test(sourceMarkup)
+  const challengeWidget = /<(?:div|iframe)\b[^>]*\b(?:id|class)\s*=\s*["'][^"']*\bcf-turnstile\b/i.test(contentMarkup)
+  return !hasContent && cloudflareMarker && (challengeText || challengeConfiguration || challengeWidget) ? "challenge" : "none"
+}
+
+export function hasCloudflareInteractivePrompt(html: string): boolean {
+  const markup = cloudflareContentMarkup(html)
+  return /verify you are human|请验证您是真人|人間であることを確認/i.test(markup.replace(/<[^>]+>/g, " "))
+    || /<(?:div|iframe)\b[^>]*\b(?:id|class)\s*=\s*["'][^"']*\b(?:cf-turnstile|cf-chl-widget)/i.test(markup)
+}
+
+function cloudflareContentMarkup(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<(script|style|noscript|template)\b[\s\S]*?<\/\1>/gi, " ")
+}
+
+// Existing account callers must reject both a challenge and an access-denied page.
+export function isCloudflareChallengeHTML(html: string | null): boolean {
+  return classifyCloudflareHTML(html) !== "none"
 }
 
 export function isLikelyMissAVHTML(html: string | null): html is string {

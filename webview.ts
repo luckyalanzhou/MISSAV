@@ -1,12 +1,50 @@
+import { classifyCloudflareHTML, hasCloudflareInteractivePrompt } from "./html-parser"
+
+export type WebViewDocument = { url: string; html: string | null }
+
 export type WebViewPageLoad = {
   loaded: boolean
   finished: boolean
   html: string | null
+  url?: string
+  challengeObserved?: boolean
 }
 
 const WEBVIEW_PAGE_LOAD_TIMEOUT_MS = 30_000
 const WEBVIEW_HTML_READ_ATTEMPTS = 10
 const WEBVIEW_HTML_READ_INTERVAL_MS = 300
+const WEBVIEW_DOCUMENT_READ_TIMEOUT_MS = 3_000
+
+export function isMatchingWebViewURL(actual: string, expected: string): boolean {
+  try {
+    const target = new URL(expected)
+    const current = new URL(actual)
+    const route = (value: URL) => value.pathname.replace(/^\/dm\d+(?=\/)/i, "").replace(/\/+$/, "")
+    if (current.origin !== target.origin || current.username || current.password || route(current) !== route(target)) return false
+    // Ignore fragment/challenge tokens, not the requested pagination or filters.
+    for (const key of ["page", "sort", "filters"]) {
+      if (current.searchParams.getAll(key).length > 1 || target.searchParams.getAll(key).length > 1) return false
+      const normalize = (value: URL) => key === "page" ? value.searchParams.get(key) || "1" : value.searchParams.get(key) || ""
+      if (normalize(current) !== normalize(target)) return false
+    }
+    return true
+  } catch { return false }
+}
+
+export async function readMatchingWebViewDocument(controller: WebViewController, expectedURL: string): Promise<WebViewDocument | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    // Read location and markup together so a redirect cannot pair old HTML with a new URL.
+    const document = await Promise.race([
+      controller.evaluateJavaScript<WebViewDocument>(
+        "return { url: window.location.href, html: document.documentElement ? document.documentElement.outerHTML : null }"),
+      new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), WEBVIEW_DOCUMENT_READ_TIMEOUT_MS) }),
+    ])
+    return document && typeof document.url === "string" && (document.html === null || typeof document.html === "string")
+      && isMatchingWebViewURL(document.url, expectedURL) ? document : null
+  } catch { return null }
+  finally { if (timer !== undefined) clearTimeout(timer) }
+}
 
 export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS): Promise<WebViewPageLoad> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
@@ -18,6 +56,8 @@ export async function loadWebViewPage(controller: WebViewController, url: string
         let loaded = false
         let finished = false
         let loadError: unknown
+        let challengeObserved = false
+        let lastDocument: WebViewDocument | null = null
         try { loaded = await controller.loadURL(url) } catch (error) { loadError = error }
         if (timedOut) throw timeoutError
         if (loaded) {
@@ -25,19 +65,22 @@ export async function loadWebViewPage(controller: WebViewController, url: string
         }
         for (let attempt = 0; attempt < WEBVIEW_HTML_READ_ATTEMPTS; attempt += 1) {
           if (timedOut) throw timeoutError
-          let html: string | null = null
-          try { html = await controller.getHTML() } catch { /* The document may be between navigations. */ }
+          const document = await readMatchingWebViewDocument(controller, url)
           if (timedOut) throw timeoutError
-          if (!hasWebViewDocument(html)) {
-            try { html = await controller.evaluateJavaScript<string | null>("return document.documentElement ? document.documentElement.outerHTML : null") }
-            catch { /* JavaScript is unavailable while the new document is being created. */ }
+          lastDocument = document && hasWebViewDocument(document.html) ? document : null
+          if (lastDocument) {
+            const state = classifyCloudflareHTML(lastDocument.html)
+            challengeObserved ||= state === "challenge"
+            // Give an automatic interstitial a bounded chance to redirect in this
+            // same WebView. Explicit human-interaction pages go to Settings promptly.
+            const interactive = state === "challenge" && hasCloudflareInteractivePrompt(lastDocument.html!)
+            if (state !== "challenge" || interactive) return { loaded, finished, ...lastDocument, challengeObserved }
           }
-          if (timedOut) throw timeoutError
-          if (hasWebViewDocument(html)) return { loaded, finished, html }
           if (attempt + 1 < WEBVIEW_HTML_READ_ATTEMPTS) await new Promise<void>(resolve => setTimeout(resolve, WEBVIEW_HTML_READ_INTERVAL_MS))
         }
+        if (lastDocument) return { loaded, finished, ...lastDocument, challengeObserved }
         if (loadError) throw loadError
-        return { loaded, finished, html: null }
+        return { loaded, finished, html: null, challengeObserved }
       })(),
       new Promise<never>((_, reject) => {
         timeoutId = setTimeout(() => { timedOut = true; reject(timeoutError) }, timeoutMs)

@@ -96,7 +96,7 @@ class MissAVClient {
         ? SiteHTML.parseMissAVDirectoryPage(html, page, params.collection, url)
         : SiteHTML.parseMissAVSearchPage(html, page)
       if (!params.query && page === 1 && (params.collection === undefined || params.collection === "new" || params.collection === "today-hot") && result.items.length === 0) {
-        throw new Error(`首页/浏览列表没有解析到作品（${new URL(url).pathname}）。该页面可能仍被 Cloudflare 拦截，请在设置页验证访问线路后重试。`)
+        throw new Error(`首页/浏览列表没有解析到作品（${new URL(url).pathname}）。页面内容可能尚未完成加载，请稍后重试；若持续失败，请在设置页检查访问线路。`)
       }
       return result
     })()
@@ -198,6 +198,9 @@ class MissAVClient {
       await restoreCloudflareSession(controller, new URL(url).hostname)
       const { loaded, finished, html } = await loadWebViewPage(controller, url)
 
+      if (SiteHTML.classifyCloudflareHTML(html) === "blocked") {
+        throw new Error("站点拒绝了当前访问，不是待完成的 Cloudflare 验证。请检查网络或切换访问域名后重试。")
+      }
       if (SiteHTML.isCloudflareChallengeHTML(html)) {
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }

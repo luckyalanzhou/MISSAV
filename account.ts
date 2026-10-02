@@ -1,7 +1,8 @@
 import { getMissAVBaseURL, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
 import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, isLikelyMissAVListingHTML, isMissAVDirectoryCollection, missavClient, parseMissAVDirectoryPage, parseMissAVVideoItems, type MissAVAccessProbe, type MissAVVideoItem } from "./client"
+import { classifyCloudflareHTML } from "./html-parser"
 import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
-import { loadWebViewPage, type WebViewPageLoad } from "./webview"
+import { loadWebViewPage, readMatchingWebViewDocument, type WebViewPageLoad } from "./webview"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
 export type MissAVAccountSnapshot = { state: MissAVAccountState; domain: string; accountLabel?: string; accountEmail?: string; updatedAt?: number }
@@ -86,7 +87,7 @@ export async function loginMissAV(email: string, password: string): Promise<Miss
 
 export type MissAVSiteVerificationResult =
   | { status: "accessible"; challengeCompleted: boolean }
-  | { status: "incomplete" | "unavailable"; probe: MissAVAccessProbe }
+  | { status: "incomplete" | "unavailable" | "blocked"; probe: MissAVAccessProbe }
 const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
 
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
@@ -105,29 +106,35 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
       await restoreCloudflareSession(controller, probeHost)
       let initialPage: WebViewPageLoad = { loaded: false, finished: false, html: null }
       try { initialPage = await loadWebViewPage(controller, probeURL, MISSAV_ACCESS_PROBE_TIMEOUT_MS) }
-      catch { initialPage = { loaded: false, finished: false, html: await controller.getHTML().catch(() => null) } }
+      catch {
+        const document = await readMatchingWebViewDocument(controller, probeURL)
+        initialPage = { loaded: false, finished: false, html: document?.html ?? null, url: document?.url }
+      }
 
       // The HTML is the source of truth; WebKit can report a redirect callback
       // as incomplete even though a usable list is already on screen.
-      const initialChallenge = isCloudflareHTML(initialPage.html || "")
+      if (classifyCloudflareHTML(initialPage.html) === "blocked") return { status: "blocked", probe }
+      const initialChallenge = classifyCloudflareHTML(initialPage.html) === "challenge"
+      if (initialPage.challengeObserved && !initialChallenge) challengeCompleted = true
       const needsVisibleCheck = initialChallenge || !isProbePageHTML(initialPage.html, probe)
       if (needsVisibleCheck) {
         // Reload the exact route only after its window is visible. Cloudflare's
         // challenge scripts may stall when first loaded in a hidden WebView.
-        const { listingConfirmed: visibleListingConfirmed, challengeObserved } = await presentVerificationPage(controller, probe)
+        const { listingConfirmed: visibleListingConfirmed, challengeObserved, blocked } = await presentVerificationPage(controller, probe)
+        if (blocked) return { status: "blocked", probe }
         try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
         if (visibleListingConfirmed) {
           if (initialChallenge || challengeObserved) challengeCompleted = true
-          missavClient.rememberCollectionRoutes(await controller.getHTML().catch(() => null), probeURL)
+          missavClient.rememberCollectionRoutes((await readMatchingWebViewDocument(controller, probeURL))?.html ?? null, probeURL)
           continue
         }
 
         // Never retry in the background after the user closes the challenge:
         // doing so can finish later and falsely report that the closed page was
         // verified. Success requires observing a real listing in this window.
-        let closedPageHTML: string | null = null
-        try { closedPageHTML = await controller.getHTML() } catch { /* The view may have released its document. */ }
-        return { status: isCloudflareHTML(closedPageHTML || "") ? "incomplete" : "unavailable", probe }
+        const closedPageHTML = (await readMatchingWebViewDocument(controller, probeURL))?.html ?? null
+        const closedState = classifyCloudflareHTML(closedPageHTML)
+        return { status: closedState === "blocked" ? "blocked" : closedState === "challenge" ? "incomplete" : "unavailable", probe }
       }
       missavClient.rememberCollectionRoutes(initialPage.html, probeURL)
       try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
@@ -145,11 +152,12 @@ function isProbePageHTML(html: string | null, probe: MissAVAccessProbe): boolean
     : isLikelyMissAVListingHTML(html)
 }
 
-async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe): Promise<{ listingConfirmed: boolean; challengeObserved: boolean }> {
+async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe): Promise<{ listingConfirmed: boolean; challengeObserved: boolean; blocked: boolean }> {
   const probeURL = probe.url
   let presentationClosed = false
   let listingConfirmed = false
   let challengeObserved = false
+  let blocked = false
   const presentation = controller.present({ fullscreen: true, navigationTitle: "验证访问线路" }).finally(() => { presentationClosed = true })
 
   // Let the modal become visible before navigating so Cloudflare's interactive
@@ -163,11 +171,11 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
       presentation.then(() => undefined),
     ])
     if (presentationClosed) break
-    let html: string | null = null
-    try { html = await controller.getHTML() } catch { /* Keep waiting for the page to update. */ }
+    const html = (await readMatchingWebViewDocument(controller, probeURL))?.html ?? null
     if (presentationClosed) break
 
-    if (isCloudflareHTML(html || "")) challengeObserved = true
+    if (classifyCloudflareHTML(html) === "blocked") { blocked = true; controller.dismiss(); break }
+    if (classifyCloudflareHTML(html) === "challenge") challengeObserved = true
     if (isProbePageHTML(html, probe)) {
       listingConfirmed = true
       if (!presentationClosed) controller.dismiss()
@@ -181,13 +189,14 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
   // the page already in the WebView before deciding to perform another request.
   if (!listingConfirmed) {
     try {
-      const html = await controller.getHTML()
-      if (isCloudflareHTML(html || "")) challengeObserved = true
+      const html = (await readMatchingWebViewDocument(controller, probeURL))?.html ?? null
+      blocked ||= classifyCloudflareHTML(html) === "blocked"
+      if (classifyCloudflareHTML(html) === "challenge") challengeObserved = true
       listingConfirmed = isProbePageHTML(html, probe)
     }
     catch { /* The WebView may already have released its document on dismissal. */ }
   }
-  return { listingConfirmed, challengeObserved }
+  return { listingConfirmed, challengeObserved, blocked }
 }
 
 export function signOutMissAV(): void {
