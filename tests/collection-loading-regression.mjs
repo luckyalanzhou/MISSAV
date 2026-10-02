@@ -52,8 +52,8 @@ for (const baseURL of ["https://missav.ws/", "https://missav.ai/"]) {
   client.verificationRequests.set(`${baseURL}cn/heyzo`, { collection: "heyzo" })
   client.verificationRequests.set(`${baseURL}cn/genres/example`, { collection: "genres", categoryPath: "/cn/genres/example" })
   client.verificationRequests.set("https://other.example/cn/release", { collection: "release" })
-  assert.deepEqual(client.accessProbeRoutes().slice(-2).map(probe => probe.collection), ["heyzo", "genres"])
-  assert.equal(new URL(client.accessProbeRoutes().at(-1).url).pathname, "/cn/genres/example", "Verify the challenged directory leaf, not its accessible root")
+  assert.deepEqual(client.accessProbeRoutes().slice(0, 2).map(probe => probe.collection), ["genres", "heyzo"])
+  assert.equal(new URL(client.accessProbeRoutes()[0].url).pathname, "/cn/genres/example", "Verify the latest challenged directory leaf first, not its accessible root")
   client.clearVerificationCollections()
   assert.equal(client.accessProbeRoutes().length, 5)
   for (const categoryPath of ["https://other.example/cn/genres/VR", "/ja/genres/VR", "/cn/actresses/ranking", "/cn/actresses/ranking/"]) {

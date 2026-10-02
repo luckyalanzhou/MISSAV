@@ -324,7 +324,7 @@ try {
   responseFor = () => listing("verified-leaf-001", siteMenu)
   assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
   assert.equal(requests.length, 6)
-  const verifiedLeafURL = new URL(requests.at(-1))
+  const verifiedLeafURL = new URL(requests[0])
   assert.equal(verifiedLeafURL.pathname, "/dm22/cn/genres/example")
   assert.equal(verifiedLeafURL.searchParams.get("page"), "2")
   assert.equal(verifiedLeafURL.searchParams.get("filters"), "multiple")

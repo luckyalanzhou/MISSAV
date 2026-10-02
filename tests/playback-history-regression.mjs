@@ -8,6 +8,7 @@ import { compileProductionModule as compile } from "./production-module.mjs"
 
 const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
+const requestTypes = await import(compile("../request-scope.ts"))
 const preferences = new Map()
 globalThis.Storage = { get: key => preferences.get(key), set: (key, value) => preferences.set(key, value) }
 globalThis.FileManager = { documentsDirectory: "/fixture" }
@@ -65,7 +66,7 @@ function pageHarness(relative, exported) {
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "../storage") return storage
     if (specifier === "../playback-progress") return progress
-    if (specifier === "../client") return { missavClient: { searchVideoPage: async () => ({ items: [] }) } }
+    if (specifier === "../client") return { ...requestTypes, missavClient: { searchVideoPage: async () => ({ items: [] }) } }
     if (specifier === "../account") return { loadMissAVSavedVideos: async () => ({ items: [], page: 1, hasNext: false }) }
     if (specifier === "../design") return { PageBackground: "PageBackground", SectionHeading: "SectionHeading", ActionRow: "ActionRow" }
     if (specifier === "./components/media_cards") return { MediaHero: "MediaHero", MediaTile: "MediaTile" }

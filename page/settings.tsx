@@ -58,8 +58,8 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
       const result = await openMissAVSiteVerification()
       setAccessMessage(result.status === "accessible"
         ? result.challengeCompleted
-          ? "Cloudflare 验证完成，常用栏目访问检查通过。已发起首页和浏览页刷新。"
-          : "常用栏目访问正常，本次无需 Cloudflare 验证。已发起首页和浏览页刷新。"
+          ? "Cloudflare 验证完成，已检查栏目可访问。正在复用已载入内容刷新首页和浏览页。"
+          : "已检查栏目可访问，本次无需 Cloudflare 验证。正在刷新首页和浏览页。"
         : result.status === "blocked"
           ? `${result.probe.title}栏目被站点拒绝访问，不是待完成的验证。请检查网络或切换访问域名后重试。`
         : result.status === "incomplete"

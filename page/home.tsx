@@ -1,5 +1,5 @@
 import { Divider, HStack, Image, LazyHStack, ScrollView, Text, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
-import { missavClient, type MissAVVideoItem } from "../client"
+import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoItem } from "../client"
 import { ActionRow, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SECTION_SPACING, SectionHeading } from "../design"
 import { loadMissAVFavourites, loadMissAVHistory, type MissAVPlaybackRecord } from "../storage"
 import { formatMissAVContinueWatching } from "../playback-progress"
@@ -11,7 +11,7 @@ import { RecommendationsPage } from "./recommendations"
 type HomeRemote = { latest: MissAVVideoItem[]; trending: MissAVVideoItem[] }
 type HomeLocal = { recent: MissAVPlaybackRecord[]; favourites: MissAVVideoItem[] }
 
-export function MediaHomePage(props: { revision: number; onFavouriteChanged: () => void; onHistoryChanged: () => void; onDiscover: () => void; onLibrary: () => void; toolbar?: any }) {
+export function MediaHomePage(props: { revision: number; accessRevision?: number; onFavouriteChanged: () => void; onHistoryChanged: () => void; onDiscover: () => void; onLibrary: () => void; toolbar?: any }) {
   const [remote, setRemote] = useState<HomeRemote>({ latest: [], trending: [] })
   const [local, setLocal] = useState<HomeLocal>({ recent: [], favourites: [] })
   const [remoteLoading, setRemoteLoading] = useState(true)
@@ -23,27 +23,32 @@ export function MediaHomePage(props: { revision: number; onFavouriteChanged: () 
   const remoteGeneration = useRef(0)
   const localGeneration = useRef(0)
   const loadedRemote = useRef(false)
+  const requestScope = useRef<MissAVRequestScope | null>(null)
 
-  async function loadRemote(force = false) {
-    if (loadedRemote.current && !force) return
+  async function loadRemote(force = false, reuseVerifiedCache = false) {
+    if (loadedRemote.current && !force && !reuseVerifiedCache) return
     loadedRemote.current = true
     const current = ++remoteGeneration.current
+    requestScope.current?.cancel()
+    const scope = new MissAVRequestScope()
+    requestScope.current = scope
     setRemoteLoading(true)
     setRemoteError(null)
     const results = await Promise.allSettled([
-      missavClient.searchVideoPage({ collection: "today-hot", page: 1, sort: "today_views", filter: "" }, { forceRefresh: force }),
-      missavClient.searchVideoPage({ collection: "new", page: 1, sort: "published_at", filter: "" }, { forceRefresh: force }),
+      missavClient.searchVideoPage({ collection: "today-hot", page: 1, sort: "today_views", filter: "" }, { forceRefresh: force, scope }),
+      missavClient.searchVideoPage({ collection: "new", page: 1, sort: "published_at", filter: "" }, { forceRefresh: force, scope }),
     ])
     if (current !== remoteGeneration.current) return
     setRemote(previous => ({
       trending: results[0].status === "fulfilled" ? results[0].value.items.slice(0, 10) : previous.trending,
       latest: results[1].status === "fulfilled" ? results[1].value.items.slice(0, 10) : previous.latest,
     }))
-    const failures = results.flatMap((result, index) => result.status === "rejected"
+    const failures = results.flatMap((result, index) => result.status === "rejected" && !isMissAVRequestCancelled(result.reason)
       ? [`${index === 0 ? "今日热门" : "最近更新"}：${errorMessage(result.reason)}`]
       : [])
     if (failures.length) setRemoteError(`在线内容更新失败（${failures.join("；")}）。`)
     setRemoteLoading(false)
+    requestScope.current = null
   }
 
   async function loadLocal() {
@@ -60,7 +65,8 @@ export function MediaHomePage(props: { revision: number; onFavouriteChanged: () 
 
   async function refresh() { await Promise.all([loadRemote(true), loadLocal()]) }
   function open(video: MissAVVideoItem) { setSelected(video); detailPresented.setValue(true) }
-  useEffect(() => { void loadRemote() }, [])
+  useEffect(() => { void loadRemote(false, true) }, [props.accessRevision])
+  useEffect(() => () => { ++remoteGeneration.current; ++localGeneration.current; requestScope.current?.cancel() }, [])
   useEffect(() => { void loadLocal() }, [props.revision])
 
   const continueWatching = local.recent[0]

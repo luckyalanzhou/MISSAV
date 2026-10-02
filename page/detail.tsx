@@ -1,5 +1,5 @@
 import { Button, Divider, EnvironmentValuesReader, HStack, Image, LazyVStack, Navigation, NavigationStack, ProgressView, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type DynamicTypeSize, type ScrollViewProxy } from "scripting"
-import { missavClient, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../client"
+import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../client"
 import { ACCENT, Badge, MEDIA_HERO_RADIUS, PAGE_BOTTOM_PADDING, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, PageBackground, SECONDARY_ACTION_HEIGHT, SECTION_SPACING, SectionHeading } from "../design"
 import { chooseAndPresentMissAVPlayer } from "../player"
 import { getMissAVAccountSnapshot, getMissAVWebsiteSavedState, setMissAVWebsiteSaved } from "../account"
@@ -28,21 +28,25 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const tagSearchPresented = useObservable(false)
   const generation = useRef(0)
+  const requestScope = useRef<MissAVRequestScope | null>(null)
   const favouriteGeneration = useRef(0)
   const subtitleGeneration = useRef(0)
 
   async function load() {
     const current = ++generation.current
+    requestScope.current?.cancel()
+    const scope = new MissAVRequestScope()
+    requestScope.current = scope
     setLoading(true); setDetailError(null)
     try {
-      const next = await missavClient.getVideo(props.video)
+      const next = await missavClient.getVideo(props.video, { scope })
       if (current !== generation.current) return
       setDetail(next)
       try { await rememberMissAVDetail(props.video, next); if (current === generation.current) props.onHistoryChanged() }
       catch (reason) { console.error("保存浏览记录失败:", reason) }
     } catch (reason) {
-      if (current === generation.current) setDetailError(reason instanceof Error ? reason.message : String(reason))
-    } finally { if (current === generation.current) setLoading(false) }
+      if (current === generation.current && !isMissAVRequestCancelled(reason)) setDetailError(reason instanceof Error ? reason.message : String(reason))
+    } finally { if (current === generation.current) { setLoading(false); requestScope.current = null } }
   }
 
   useEffect(() => {
@@ -68,6 +72,7 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
       void getMissAVWebsiteSavedState(props.video.detailPath).then(value => { if (current === favouriteGeneration.current) setWebsiteSaved(value.saved) }).catch(reason => { if (current === favouriteGeneration.current) setWebsiteSavedError(reason instanceof Error ? reason.message : "网站收藏状态读取失败。") })
     }
   }, [props.video.videoCode])
+  useEffect(() => () => { ++generation.current; ++favouriteGeneration.current; ++subtitleGeneration.current; requestScope.current?.cancel() }, [props.video.videoCode])
 
   async function play(source: MissAVVideoSource, subtitlePreview = false) {
     if (!detail || openingSource) return
@@ -361,15 +366,20 @@ function TagSearchPage(props: { tag: string; onFavouriteChanged: () => void; onH
   const [selected, setSelected] = useState<MissAVVideoItem | null>(null)
   const detailPresented = useObservable(false)
   const generation = useRef(0)
+  const requestScope = useRef<MissAVRequestScope | null>(null)
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
   async function load(nextPage = 1) {
     const current = ++generation.current
+    requestScope.current?.cancel()
+    const scope = new MissAVRequestScope()
+    requestScope.current = scope
     setLoading(true); setError(null)
-    try { const result = await missavClient.searchVideoPage({ query: props.tag, page: nextPage, sort: "released_at", filter: "" }); if (current !== generation.current) return; setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1) }
-    catch (reason) { if (current === generation.current) setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { if (current === generation.current) setLoading(false) }
+    try { const result = await missavClient.searchVideoPage({ query: props.tag, page: nextPage, sort: "released_at", filter: "" }, { scope }); if (current !== generation.current) return; setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1) }
+    catch (reason) { if (current === generation.current && !isMissAVRequestCancelled(reason)) setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { if (current === generation.current) { setLoading(false); requestScope.current = null } }
   }
   useEffect(() => { void load(1) }, [props.tag])
+  useEffect(() => () => { ++generation.current; requestScope.current?.cancel() }, [props.tag])
   useEffect(() => { if (resultsRevision) scrollProxy.current?.scrollTo("tag-results-top", "top") }, [resultsRevision])
   function open(video: MissAVVideoItem) { setSelected(video); detailPresented.setValue(true) }
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}><PageBackground /><ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle={props.tag} navigationBarTitleDisplayMode="inline" refreshable={() => load(page)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage video={selected} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}><VStack key="tag-results-top" spacing={18} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}><VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><HStack spacing={7}><Image systemName="tag.fill" foregroundStyle={ACCENT} /><Text font="title2" fontWeight="bold">{props.tag}</Text></HStack><Text font="footnote" foregroundStyle="secondaryLabel">{`相关作品 · 第 ${page} 页 · ${items.length} 个结果`}</Text></VStack>{loading && !items.length ? <StateView title="正在搜索标签" loading presentation="section" /> : error && !items.length ? <StateView title="标签搜索失败" description={error} kind="error" action={() => { void load(page) }} /> : !items.length ? <StateView title="暂无相关作品" description="未找到带有此标签的作品。" systemImage="tag.slash" /> : <VideoRowList items={items} status={() => `标签 · ${props.tag}`} statusSystemImage="tag" onOpen={open} />}{error && items.length ? <StateView title="刷新失败" description="正在显示上次成功的结果。" kind="error" action={() => { void load(page) }} presentation="row" /> : undefined}{items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load(page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load(page + 1) }} /></HStack> : undefined}</VStack></ScrollView>}}</ScrollViewReader></ZStack>

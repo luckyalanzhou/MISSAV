@@ -2,7 +2,9 @@ import { fetch } from "scripting"
 import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
 import { captureCloudflareSession, restoreCloudflareSession } from "./cloudflare-session"
 import * as SiteHTML from "./html-parser"
-import { loadWebViewPage } from "./webview"
+import { isMatchingWebViewURL, loadWebViewPage, type WebViewDocument } from "./webview"
+import { MissAVRequestScope } from "./request-scope"
+export { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
 import { defaultMissAVCollectionSort, isMissAVDirectoryCollection, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, type MissAVCollection, type MissAVFilter, type MissAVSort } from "./collections"
 
 export { collectionOptionsForGroup, defaultMissAVCollectionSort, isMissAVDirectoryCollection, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort } from "./collections"
@@ -35,7 +37,7 @@ export type MissAVAccessProbe = { collection: MissAVCollection; title: string; u
 const SEARCH_PAGE_CACHE_TTL_MS = 45_000
 const MAX_CACHED_SEARCH_PAGES = 24
 type CachedSearchPage = { expiresAt: number; value: MissAVSearchPage }
-type PendingSearchPage = { requestId: number; forceRefresh: boolean; promise: Promise<MissAVSearchPage> }
+type PendingSearchPage = { requestId: number; forceRefresh: boolean; promise: Promise<MissAVSearchPage>; scope: MissAVRequestScope; consumers: number; settled: boolean }
 class MissAVPageContentError extends Error {}
 
 export const MISSAV_SORT_OPTIONS: ReadonlyArray<{ value: MissAVSort; title: string; systemImage: string }> = [
@@ -60,8 +62,13 @@ class MissAVClient {
   private searchPageCache = new Map<string, CachedSearchPage>()
   private searchPageRequests = new Map<string, PendingSearchPage>()
   private searchRequestId = 0
+  private activePageScopes = new Set<MissAVRequestScope>()
+  private verificationGate: { promise: Promise<void>; release: () => void; cachedKeys: Set<string> } | null = null
 
-  async searchVideoPage(params: MissAVSearchParams, options: { forceRefresh?: boolean } = {}): Promise<MissAVSearchPage> {
+  async searchVideoPage(params: MissAVSearchParams, options: { forceRefresh?: boolean; scope?: MissAVRequestScope } = {}): Promise<MissAVSearchPage> {
+    const caller = options.scope || new MissAVRequestScope()
+    await this.waitForVerification(caller)
+    caller.assertActive()
     const page = Math.max(1, Math.floor(params.page || 1))
     const url = this.collectionUrl(params)
     const forceRefresh = options.forceRefresh === true
@@ -75,9 +82,10 @@ class MissAVClient {
       this.searchPageCache.delete(url)
     }
     const pending = this.searchPageRequests.get(url)
-    if (pending && (!forceRefresh || pending.forceRefresh)) return pending.promise.then(copySearchPage)
+    if (pending && !pending.scope.cancelled && (!forceRefresh || pending.forceRefresh)) return this.consumeSearchPage(pending, caller)
 
     const requestId = ++this.searchRequestId
+    const scope = new MissAVRequestScope()
     const request = (async () => {
       const directory = params.collection && isMissAVDirectoryCollection(params.collection) && !params.categoryPath && !params.query ? params.collection : null
       const parsePage = (html: string) => directory
@@ -88,7 +96,7 @@ class MissAVClient {
         return result.items.length > 0 || Boolean(result.categories?.length)
       }
       const fetchListing = async (targetURL: string) => {
-        const html = await this.fetchHtml(targetURL, isContentReady)
+        const html = await this.fetchHtml(targetURL, isContentReady, scope)
         // An unfiltered first page must not cache a header-only document as
         // "no content". Searches/filtered/later pages can legitimately be empty.
         if (!params.query && !params.filter && page === 1 && !isContentReady(html)) {
@@ -103,7 +111,7 @@ class MissAVClient {
         if (new URL(getMissAVBaseURL()).origin !== new URL(url).origin) throw error
         // On a cold launch, obtain the current menu from the working Browse
         // entry before retrying a route that returned no usable listing.
-        await this.fetchHtml(this.browseProbeURL())
+        await this.fetchHtml(this.browseProbeURL(), undefined, scope)
         if (new URL(getMissAVBaseURL()).origin !== new URL(url).origin) throw error
         const resolvedURL = this.collectionUrl(params)
         if (resolvedURL === url) throw error
@@ -112,6 +120,7 @@ class MissAVClient {
       return parsePage(html)
     })()
     const tracked = request.then(value => {
+      scope.assertActive()
       if (this.searchPageRequests.get(url)?.requestId === requestId) {
         if (this.searchPageCache.size >= MAX_CACHED_SEARCH_PAGES) {
           const oldestKey = this.searchPageCache.keys().next().value
@@ -121,17 +130,82 @@ class MissAVClient {
       }
       return value
     }).catch(error => {
-      if (params.collection && error instanceof Error && error.message.includes("当前线路需要 Cloudflare 验证")) this.verificationRequests.set(url, { ...params })
+      if (!scope.cancelled && error instanceof Error && error.message.includes("当前线路需要 Cloudflare 验证")) {
+        this.verificationRequests.delete(url)
+        this.verificationRequests.set(url, { ...params, collection: params.collection || "new" })
+      }
       throw error
     }).finally(() => {
       if (this.searchPageRequests.get(url)?.requestId === requestId) this.searchPageRequests.delete(url)
     })
-    this.searchPageRequests.set(url, { requestId, forceRefresh, promise: tracked })
-    return tracked.then(copySearchPage)
+    const task: PendingSearchPage = { requestId, forceRefresh, promise: tracked, scope, consumers: 0, settled: false }
+    void tracked.then(() => { task.settled = true }, () => { task.settled = true })
+    this.searchPageRequests.set(url, task)
+    return this.consumeSearchPage(task, caller)
+  }
+
+  private consumeSearchPage(task: PendingSearchPage, caller: MissAVRequestScope): Promise<MissAVSearchPage> {
+    task.consumers += 1
+    return caller.waitFor(task.promise).then(copySearchPage).finally(() => {
+      task.consumers -= 1
+      if (!task.settled && task.consumers === 0) task.scope.cancel()
+    })
+  }
+
+  private async waitForVerification(scope: MissAVRequestScope): Promise<void> {
+    scope.assertActive()
+    while (this.verificationGate) { await scope.waitFor(this.verificationGate.promise); scope.assertActive() }
+  }
+
+  beginSiteVerification(): () => void {
+    if (this.verificationGate) throw new Error("访问线路验证正在进行。")
+    let release!: () => void
+    const gate = { promise: new Promise<void>(resolve => { release = resolve }), release: () => release(), cachedKeys: new Set<string>() }
+    this.verificationGate = gate
+    for (const task of this.searchPageRequests.values()) task.scope.cancel()
+    for (const scope of this.activePageScopes) scope.cancel()
+    this.searchPageRequests.clear()
+    // Keep unrelated successful pages. Only challenged routes are invalidated.
+    for (const failedURL of this.verificationRequests.keys()) {
+      for (const key of this.searchPageCache.keys()) if (isMatchingWebViewURL(key, failedURL)) this.searchPageCache.delete(key)
+    }
+    return () => {
+      if (this.verificationGate !== gate) return
+      // A later interactive check must not let earlier verified pages expire
+      // before the post-verification refresh can consume them.
+      for (const key of gate.cachedKeys) {
+        const cached = this.searchPageCache.get(key)
+        if (cached) cached.expiresAt = Date.now() + SEARCH_PAGE_CACHE_TTL_MS
+      }
+      this.verificationGate = null
+      gate.release()
+    }
+  }
+
+  cacheVerifiedPage(probe: MissAVAccessProbe, document: WebViewDocument | null): boolean {
+    if (!document?.html || !isMatchingWebViewURL(document.url, probe.url)
+      || new URL(probe.url).origin !== new URL(getMissAVBaseURL()).origin
+      || !SiteHTML.isLikelyMissAVHTML(document.html) || SiteHTML.isCloudflareChallengeHTML(document.html)) return false
+    const page = Math.max(1, Math.floor(probe.params.page || 1))
+    const value = isMissAVDirectoryCollection(probe.collection) && !probe.params.categoryPath && !probe.params.query
+      ? SiteHTML.parseMissAVDirectoryPage(document.html, page, probe.collection, probe.url)
+      : SiteHTML.parseMissAVSearchPage(document.html, page)
+    if (!value.items.length && !value.categories?.length) return false
+    this.rememberCollectionRoutes(document.html, probe.url)
+    const canonical = this.collectionUrl(probe.params)
+    for (const key of new Set([probe.url, canonical])) {
+      if (!isMatchingWebViewURL(key, probe.url)) continue
+      if (this.searchPageCache.size >= MAX_CACHED_SEARCH_PAGES && !this.searchPageCache.has(key)) this.searchPageCache.delete(this.searchPageCache.keys().next().value!)
+      this.searchPageCache.set(key, { expiresAt: Date.now() + SEARCH_PAGE_CACHE_TTL_MS, value: copySearchPage(value) })
+      this.verificationGate?.cachedKeys.add(key)
+    }
+    for (const key of this.verificationRequests.keys()) if (isMatchingWebViewURL(key, probe.url)) this.verificationRequests.delete(key)
+    return true
   }
 
   clearSearchPageCache(): void {
     this.searchPageCache.clear()
+    for (const task of this.searchPageRequests.values()) task.scope.cancel()
     this.searchPageRequests.clear()
     this.searchRequestId += 1
   }
@@ -148,11 +222,11 @@ class MissAVClient {
     this.collectionPaths.set(origin, { ...this.collectionPaths.get(origin), ...links })
   }
 
-  async getVideo(item: MissAVVideoItem | string): Promise<MissAVVideoDetail> {
+  async getVideo(item: MissAVVideoItem | string, options: { scope?: MissAVRequestScope } = {}): Promise<MissAVVideoDetail> {
     const videoCode = typeof item === "string" ? SiteHTML.extractMissAVVideoCode(item) : item.videoCode
     if (!videoCode) throw new Error("缺少 MISSAV 视频标识符。")
     const watchUrl = typeof item === "string" ? this.watchUrl(videoCode) : SiteHTML.normalizeMissAVUrl(item.detailPath)
-    const html = await this.fetchHtml(watchUrl)
+    const html = await this.fetchHtml(watchUrl, undefined, options.scope)
     return SiteHTML.parseMissAVVideoDetail(html, videoCode, watchUrl)
   }
 
@@ -162,8 +236,9 @@ class MissAVClient {
     // Check one real entry per group and any routes that actually challenged
     // the user, rather than adding dozens of hidden requests on every check.
     const origin = new URL(getMissAVBaseURL()).origin
-    const requests: MissAVSearchParams[] = MISSAV_COLLECTION_GROUPS.map(group => ({ collection: group.defaultCollection, page: 1, sort: defaultMissAVCollectionSort(group.defaultCollection) }))
-    for (const [url, params] of this.verificationRequests) if (new URL(url).origin === origin) requests.push(params)
+    const requests: MissAVSearchParams[] = []
+    for (const [url, params] of [...this.verificationRequests].reverse()) if (new URL(url).origin === origin) requests.push(params)
+    requests.push(...MISSAV_COLLECTION_GROUPS.map(group => ({ collection: group.defaultCollection, page: 1, sort: defaultMissAVCollectionSort(group.defaultCollection) })))
     const seen = new Set<string>()
     const probes: MissAVAccessProbe[] = []
     for (const params of requests) {
@@ -200,14 +275,23 @@ class MissAVClient {
     return url.toString()
   }
 
-  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean): Promise<string> {
+  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean, scope = new MissAVRequestScope()): Promise<string> {
     // Use the same persistent WebKit session as the verification window.
     // `scripting.fetch` has a separate cookie jar and a manually supplied UA,
     // so Cloudflare can accept the WebView while returning 403 to fetch.
+    await this.waitForVerification(scope)
+    if (new URL(url).origin !== new URL(getMissAVBaseURL()).origin) scope.cancel()
+    scope.assertActive()
     const controller = new WebViewController()
+    this.activePageScopes.add(scope)
+    let disposed = false
+    const dispose = () => { if (!disposed) { disposed = true; controller.dispose() } }
+    const removeCancellation = scope.onCancel(dispose)
     try {
-      await restoreCloudflareSession(controller, new URL(url).hostname)
-      const { loaded, finished, html } = await loadWebViewPage(controller, url, undefined, isContentReady)
+      await scope.waitFor(restoreCloudflareSession(controller, new URL(url).hostname, scope))
+      scope.assertActive()
+      const { loaded, finished, html } = await loadWebViewPage(controller, url, undefined, isContentReady, scope)
+      scope.assertActive()
 
       if (SiteHTML.classifyCloudflareHTML(html) === "blocked") {
         throw new Error("站点拒绝了当前访问，不是待完成的 Cloudflare 验证。请检查网络或切换访问域名后重试。")
@@ -215,7 +299,8 @@ class MissAVClient {
       if (SiteHTML.isCloudflareChallengeHTML(html)) {
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }
-      try { await captureCloudflareSession(controller, new URL(url).hostname) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
+      try { await scope.waitFor(captureCloudflareSession(controller, new URL(url).hostname, scope)) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
+      scope.assertActive()
       // A valid MISSAV document is authoritative even if WebKit reports a
       // redirect/load callback as incomplete for this route.
       if (SiteHTML.isLikelyMissAVHTML(html)) {
@@ -227,7 +312,9 @@ class MissAVClient {
       if (!loaded || !finished || !html) throw new MissAVPageContentError(`页面未能载入内容（${route.host}${route.pathname}）。请重试；若仍失败，请在设置页验证访问线路。`)
       throw new MissAVPageContentError(`页面未返回可识别的 MISSAV 内容（${route.host}${route.pathname}）。请在设置页检查访问线路。`)
     } finally {
-      controller.dispose()
+      removeCancellation()
+      this.activePageScopes.delete(scope)
+      dispose()
     }
   }
 

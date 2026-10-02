@@ -1,4 +1,5 @@
 import { classifyCloudflareHTML, hasCloudflareInteractivePrompt } from "./html-parser"
+import type { MissAVRequestScope } from "./request-scope"
 
 export type WebViewDocument = { url: string; html: string | null }
 
@@ -46,26 +47,32 @@ export async function readMatchingWebViewDocument(controller: WebViewController,
   finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
-export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean): Promise<WebViewPageLoad> {
+export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean, scope?: MissAVRequestScope): Promise<WebViewPageLoad> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   let timedOut = false
   const timeoutError = new Error("网页加载超时，请检查网络后重试。")
   try {
-    return await Promise.race([
+    scope?.assertActive()
+    const request = Promise.race([
       (async () => {
         let loaded = false
         let finished = false
         let loadError: unknown
         let challengeObserved = false
         let lastDocument: WebViewDocument | null = null
+        scope?.assertActive()
         try { loaded = await controller.loadURL(url) } catch (error) { loadError = error }
+        scope?.assertActive()
         if (timedOut) throw timeoutError
         if (loaded) {
           try { finished = await controller.waitForLoad() } catch { /* A redirect can cancel a load callback. */ }
+          scope?.assertActive()
         }
         for (let attempt = 0; attempt < WEBVIEW_HTML_READ_ATTEMPTS; attempt += 1) {
+          scope?.assertActive()
           if (timedOut) throw timeoutError
           const document = await readMatchingWebViewDocument(controller, url)
+          scope?.assertActive()
           if (timedOut) throw timeoutError
           lastDocument = document && hasWebViewDocument(document.html) ? document : null
           if (lastDocument) {
@@ -90,6 +97,7 @@ export async function loadWebViewPage(controller: WebViewController, url: string
         timeoutId = setTimeout(() => { timedOut = true; reject(timeoutError) }, timeoutMs)
       }),
     ])
+    return await (scope ? scope.waitFor(request) : request)
   } finally {
     if (timeoutId !== undefined) clearTimeout(timeoutId)
   }

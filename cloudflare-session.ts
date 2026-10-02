@@ -1,4 +1,5 @@
 import { MISSAV_DOMAIN_OPTIONS } from "./domain"
+import type { MissAVRequestScope } from "./request-scope"
 
 const CLOUDFLARE_COOKIE_KEY_PREFIX = "missav_cloudflare_cookie_v1_"
 const MISSAV_HOSTS = MISSAV_DOMAIN_OPTIONS.map(option => new URL(option.value).hostname.toLowerCase())
@@ -28,28 +29,35 @@ export function cloudflareCookiesForHost(cookies: readonly unknown[], host: stri
     && !isCookieExpired(cookie))
 }
 
-export async function captureCloudflareSession(controller: WebViewController, host: string): Promise<number> {
+export async function captureCloudflareSession(controller: WebViewController, host: string, scope?: MissAVRequestScope): Promise<number> {
+  scope?.assertActive()
   const cookies = cloudflareCookiesForHost(await controller.getAllCookies(), host)
+  scope?.assertActive()
   if (!cookies.some(cookie => cookie.name.toLowerCase() === "cf_clearance")) return 0
   Keychain.set(cookieKey(host), JSON.stringify(cookies), { accessibility: "first_unlock_this_device" })
   return cookies.length
 }
 
-export async function restoreCloudflareSession(controller: WebViewController, host: string): Promise<number> {
+export async function restoreCloudflareSession(controller: WebViewController, host: string, scope?: MissAVRequestScope): Promise<number> {
+  scope?.assertActive()
   try {
     const liveCookies = cloudflareCookiesForHost(await controller.getAllCookies(), host)
+    scope?.assertActive()
     // Default WebViews share a persistent cookie store. Do not replace a
     // newly verified clearance with an older Keychain snapshot.
     if (liveCookies.some(cookie => cookie.name.toLowerCase() === "cf_clearance")) return liveCookies.length
   } catch { /* Restore the saved session if the native cookie store is unavailable. */ }
+  scope?.assertActive()
   const cookies = readCloudflareSession(host)
   for (const stored of cookies) {
+    scope?.assertActive()
     try {
       const cookie = { ...stored, expiresDate: toExpiryDate(stored.expiresDate) } as Parameters<WebViewController["setCookie"]>[0]
       await controller.setCookie(cookie)
     } catch {
       // A stale or unsupported auxiliary Cloudflare cookie must not prevent page loading.
     }
+    scope?.assertActive()
   }
   return cookies.length
 }

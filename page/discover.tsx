@@ -1,5 +1,5 @@
 import { Button, HStack, Image, LazyVGrid, Menu, ProgressView, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
-import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, missavClient, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../client"
+import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../client"
 import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
 import { MediaGridCard } from "./components/media_cards"
@@ -9,7 +9,7 @@ const collections = MISSAV_COLLECTION_OPTIONS.map(item => ({ ...item }))
 const filters = MISSAV_FILTER_OPTIONS.map(item => ({ ...item }))
 const sorts = MISSAV_SORT_OPTIONS.map(item => ({ ...item }))
 
-export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryChanged: () => void; toolbar?: any }) {
+export function DiscoverPage(props: { accessRevision?: number; onFavouriteChanged: () => void; onHistoryChanged: () => void; toolbar?: any }) {
   const [group, setGroup] = useState<MissAVCollectionGroup>("subtitles")
   const [collection, setCollection] = useState<MissAVCollection>("chinese-subtitle")
   const [categoryPath, setCategoryPath] = useState("")
@@ -26,11 +26,15 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
   const detailPresented = useObservable(false)
   const firstLoad = useRef(false)
   const generation = useRef(0)
+  const requestScope = useRef<MissAVRequestScope | null>(null)
   const query = useRef<{ page: number; collection: MissAVCollection; filter: MissAVFilter; sort: MissAVSort; categoryPath: string }>({ page: 1, collection: "chinese-subtitle", filter: "", sort: defaultCollectionSort("chinese-subtitle"), categoryPath: "" })
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
 
   async function load(next: { page?: number; collection?: MissAVCollection; filter?: MissAVFilter; sort?: MissAVSort; categoryPath?: string } = {}, forceRefresh = false) {
     const gen = ++generation.current
+    requestScope.current?.cancel()
+    const scope = new MissAVRequestScope()
+    requestScope.current = scope
     const previousQuery = query.current
     const nextQuery = {
       page: next.page ?? previousQuery.page,
@@ -48,11 +52,11 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
     if (queryChanged) { setItems([]); setCategories([]); setHasNext(true) }
     setLoading(true); setError(null)
     try {
-      const result = await missavClient.searchVideoPage(nextQuery, { forceRefresh })
+      const result = await missavClient.searchVideoPage(nextQuery, { forceRefresh, scope })
       if (gen !== generation.current) return
       setItems(result.items); setCategories(result.categories || []); setHasNext(result.hasNext); setPage(result.page)
-    } catch (reason) { if (gen === generation.current) setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { if (gen === generation.current) setLoading(false) }
+    } catch (reason) { if (gen === generation.current && !isMissAVRequestCancelled(reason)) setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { if (gen === generation.current) { setLoading(false); requestScope.current = null } }
   }
   function loadOnce() { if (firstLoad.current) return; firstLoad.current = true; void load() }
   function selectCollection(value: MissAVCollection) {
@@ -60,6 +64,8 @@ export function DiscoverPage(props: { onFavouriteChanged: () => void; onHistoryC
     void load({ page: 1, collection: value, categoryPath: "", filter: "", sort: defaultCollectionSort(value) })
   }
   function open(video: MissAVVideoItem) { setSelected(video); detailPresented.setValue(true) }
+  useEffect(() => () => { ++generation.current; requestScope.current?.cancel() }, [])
+  useEffect(() => { if (props.accessRevision && firstLoad.current) void load() }, [props.accessRevision])
   useEffect(() => { if (items.length || categories.length) scrollProxy.current?.scrollTo("discover-results-top", "top") }, [page, collection, filter, sort, categoryPath])
   const subcollections = collectionOptionsForGroup(group)
   const directoryMode = isMissAVDirectoryCollection(collection) && !categoryPath

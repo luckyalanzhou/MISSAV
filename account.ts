@@ -2,7 +2,7 @@ import { getMissAVBaseURL, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
 import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, isLikelyMissAVListingHTML, isMissAVDirectoryCollection, missavClient, parseMissAVDirectoryPage, parseMissAVVideoItems, type MissAVAccessProbe, type MissAVVideoItem } from "./client"
 import { classifyCloudflareHTML } from "./html-parser"
 import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
-import { loadWebViewPage, readMatchingWebViewDocument, type WebViewPageLoad } from "./webview"
+import { loadWebViewPage, readMatchingWebViewDocument, type WebViewPageLoad, type WebViewDocument } from "./webview"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
 export type MissAVAccountSnapshot = { state: MissAVAccountState; domain: string; accountLabel?: string; accountEmail?: string; updatedAt?: number }
@@ -89,12 +89,28 @@ export type MissAVSiteVerificationResult =
   | { status: "accessible"; challengeCompleted: boolean }
   | { status: "incomplete" | "unavailable" | "blocked"; probe: MissAVAccessProbe }
 const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
+let siteVerificationRequest: Promise<MissAVSiteVerificationResult> | null = null
 
-export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
+export function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
+  if (siteVerificationRequest) return siteVerificationRequest
+  const request = runSiteVerification().finally(() => { if (siteVerificationRequest === request) siteVerificationRequest = null })
+  siteVerificationRequest = request
+  return request
+}
+
+async function runSiteVerification(): Promise<MissAVSiteVerificationResult> {
+  const finish = missavClient.beginSiteVerification()
+  try { return await verifySiteProbes() }
+  finally { finish() }
+}
+
+async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
+  const verificationOrigin = origin()
   let challengeCompleted = false
   // Check real group entries and recently challenged subcategories.
   // Group headings are never treated as page URLs.
   for (const probe of missavClient.accessProbeRoutes()) {
+    if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
     // Share cookies, not the preceding probe's document. A cancelled load
     // must never validate the next route using the previous listing's HTML.
     const controller = new WebViewController()
@@ -110,6 +126,7 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
         const document = await readMatchingWebViewDocument(controller, probeURL)
         initialPage = { loaded: false, finished: false, html: document?.html ?? null, url: document?.url }
       }
+      if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
 
       // The HTML is the source of truth; WebKit can report a redirect callback
       // as incomplete even though a usable list is already on screen.
@@ -120,12 +137,13 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
       if (needsVisibleCheck) {
         // Reload the exact route only after its window is visible. Cloudflare's
         // challenge scripts may stall when first loaded in a hidden WebView.
-        const { listingConfirmed: visibleListingConfirmed, challengeObserved, blocked } = await presentVerificationPage(controller, probe)
+        const { listingConfirmed: visibleListingConfirmed, challengeObserved, blocked, document } = await presentVerificationPage(controller, probe)
+        if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
         if (blocked) return { status: "blocked", probe }
         try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
         if (visibleListingConfirmed) {
           if (initialChallenge || challengeObserved) challengeCompleted = true
-          missavClient.rememberCollectionRoutes((await readMatchingWebViewDocument(controller, probeURL))?.html ?? null, probeURL)
+          if (!missavClient.cacheVerifiedPage(probe, document)) return { status: "unavailable", probe }
           continue
         }
 
@@ -136,28 +154,28 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
         const closedState = classifyCloudflareHTML(closedPageHTML)
         return { status: closedState === "blocked" ? "blocked" : closedState === "challenge" ? "incomplete" : "unavailable", probe }
       }
-      missavClient.rememberCollectionRoutes(initialPage.html, probeURL)
+      if (!missavClient.cacheVerifiedPage(probe, { url: initialPage.url || probeURL, html: initialPage.html })) return { status: "unavailable", probe }
       try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
     } finally { controller.dispose() }
   }
-  missavClient.clearSearchPageCache()
   missavClient.clearVerificationCollections()
   return { status: "accessible", challengeCompleted }
 }
 
 function isProbePageHTML(html: string | null, probe: MissAVAccessProbe): boolean {
   if (!isLikelyMissAVHTML(html) || isCloudflareHTML(html)) return false
-  return isMissAVDirectoryCollection(probe.collection) && !probe.params.categoryPath
+  return isMissAVDirectoryCollection(probe.collection) && !probe.params.categoryPath && !probe.params.query
     ? Boolean(parseMissAVDirectoryPage(html, 1, probe.collection, probe.url).categories?.length)
     : isLikelyMissAVListingHTML(html)
 }
 
-async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe): Promise<{ listingConfirmed: boolean; challengeObserved: boolean; blocked: boolean }> {
+async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe): Promise<{ listingConfirmed: boolean; challengeObserved: boolean; blocked: boolean; document: WebViewDocument | null }> {
   const probeURL = probe.url
   let presentationClosed = false
   let listingConfirmed = false
   let challengeObserved = false
   let blocked = false
+  let confirmedDocument: WebViewDocument | null = null
   const presentation = controller.present({ fullscreen: true, navigationTitle: "验证访问线路" }).finally(() => { presentationClosed = true })
 
   // Let the modal become visible before navigating so Cloudflare's interactive
@@ -171,13 +189,15 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
       presentation.then(() => undefined),
     ])
     if (presentationClosed) break
-    const html = (await readMatchingWebViewDocument(controller, probeURL))?.html ?? null
+    const document = await readMatchingWebViewDocument(controller, probeURL)
+    const html = document?.html ?? null
     if (presentationClosed) break
 
     if (classifyCloudflareHTML(html) === "blocked") { blocked = true; controller.dismiss(); break }
     if (classifyCloudflareHTML(html) === "challenge") challengeObserved = true
     if (isProbePageHTML(html, probe)) {
       listingConfirmed = true
+      confirmedDocument = document
       if (!presentationClosed) controller.dismiss()
       break
     }
@@ -189,14 +209,16 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
   // the page already in the WebView before deciding to perform another request.
   if (!listingConfirmed) {
     try {
-      const html = (await readMatchingWebViewDocument(controller, probeURL))?.html ?? null
+      const document = await readMatchingWebViewDocument(controller, probeURL)
+      const html = document?.html ?? null
       blocked ||= classifyCloudflareHTML(html) === "blocked"
       if (classifyCloudflareHTML(html) === "challenge") challengeObserved = true
       listingConfirmed = isProbePageHTML(html, probe)
+      if (listingConfirmed) confirmedDocument = document
     }
     catch { /* The WebView may already have released its document on dismissal. */ }
   }
-  return { listingConfirmed, challengeObserved, blocked }
+  return { listingConfirmed, challengeObserved, blocked, document: confirmedDocument }
 }
 
 export function signOutMissAV(): void {
