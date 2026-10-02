@@ -1,6 +1,7 @@
 import { getMissAVBaseURL, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
 import { cleanText, hasNextPage, isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, isLikelyMissAVListingHTML, isMissAVDirectoryCollection, missavClient, parseMissAVDirectoryPage, parseMissAVVideoItems, type MissAVAccessProbe, type MissAVVideoItem } from "./client"
 import { classifyCloudflareHTML } from "./html-parser"
+import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
 import { loadWebViewPage, readMatchingWebViewDocument, type WebViewPageLoad, type WebViewDocument } from "./webview"
 
@@ -42,7 +43,7 @@ export async function loginMissAV(email: string, password: string): Promise<Miss
   const controller = new WebViewController()
   try {
     await clearNonValidationMissAVCookies(controller)
-    await restoreCloudflareSession(controller, new URL(loginURL()).hostname)
+    await restoreCloudflareSession(controller, loginURL())
     const initialPage = await loadWebViewPage(controller, loginURL())
     const initialHTML = initialPage.html
     if (!initialHTML || isCloudflareHTML(initialHTML)) throw new Error("当前线路暂时无法完成内置登录，请切换访问线路后重试。")
@@ -100,7 +101,18 @@ export function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResu
 
 async function runSiteVerification(): Promise<MissAVSiteVerificationResult> {
   const finish = missavClient.beginSiteVerification()
-  try { return await verifySiteProbes() }
+  const started = Date.now()
+  const target = `${origin()}/${MISSAV_LOCALE}/`
+  recordMissAVAccessDiagnostic("verification", target, { state: "started" })
+  try {
+    const result = await verifySiteProbes()
+    recordMissAVAccessDiagnostic("verification", result.status === "accessible" ? target : result.probe.url,
+      { state: result.status, elapsedMs: Date.now() - started, challengeObserved: result.status === "accessible" && result.challengeCompleted })
+    return result
+  } catch (error) {
+    recordMissAVAccessDiagnostic("verification", target, { state: "load-error", elapsedMs: Date.now() - started })
+    throw error
+  }
   finally { finish() }
 }
 
@@ -119,7 +131,7 @@ async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
       probe.url = missavClient.accessProbeURL(probe)
       const probeURL = probe.url
       const probeHost = new URL(probeURL).hostname
-      await restoreCloudflareSession(controller, probeHost)
+      await restoreCloudflareSession(controller, probeURL)
       let initialPage: WebViewPageLoad = { loaded: false, finished: false, html: null }
       try { initialPage = await loadWebViewPage(controller, probeURL, MISSAV_ACCESS_PROBE_TIMEOUT_MS) }
       catch {
@@ -370,7 +382,7 @@ async function setStoredCookie(controller: WebViewController, stored: StoredMiss
 }
 async function restoreCookies(controller: WebViewController, cookies: readonly unknown[]): Promise<void> {
   await clearNonValidationMissAVCookies(controller)
-  await restoreCloudflareSession(controller, new URL(origin()).hostname)
+  await restoreCloudflareSession(controller, savedURL())
   for (const stored of accountCookiesOnly(cookies)) await setStoredCookie(controller, stored)
 }
 function isCookieRecord(value: unknown): value is CookieRecord {

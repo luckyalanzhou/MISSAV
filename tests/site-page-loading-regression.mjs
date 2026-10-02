@@ -5,7 +5,7 @@ import { compileProductionModule as compile } from "./production-module.mjs"
 const storage = new Map()
 const keychain = new Map()
 globalThis.Storage = { get: key => storage.get(key), set: (key, value) => storage.set(key, value) }
-globalThis.Keychain = { get: key => keychain.get(key), set: (key, value) => keychain.set(key, value) }
+globalThis.Keychain = { get: key => keychain.get(key), set: (key, value) => keychain.set(key, value), remove: key => keychain.delete(key) }
 const { loadWebViewPage } = await import(compile("../webview.ts"))
 const parser = await import(compile("../html-parser.ts"))
 const session = await import(compile("../cloudflare-session.ts"))
@@ -102,7 +102,7 @@ try {
   const cookie = (value, domain = ".missav.ws", expiresDate = new Date(Date.now() + 60_000)) => ({ name: "cf_clearance", value, domain, expiresDate })
   let liveCookies = [cookie("fixture-old")]
   const writes = []
-  const jar = { getAllCookies: async () => liveCookies, setCookie: async value => writes.push(value) }
+  const jar = { getAllCookies: async () => liveCookies, setCookie: async value => { writes.push(value); liveCookies = [value]; return true } }
   await session.captureCloudflareSession(jar, "missav.ws")
   liveCookies = [cookie("fixture-fresh")]
   assert.equal(await session.restoreCloudflareSession(jar, "missav.ws"), 1)
@@ -131,7 +131,7 @@ try {
     disposed = false
     constructor() { controllers.push(this) }
     async getAllCookies() { return sharedCookies }
-    async setCookie(value) { sharedCookies = [value] }
+    async setCookie(value) { sharedCookies = [value]; return true }
     async loadURL(url) { this.url = url; requests.push(url); this.html = responseFor(new URL(url)); return Boolean(this.html) }
     async waitForLoad() { return Boolean(this.html) }
     async getHTML() { return this.html }
@@ -188,7 +188,7 @@ try {
 
   requests.length = 0
   responseFor = () => { setMissAVBaseURL("https://missav.ai/"); return null }
-  await assert.rejects(missavClient.searchVideoPage({ collection: "release" }, { forceRefresh: true }), /页面未能载入内容/)
+  await assert.rejects(missavClient.searchVideoPage({ collection: "release" }, { forceRefresh: true }), /页面请求已取消/)
   assert.equal(requests.length, 1, "A domain switch must cancel route recovery for the old domain")
   setMissAVBaseURL("https://missav.ws/")
 
@@ -205,6 +205,7 @@ try {
   assert.deepEqual(requests.map(value => new URL(value).pathname), ["/cn/chinese-subtitle", "/cn/new", "/cn/siro", "/dm817/cn/uncensored-leak", "/cn/madou"])
   assert.ok(controllers.every(controller => controller.disposed))
   sharedCookies = []
+  liveCookies = []
   await session.restoreCloudflareSession(jar, "missav.ws")
   assert.equal(writes.pop().value, "verified-live", "Settings must persist already accessible native sessions as well")
 

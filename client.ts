@@ -1,9 +1,10 @@
 import { fetch } from "scripting"
 import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
-import { captureCloudflareSession, restoreCloudflareSession } from "./cloudflare-session"
+import { captureCloudflareSession, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
+import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import * as SiteHTML from "./html-parser"
 import { isMatchingWebViewURL, loadWebViewPage, type WebViewDocument } from "./webview"
-import { MissAVRequestScope } from "./request-scope"
+import { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
 export { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
 import { defaultMissAVCollectionSort, isMissAVDirectoryCollection, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, type MissAVCollection, type MissAVFilter, type MissAVSort } from "./collections"
 
@@ -287,16 +288,25 @@ class MissAVClient {
     let disposed = false
     const dispose = () => { if (!disposed) { disposed = true; controller.dispose() } }
     const removeCancellation = scope.onCancel(dispose)
+    const started = Date.now()
+    let cookieResult: CloudflareRestoreResult | undefined
+    let pageState: "normal" | "challenge" | "blocked" | "unavailable" | "cancelled" | "load-error" = "load-error"
+    let loaded = false, finished = false, challengeObserved = false
     try {
-      await scope.waitFor(restoreCloudflareSession(controller, new URL(url).hostname, scope))
+      cookieResult = await scope.waitFor(restoreCloudflareSessionDetailed(controller, url, scope))
       scope.assertActive()
-      const { loaded, finished, html } = await loadWebViewPage(controller, url, undefined, isContentReady, scope)
+      const page = await loadWebViewPage(controller, url, undefined, isContentReady, scope)
+      loaded = page.loaded; finished = page.finished; challengeObserved = Boolean(page.challengeObserved)
+      const html = page.html
       scope.assertActive()
+      if (new URL(url).origin !== new URL(getMissAVBaseURL()).origin) { scope.cancel(); scope.assertActive() }
 
       if (SiteHTML.classifyCloudflareHTML(html) === "blocked") {
+        pageState = "blocked"
         throw new Error("站点拒绝了当前访问，不是待完成的 Cloudflare 验证。请检查网络或切换访问域名后重试。")
       }
       if (SiteHTML.isCloudflareChallengeHTML(html)) {
+        pageState = "challenge"
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }
       try { await scope.waitFor(captureCloudflareSession(controller, new URL(url).hostname, scope)) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
@@ -304,14 +314,22 @@ class MissAVClient {
       // A valid MISSAV document is authoritative even if WebKit reports a
       // redirect/load callback as incomplete for this route.
       if (SiteHTML.isLikelyMissAVHTML(html)) {
+        pageState = "normal"
         this.rememberCollectionRoutes(html, url)
         return html
       }
       const route = new URL(url)
-      console.warn("MISSAV page content unavailable", { url, loaded, finished, htmlLength: html?.length || 0 })
+      pageState = "unavailable"
       if (!loaded || !finished || !html) throw new MissAVPageContentError(`页面未能载入内容（${route.host}${route.pathname}）。请重试；若仍失败，请在设置页验证访问线路。`)
       throw new MissAVPageContentError(`页面未返回可识别的 MISSAV 内容（${route.host}${route.pathname}）。请在设置页检查访问线路。`)
+    } catch (error) {
+      if (isMissAVRequestCancelled(error)) pageState = "cancelled"
+      throw error
     } finally {
+      recordMissAVAccessDiagnostic("page", url, { state: pageState, cookieState: cookieResult?.state,
+        clearance: cookieResult?.clearance, expiresInSeconds: cookieResult?.expiresInSeconds,
+        attempted: cookieResult?.attempted, accepted: cookieResult?.accepted, confirmed: cookieResult?.confirmed,
+        elapsedMs: Date.now() - started, loaded, finished, challengeObserved })
       removeCancellation()
       this.activePageScopes.delete(scope)
       dispose()
