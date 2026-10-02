@@ -1,9 +1,8 @@
 import { Button, HStack, Image, ProgressView, Text, VStack } from "scripting"
 import { ACCENT, MIN_HIT_SIZE } from "../../design"
-import type { JavSubSubtitleFile } from "../../javsub"
 import type { SubtitleCatSubtitleFile } from "../../subtitlecat"
 
-type SubtitleFile = JavSubSubtitleFile | SubtitleCatSubtitleFile
+type SubtitleFile = SubtitleCatSubtitleFile
 
 export function SubtitleFileRow(props: {
   file: SubtitleFile

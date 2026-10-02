@@ -5,7 +5,6 @@ import { chooseAndPresentMissAVPlayer } from "../player"
 import { getMissAVAccountSnapshot, getMissAVWebsiteSavedState, setMissAVWebsiteSaved } from "../account"
 import { isMissAVFavourite, rememberMissAVDetail, toggleMissAVFavourite } from "../storage"
 import { hasMissAVSubtitle, isMissAVSubtitleEnabled, saveMissAVSubtitle, setMissAVSubtitleEnabled } from "../subtitles"
-import { downloadJavSubSubtitleFile, searchJavSubSubtitleFiles, type JavSubSubtitleFile } from "../javsub"
 import { downloadSubtitleCatFile, searchSubtitleCatFiles, type SubtitleCatSubtitleFile } from "../subtitlecat"
 import { MediaArtwork } from "./components/media_cards"
 import { StateView } from "./components/state_view"
@@ -91,12 +90,12 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
     }
   }
 
-  async function searchJavSub() {
+  async function searchSubtitles() {
     if (subtitleBusy) return
     setSubtitleBusy(true)
     try {
       await Navigation.present({
-        element: <JavSubSubtitleSearchPage videoCode={code} onDownloaded={downloadedCode => {
+        element: <SubtitleSearchPage videoCode={code} onDownloaded={downloadedCode => {
           if (normalizeSubtitleAssociationCode(downloadedCode) !== normalizeSubtitleAssociationCode(code)) return
           setSubtitleAvailable(true)
           setSubtitleEnabled(true)
@@ -146,7 +145,7 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
       <VStack spacing={10} frame={{ maxWidth: "infinity" }}>
         {primarySource ? <Button action={() => { void play(primarySource) }} disabled={Boolean(openingSource)} buttonStyle="borderedProminent" controlSize="large" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: PRIMARY_ACTION_HEIGHT }} accessibilityLabel={openingSource === primarySource.url ? `正在打开 ${primarySource.label}` : `播放 ${primarySource.label}`}><HStack spacing={8}>{openingSource === primarySource.url ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="play.fill" />}<Text font="headline" fontWeight="bold">{openingSource === primarySource.url ? "正在打开" : `播放 ${primarySource.label}`}</Text></HStack></Button> : loading ? <StateView title="正在获取播放信息" loading presentation="row" /> : undefined}
         {primarySource ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
-          <Button action={() => { void searchJavSub() }} disabled={subtitleBusy || Boolean(openingSource)} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>{subtitleBusy ? "正在搜索…" : "搜索字幕"}</Text></HStack></Button>
+          <Button action={() => { void searchSubtitles() }} disabled={subtitleBusy || Boolean(openingSource)} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>{subtitleBusy ? "正在搜索…" : "搜索字幕"}</Text></HStack></Button>
           {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={subtitleEnabled ? "关闭本作品字幕显示" : "开启本作品字幕显示"}><HStack spacing={7}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text>{subtitleEnabled ? "关闭字幕" : "开启字幕"}</Text></HStack></Button> : undefined}
         </HStack> : undefined}
         {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；下载文件会缓存在应用内部并自动关联到对应作品。</Text> : undefined}
@@ -177,13 +176,11 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
   </ScrollView></ZStack>
 }
 
-function JavSubSubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode: string) => void }) {
+function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode: string) => void }) {
   const dismiss = Navigation.useDismiss()
   const [query, setQuery] = useState(props.videoCode)
   const [title, setTitle] = useState("")
-  const [totalCount, setTotalCount] = useState(0)
-  const [files, setFiles] = useState<Array<JavSubSubtitleFile | SubtitleCatSubtitleFile>>([])
-  const [cookieHeader, setCookieHeader] = useState("")
+  const [files, setFiles] = useState<SubtitleCatSubtitleFile[]>([])
   const [sourceStatus, setSourceStatus] = useState<string[]>([])
   const [hasSuccessfulSource, setHasSuccessfulSource] = useState(false)
   const [hasIncompleteResults, setHasIncompleteResults] = useState(false)
@@ -203,59 +200,27 @@ function JavSubSubtitleSearchPage(props: { videoCode: string; onDownloaded: (vid
     setLoading(true)
     setError(null)
     setFiles([])
-    setCookieHeader("")
     setSourceStatus([])
     setHasSuccessfulSource(false)
     setHasIncompleteResults(false)
     setTitle("")
-    setTotalCount(0)
     setHasSearched(false)
     try {
-      const mergedFiles: Array<JavSubSubtitleFile | SubtitleCatSubtitleFile> = []
-      const statuses: string[] = []
-      let totalResultCount = 0
-      let successfulSources = 0
-      let incompleteResults = false
-
-      try {
-        const result = await searchJavSubSubtitleFiles(controller, code)
-        if (controllerRef.current !== controller) return
-        mergedFiles.push(...result.files)
-        setCookieHeader(result.cookieHeader)
-        totalResultCount += result.totalCount
-        statuses.push(`JavSub.ai：${result.files.length} 个文件`)
-        successfulSources += 1
-      } catch (reason) {
-        incompleteResults = true
-        statuses.push(`失败 · JavSub.ai：${reason instanceof Error ? reason.message : String(reason)}`)
-      }
-
+      const result = await searchSubtitleCatFiles(controller, code)
       if (controllerRef.current !== controller) return
-      try {
-        const result = await searchSubtitleCatFiles(controller, code)
-        if (controllerRef.current !== controller) return
-        mergedFiles.push(...result.files)
-        totalResultCount += result.files.length
-        if (result.failedDetailCount) incompleteResults = true
-        statuses.push(`Subtitle Cat：${result.files.length} 个文件，${result.searchResultCount} 个匹配条目${result.failedDetailCount ? `，${result.failedDetailCount} 个详情页未能读取` : ""}`)
-        successfulSources += 1
-      } catch (reason) {
-        incompleteResults = true
-        statuses.push(`失败 · Subtitle Cat：${reason instanceof Error ? reason.message : String(reason)}`)
-      }
-
-      if (controllerRef.current !== controller) return
-      mergedFiles.sort((left, right) => subtitleLanguagePriority(left.language) - subtitleLanguagePriority(right.language))
       setTitle(code)
-      setTotalCount(totalResultCount)
-      setFiles(mergedFiles)
-      setSourceStatus(statuses)
-      setHasSuccessfulSource(successfulSources > 0)
-      setHasIncompleteResults(incompleteResults)
+      setFiles(result.files)
+      setSourceStatus([`Subtitle Cat：${result.files.length} 个文件，${result.searchResultCount} 个匹配条目${result.failedDetailCount ? `，${result.failedDetailCount} 个详情页未能读取` : ""}`])
+      setHasSuccessfulSource(true)
+      setHasIncompleteResults(result.failedDetailCount > 0)
       setHasSearched(true)
-      if (!successfulSources) setError("两个字幕来源都未完成搜索，无法判断这个番号是否有字幕；请稍后重试。")
     } catch (reason) {
-      if (controllerRef.current === controller) setError(reason instanceof Error ? reason.message : String(reason))
+      if (controllerRef.current === controller) {
+        setTitle(code)
+        setHasSearched(true)
+        setHasIncompleteResults(true)
+        setError(reason instanceof Error ? reason.message : String(reason))
+      }
     } finally {
       if (controllerRef.current === controller) {
         controller.dispose()
@@ -265,15 +230,13 @@ function JavSubSubtitleSearchPage(props: { videoCode: string; onDownloaded: (vid
     }
   }
 
-  async function download(file: JavSubSubtitleFile | SubtitleCatSubtitleFile) {
+  async function download(file: SubtitleCatSubtitleFile) {
     if (!file.isFree || file.isDemo || downloadingId) return
     const fileKey = `${file.source}:${file.id}`
     setDownloadingId(fileKey)
     setError(null)
     try {
-      const content = file.source === "JavSub.ai"
-        ? await downloadJavSubSubtitleFile(file, cookieHeader)
-        : await downloadSubtitleCatFile(file)
+      const content = await downloadSubtitleCatFile(file)
       // Search text is editable and may differ from this detail page's work.
       // Always save under the displayed video's identity so its playback path
       // and the subtitle cache use the same association key.
@@ -294,7 +257,6 @@ function JavSubSubtitleSearchPage(props: { videoCode: string; onDownloaded: (vid
     }
   }, [])
 
-  const hasDownloadable = files.some(file => file.isFree && !file.isDemo)
   return <NavigationStack><ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="systemBackground">
     <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
       <HStack spacing={10} padding={{ horizontal: PAGE_PADDING, vertical: 8 }} frame={{ maxWidth: "infinity", minHeight: 52 }}>
@@ -312,7 +274,7 @@ function JavSubSubtitleSearchPage(props: { videoCode: string; onDownloaded: (vid
               {loading ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="magnifyingglass" />}
             </Button>
           </HStack>
-          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">聚合 JavSub.ai 与 Subtitle Cat 的公开字幕结果。下载的完整免费 SRT 会缓存在应用内部并关联到当前详情作品；预览条目不能下载。修改搜索番号时，请确认字幕适用于当前作品。</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。下载的完整 SRT 会缓存在应用内部并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
           {error ? <VStack spacing={8} alignment="leading" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
             <Text font="subheadline" foregroundStyle="systemRed" multilineTextAlignment="leading">{error}</Text>
             <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} action={() => { void search() }} />
@@ -320,26 +282,19 @@ function JavSubSubtitleSearchPage(props: { videoCode: string; onDownloaded: (vid
           {loading && !hasSearched ? <HStack spacing={10} frame={{ maxWidth: "infinity", minHeight: 100 }}><ProgressView tint={ACCENT} /><Text font="subheadline" foregroundStyle="secondaryLabel">正在按番号搜索…</Text></HStack> : undefined}
           {hasSearched ? <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}>
             <Text font="headline" fontWeight="semibold">{title || `番号 ${query}`}</Text>
-            <Text font="caption" foregroundStyle="secondaryLabel">{hasSuccessfulSource ? `${hasIncompleteResults ? "已载入来源" : "共"}找到 ${files.length} 个可下载字幕文件；简体中文和繁体中文置顶。${hasIncompleteResults ? " 部分来源或详情页未能读取，结果可能不完整。" : ""}${totalCount > files.length ? ` 来源共报告 ${totalCount} 个字幕条目。` : ""}` : "来源搜索没有成功完成，当前无法判断该番号是否有字幕。"}</Text>
+            <Text font="caption" foregroundStyle="secondaryLabel">{hasSuccessfulSource ? `共找到 ${files.length} 个可下载字幕文件；简体中文和繁体中文置顶。${hasIncompleteResults ? " 部分详情页未能读取，结果可能不完整。" : ""}` : "Subtitle Cat 搜索没有成功完成，当前无法判断该番号是否有字幕。"}</Text>
             {sourceStatus.map((status, index) => <Text key={`subtitle-source-${index}`} font="caption" foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"} multilineTextAlignment="leading">{status}</Text>)}
             {files.length ? <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>{files.map((file, index) => <VStack key={`${file.source}-${file.id}`} spacing={0} frame={{ maxWidth: "infinity" }}>
               {index ? <Divider /> : undefined}
               <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} />
-            </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{!hasSuccessfulSource ? "两站都没有返回有效搜索结果；不能据此认定没有字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已载入来源没有返回可下载文件，仍有来源或详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : totalCount ? "网站有字幕条目，但没有识别到可列出的下载文件。" : "没有找到这个番号的字幕文件。可以修改番号后重新搜索。"}</Text>}
+            </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{!hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载文件，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的字幕文件。可以修改番号后重新搜索。"}</Text>}
             {hasIncompleteResults && hasSuccessfulSource ? <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading || Boolean(downloadingId)} action={() => { void search() }} /> : undefined}
-            {!hasDownloadable && files.length ? <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">当前结果没有可直接下载的免费完整字幕；预览文件不包含完整对白，付费文件不会被绕过。</Text> : undefined}
           </VStack> : undefined}
           {!loading && !hasSearched && !error ? <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">将自动搜索当前作品番号；也可以编辑番号后搜索其他字幕。</Text> : undefined}
         </VStack>
       </ScrollView>
     </VStack>
   </ZStack></NavigationStack>
-}
-
-function subtitleLanguagePriority(language: string): number {
-  if (language === "简体中文") return 0
-  if (language === "繁体中文") return 1
-  return 2
 }
 
 function normalizeSubtitleAssociationCode(value: string): string {

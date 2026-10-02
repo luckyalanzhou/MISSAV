@@ -20,7 +20,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
 }, module, module.exports)
 const { SubtitleFileRow } = module.exports
 const downloads = []
-const file = { source: "JavSub.ai", id: "zh-cn", language: "简体中文", isFree: true, isDemo: false, details: "完整字幕版本说明" }
+const file = { source: "SubtitleCat", id: "zh-cn", language: "简体中文", isFree: true, isDemo: false, details: "完整字幕版本说明" }
 const render = (item = file, downloadingId = null) => SubtitleFileRow({ file: item, downloadingId, onDownload: value => downloads.push(value) })
 const children = node => [node.props.children].flat().filter(Boolean)
 const [left, button] = children(render())
@@ -35,24 +35,24 @@ assert.equal(render().props.padding.vertical, 4)
 assert.equal(render().props.frame.height, undefined, "Do not clip larger system text with a fixed row height")
 assert.equal(children(left).length, 2)
 assert.equal(children(left)[1].props.lineLimit, 1)
-assert.match(children(left)[1].props.children, /JavSub.ai.*完整.*免费.*完整字幕版本说明/)
+assert.match(children(left)[1].props.children, /SubtitleCat.*完整.*免费.*完整字幕版本说明/)
 assert.equal(button.props.disabled, false)
 assert.equal(children(children(button)[0])[1].props.children, "下载字幕")
-assert.match(button.props.accessibilityLabel, /^下载JavSub\.ai的简体中文字幕$/)
+assert.match(button.props.accessibilityLabel, /^下载SubtitleCat的简体中文字幕$/)
 button.props.action()
 assert.deepEqual(downloads, [file])
 
-const busyButton = children(render(file, "JavSub.ai:zh-cn"))[1]
+const busyButton = children(render(file, "SubtitleCat:zh-cn"))[1]
 assert.equal(busyButton.props.disabled, true)
 assert.equal(children(children(busyButton)[0])[0].type, "ProgressView")
 assert.equal(children(children(busyButton)[0])[1].props.children, "下载中…")
 busyButton.props.action()
 assert.equal(downloads.length, 1)
 
-const otherSource = { ...file, source: "SubtitleCat", language: "繁体中文", details: "" }
-const otherButton = children(render(otherSource, "JavSub.ai:zh-cn"))[1]
+const otherSource = { ...file, id: "zh-tw", language: "繁体中文", details: "" }
+const otherButton = children(render(otherSource, "SubtitleCat:zh-cn"))[1]
 assert.equal(otherButton.props.disabled, true)
-assert.equal(children(children(otherButton)[0])[0].type, "Image", "A different source with the same ID is not downloading")
+assert.equal(children(children(otherButton)[0])[0].type, "Image", "Another language file is not downloading")
 otherButton.props.action()
 assert.equal(downloads.length, 1)
 children(render(otherSource))[1].props.action()
@@ -68,4 +68,4 @@ for (const unavailable of [{ ...file, isFree: false }, { ...file, isDemo: true }
   assert.equal(downloads.length, 2)
 }
 
-console.log("PASS: compact language-left/action-right rows; 44pt touch target; both sources; busy-state and preview guards")
+console.log("PASS: compact language-left/action-right rows; 44pt touch target; simplified/traditional Chinese; busy-state and preview guards")
