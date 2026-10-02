@@ -191,7 +191,11 @@ export function cleanText(value: string): string {
   return decodeHtml(value).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()
 }
 
-function isLikelyMissAVVideoCode(value: string): boolean { return /^[a-z0-9]+(?:-[a-z0-9]+)+$/i.test(value) && /\d/.test(value) }
+function isLikelyMissAVVideoCode(value: string): boolean {
+  // Site detail slugs also include N1854/GACHIP140 and date-based codes such
+  // as 092426_001/PONDO-092426_001. Keep separators intact for detail/playback.
+  return /^[a-z0-9]+(?:[-_][a-z0-9]+)*$/i.test(value) && /\d/.test(value)
+}
 function unpackPackerMediaUrls(html: string): string[] {
   const result: string[] = []
   for (const match of html.matchAll(/eval\(function\(p,a,c,k,e,d\)[\s\S]*?\}\('((?:\\.|[^'])*)',(\d+),(\d+),'((?:\\.|[^'])*)'\.split\('\|'\)/gi)) {

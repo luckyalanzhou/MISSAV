@@ -46,7 +46,7 @@ export async function readMatchingWebViewDocument(controller: WebViewController,
   finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
-export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS): Promise<WebViewPageLoad> {
+export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean): Promise<WebViewPageLoad> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   let timedOut = false
   const timeoutError = new Error("网页加载超时，请检查网络后重试。")
@@ -74,7 +74,11 @@ export async function loadWebViewPage(controller: WebViewController, url: string
             // Give an automatic interstitial a bounded chance to redirect in this
             // same WebView. Explicit human-interaction pages go to Settings promptly.
             const interactive = state === "challenge" && hasCloudflareInteractivePrompt(lastDocument.html!)
-            if (state !== "challenge" || interactive) return { loaded, finished, ...lastDocument, challengeObserved }
+            // A normal header is not necessarily a finished listing. Callers
+            // can wait for their own content without navigating again.
+            if (state === "blocked" || interactive || (state === "none" && (!isContentReady || isContentReady(lastDocument.html!)))) {
+              return { loaded, finished, ...lastDocument, challengeObserved }
+            }
           }
           if (attempt + 1 < WEBVIEW_HTML_READ_ATTEMPTS) await new Promise<void>(resolve => setTimeout(resolve, WEBVIEW_HTML_READ_INTERVAL_MS))
         }

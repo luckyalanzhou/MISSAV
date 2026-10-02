@@ -79,26 +79,37 @@ class MissAVClient {
 
     const requestId = ++this.searchRequestId
     const request = (async () => {
+      const directory = params.collection && isMissAVDirectoryCollection(params.collection) && !params.categoryPath && !params.query ? params.collection : null
+      const parsePage = (html: string) => directory
+        ? SiteHTML.parseMissAVDirectoryPage(html, page, directory, url)
+        : SiteHTML.parseMissAVSearchPage(html, page)
+      const isContentReady = (html: string) => {
+        const result = parsePage(html)
+        return result.items.length > 0 || Boolean(result.categories?.length)
+      }
+      const fetchListing = async (targetURL: string) => {
+        const html = await this.fetchHtml(targetURL, isContentReady)
+        // An unfiltered first page must not cache a header-only document as
+        // "no content". Searches/filtered/later pages can legitimately be empty.
+        if (!params.query && !params.filter && page === 1 && !isContentReady(html)) {
+          throw new MissAVPageContentError(`栏目页面未读取到作品或分类（${new URL(targetURL).pathname}）。可能尚未完成加载，请重试；若持续失败，请在设置页检查访问线路。`)
+        }
+        return html
+      }
       let html: string
-      try { html = await this.fetchHtml(url) }
+      try { html = await fetchListing(url) }
       catch (error) {
         if (!(error instanceof MissAVPageContentError) || params.query || params.categoryPath || !params.collection || params.collection === "new") throw error
         if (new URL(getMissAVBaseURL()).origin !== new URL(url).origin) throw error
         // On a cold launch, obtain the current menu from the working Browse
-        // entry before retrying a route that did not return a document.
+        // entry before retrying a route that returned no usable listing.
         await this.fetchHtml(this.browseProbeURL())
         if (new URL(getMissAVBaseURL()).origin !== new URL(url).origin) throw error
         const resolvedURL = this.collectionUrl(params)
         if (resolvedURL === url) throw error
-        html = await this.fetchHtml(resolvedURL)
+        html = await fetchListing(resolvedURL)
       }
-      const result = params.collection && isMissAVDirectoryCollection(params.collection) && !params.categoryPath && !params.query
-        ? SiteHTML.parseMissAVDirectoryPage(html, page, params.collection, url)
-        : SiteHTML.parseMissAVSearchPage(html, page)
-      if (!params.query && page === 1 && (params.collection === undefined || params.collection === "new" || params.collection === "today-hot") && result.items.length === 0) {
-        throw new Error(`首页/浏览列表没有解析到作品（${new URL(url).pathname}）。页面内容可能尚未完成加载，请稍后重试；若持续失败，请在设置页检查访问线路。`)
-      }
-      return result
+      return parsePage(html)
     })()
     const tracked = request.then(value => {
       if (this.searchPageRequests.get(url)?.requestId === requestId) {
@@ -189,14 +200,14 @@ class MissAVClient {
     return url.toString()
   }
 
-  private async fetchHtml(url: string): Promise<string> {
+  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean): Promise<string> {
     // Use the same persistent WebKit session as the verification window.
     // `scripting.fetch` has a separate cookie jar and a manually supplied UA,
     // so Cloudflare can accept the WebView while returning 403 to fetch.
     const controller = new WebViewController()
     try {
       await restoreCloudflareSession(controller, new URL(url).hostname)
-      const { loaded, finished, html } = await loadWebViewPage(controller, url)
+      const { loaded, finished, html } = await loadWebViewPage(controller, url, undefined, isContentReady)
 
       if (SiteHTML.classifyCloudflareHTML(html) === "blocked") {
         throw new Error("站点拒绝了当前访问，不是待完成的 Cloudflare 验证。请检查网络或切换访问域名后重试。")
