@@ -37,6 +37,9 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
   const favouriteGeneration = useRef(0)
   const websiteGeneration = useRef(0)
   const subtitleGeneration = useRef(0)
+  const appeared = useRef(false)
+  const initializedVideo = useRef<string | null>(null)
+  const needsReload = useRef(true)
 
   async function load() {
     const current = ++generation.current
@@ -47,7 +50,7 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
     ++websiteGeneration.current
     websiteScope.current?.cancel()
     setWebsiteSaved(null)
-    setWebsiteSavedError("播放信息加载后再读取网站收藏，不影响播放。")
+    setWebsiteSavedError(null)
     const scope = new MissAVRequestScope()
     requestScope.current = scope
     setLoading(true); setDetailError(null)
@@ -61,8 +64,13 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
       // History persistence is not part of loading playable detail.
       void rememberMissAVDetail(props.video, next).then(() => { if (current === generation.current) props.onHistoryChanged() }).catch(reason => console.error("保存浏览记录失败:", reason))
     } catch (reason) {
-      if (current === generation.current && !isMissAVRequestCancelled(reason)) setDetailError(reason instanceof Error ? reason.message : String(reason))
-    } finally { if (current === generation.current) { setLoading(false); requestScope.current = null; void loadWebsiteSaved() } }
+      if (current === generation.current) {
+        if (isMissAVRequestCancelled(reason)) {
+          needsReload.current = true
+          setDetailError("详情请求已中断，请在访问线路验证结束后重试。")
+        } else setDetailError(reason instanceof Error ? reason.message : String(reason))
+      }
+    } finally { if (current === generation.current) { setLoading(false); requestScope.current = null; if (appeared.current && !scope.cancelled) void loadWebsiteSaved() } }
   }
 
   async function loadWebsiteSaved() {
@@ -92,18 +100,44 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
     void withMissAVDeadline(isMissAVFavourite(props.video.videoCode), 6_000, "本机收藏读取超时。").then(value => { if (current === favouriteGeneration.current) setFavourite(value) }).catch(() => { if (current === favouriteGeneration.current) setFavouriteError("本机收藏状态读取失败或超时，不影响视频播放。") })
   }
 
-  useEffect(() => {
-    setDetail(null); setOpeningSource(null); void load()
-    setSubtitleAvailable(false)
-    setSubtitleEnabled(true)
-    const subtitleRequest = ++subtitleGeneration.current
-    void hasMissAVSubtitle(props.video.videoCode).then(available => {
-      if (subtitleRequest !== subtitleGeneration.current) return
-      setSubtitleAvailable(available)
-      setSubtitleEnabled(isMissAVSubtitleEnabled(props.video.videoCode))
-    }).catch(reason => console.error("读取字幕状态失败:", reason))
-  }, [props.video.videoCode])
-  useEffect(() => () => { ++generation.current; ++favouriteGeneration.current; ++websiteGeneration.current; ++subtitleGeneration.current; detailTrace.current?.mark("left"); requestScope.current?.cancel(); websiteScope.current?.cancel() }, [props.video.videoCode])
+  // A navigation destination can be constructed before it is shown. Own
+  // requests with the native visible-page lifecycle, not separate effect
+  // setup/cleanup hooks that can cancel a newly created destination request.
+  function appear() {
+    const changed = initializedVideo.current !== props.video.videoCode
+    if (appeared.current && !changed) return
+    appeared.current = true
+    if (changed) {
+      initializedVideo.current = props.video.videoCode
+      needsReload.current = true
+      setDetail(null); setOpeningSource(null)
+      setWebsiteSaved(null)
+      setSubtitleAvailable(false); setSubtitleEnabled(true)
+      const subtitleRequest = ++subtitleGeneration.current
+      void hasMissAVSubtitle(props.video.videoCode).then(available => {
+        if (subtitleRequest !== subtitleGeneration.current) return
+        setSubtitleAvailable(available)
+        setSubtitleEnabled(isMissAVSubtitleEnabled(props.video.videoCode))
+      }).catch(reason => console.error("读取字幕状态失败:", reason))
+    }
+    if (needsReload.current) { needsReload.current = false; void load() }
+    else if (websiteSaved === null) void loadWebsiteSaved()
+  }
+
+  function disappear() {
+    if (initializedVideo.current !== props.video.videoCode || !appeared.current) return
+    appeared.current = false
+    if (requestScope.current) {
+      ++generation.current
+      needsReload.current = true
+      detailTrace.current?.mark("left")
+      requestScope.current.cancel()
+      requestScope.current = null
+      setLoading(false)
+    }
+    ++websiteGeneration.current
+    websiteScope.current?.cancel(); websiteScope.current = null
+  }
 
   async function play(source: MissAVVideoSource, subtitlePreview = false) {
     if (!detail || openingSource) return
@@ -167,7 +201,7 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
   const secondaryMetadata = [detail?.releaseDate, detail?.duration || props.video.duration, detail?.maker].filter(Boolean).join(" · ")
   function searchTag(tag: string) { setSelectedTag(tag); tagSearchPresented.setValue(true) }
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}><PageBackground /><ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, content: selectedTag ? <TagSearchPage tag={selectedTag} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}><PageBackground /><ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" onAppear={appear} onDisappear={disappear} refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, content: selectedTag ? <TagSearchPage tag={selectedTag} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
     <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
       <MediaArtwork video={{ ...props.video, coverUrl: detail?.coverUrl || props.video.coverUrl }} height={204} radius={MEDIA_HERO_RADIUS} />
 

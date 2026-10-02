@@ -14,7 +14,7 @@ globalThis.setTimeout = (callback, delay, ...args) => timer(callback, delay === 
 const settle = async () => { for (let i = 0; i < 35; i++) await Promise.resolve() }
 const never = () => new Promise(() => {})
 const states = [], refs = [], effects = []
-let hook = 0, mounted = false, finishDetail, finishFavourite, websiteReads = 0, changed = 0
+let hook = 0, mounted = false, finishDetail, finishFavourite, websiteReads = 0, changed = 0, detailReads = 0, detailScope
 const video = { videoCode: "fixture-001", title: "Fixture", detailPath: "/cn/fixture-001", coverUrl: "" }
 const detail = { ...video, genres: [], sources: [{ label: "1080p", url: "https://media.example/1080p.mp4" }] }
 const jsx = (type, props) => ({ type, props: props || {} })
@@ -34,7 +34,10 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
   if (specifier === "../request-deadline") return deadline
   if (specifier === "../detail-loading") return detailLoading
-  if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo: () => new Promise(resolve => { finishDetail = resolve }) } }
+  if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo: (_, options) => {
+    detailReads++; detailScope = options.scope
+    return options.scope.waitFor(new Promise(resolve => { finishDetail = resolve }))
+  } } }
   if (specifier === "../account") return { getMissAVAccountSnapshot: () => ({ state: "signedIn" }), getMissAVWebsiteSavedState: async () => { websiteReads++; return { saved: false } } }
   if (specifier === "../storage") return { isMissAVFavourite: () => new Promise(resolve => { finishFavourite = resolve }), rememberMissAVDetail: never }
   if (specifier === "../subtitles") return { hasMissAVSubtitle: async () => false, isMissAVSubtitleEnabled: () => true }
@@ -53,7 +56,11 @@ function render() {
   return nodes
 }
 try {
-  render()
+  let initial = render()
+  assert.equal(finishDetail, undefined, "Constructing an off-screen destination must not start requests")
+  const appear = initial.find(node => node.type === "ScrollView").props.onAppear
+  appear(); appear()
+  assert.equal(detailReads, 1, "Duplicate native appearance notifications share the visible request")
   assert.equal(websiteReads, 0, "Website restore must not race the playable detail request")
   finishDetail(detail)
   await settle()
@@ -74,5 +81,37 @@ try {
   finishFavourite(false); finishDetail(detail)
   await refresh; await settle()
   assert.equal(render().some(node => String(node.props.children).includes("本机收藏状态读取失败或超时")), false)
-  console.log("PASS: detail playback independent of history/SQLite; deferred account read; independent local/account generations; timeout/late-result guard and refresh recovery")
+  // An actual disappearance cancels only the visible page request; appearance
+  // always restarts it. A late cancelled response cannot replace the new one.
+  const page = render().find(node => node.type === "ScrollView")
+  const pendingRefresh = page.props.refreshable()
+  const oldFinish = finishDetail
+  page.props.onDisappear()
+  render().find(node => node.type === "ScrollView").props.onAppear()
+  const newFinish = finishDetail
+  oldFinish({ ...detail, title: "STALE" })
+  await pendingRefresh; await settle()
+  assert.equal(render().some(node => node.props.children === "STALE"), false)
+  newFinish({ ...detail, title: "CURRENT" })
+  await settle()
+  assert.ok(render().some(node => node.props.children === "CURRENT"))
+  const currentPage = render().find(node => node.type === "ScrollView")
+  const readsBeforePlayer = detailReads
+  currentPage.props.onDisappear()
+  render().find(node => node.type === "ScrollView").props.onAppear()
+  assert.equal(detailReads, readsBeforePlayer, "Returning from player retains already loaded detail")
+  // Cancellation by a verification session while still visible must not
+  // leave a spinner or a blank page with no retry action.
+  const interruptedRefresh = render().find(node => node.type === "ScrollView").props.refreshable()
+  detailScope.cancel()
+  await interruptedRefresh; await settle()
+  nodes = render()
+  assert.equal(nodes.some(node => node.props.title === "正在获取播放信息"), false)
+  const retry = nodes.find(node => node.props.title === "刷新失败")
+  assert.ok(retry, "A visible interrupted request exposes a retry action")
+  retry.props.action()
+  finishDetail(detail)
+  await settle()
+  assert.equal(render().some(node => node.props.title === "刷新失败"), false)
+  console.log("PASS: native visible-page ownership; duplicate appearance coalescing; late-result guards; return/retry recovery; playback independent of history/SQLite")
 } finally { globalThis.setTimeout = timer }
