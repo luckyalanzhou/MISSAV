@@ -116,8 +116,10 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
         setSubtitleAvailable(available)
         setSubtitleEnabled(isMissAVSubtitleEnabled(props.video.videoCode))
       }).catch(reason => console.error("读取字幕状态失败:", reason))
+      void load(true).finally(() => { if (appeared.current) void loadWebsiteSaved() })
+    } else if (websiteSaved === null) {
+      void loadWebsiteSaved()
     }
-    if (websiteSaved === null) void loadWebsiteSaved()
   }
 
   function disappear() {
