@@ -8,13 +8,14 @@ const events = ["cookie-restore", "cookie-capture", "page", "verification", "dat
 export const MISSAV_DETAIL_STAGES = ["entered", "verification-wait", "cookie-restore", "page-load", "document-read", "source-parse", "cookie-capture", "detail-parse", "ui-update", "completed", "timeout", "cancelled", "discarded", "failed", "left"] as const
 export type MissAVDetailStage = typeof MISSAV_DETAIL_STAGES[number]
 const phases = ["subtitle-parse", "subtitle-serialize", "listing-parse", "detail-parse", "dom-compare", "minimize", "resume"] as const
-const states = ["live", "restored", "missing", "invalid", "expired", "scope-mismatch", "rejected", "unconfirmed", "store-unavailable", "unsupported", "saved", "normal", "challenge", "blocked", "unavailable", "cancelled", "load-error", "accessible", "incomplete", "started"] as const
+const states = ["live", "recent", "restored", "missing", "invalid", "expired", "scope-mismatch", "rejected", "unconfirmed", "store-unavailable", "unsupported", "saved", "normal", "challenge", "blocked", "unavailable", "cancelled", "load-error", "accessible", "incomplete", "started"] as const
 type DiagnosticState = typeof states[number]
 type DiagnosticInput = {
   state: DiagnosticState; elapsedMs?: number; attempted?: number; accepted?: number; confirmed?: number;
   clearance?: boolean; expiresInSeconds?: number | null; loaded?: boolean; finished?: boolean;
   challengeObserved?: boolean; cookieState?: DiagnosticState;
   cookieMs?: number; loadMs?: number; captureMs?: number; parseMs?: number; parseCount?: number;
+  captureDeferred?: boolean;
   background?: boolean; phase?: typeof phases[number];
   domMatched?: boolean; compactChars?: number;
   detailStage?: MissAVDetailStage; requestId?: number; documentChars?: number; sourceCount?: number;
@@ -35,7 +36,7 @@ export function recordMissAVAccessDiagnostic(event: typeof events[number], targe
     if (typeof value === "number" && Number.isFinite(value)) entry[key] = Math.max(0, Math.round(value))
     else if (key === "expiresInSeconds" && value === null) entry.expiresInSeconds = null
   }
-  for (const key of ["clearance", "loaded", "finished", "challengeObserved", "background", "domMatched"] as const) {
+  for (const key of ["clearance", "loaded", "finished", "challengeObserved", "background", "domMatched", "captureDeferred"] as const) {
     if (typeof input[key] === "boolean") entry[key] = input[key]
   }
   if (input.cookieState && states.includes(input.cookieState)) entry.cookieState = input.cookieState
@@ -47,8 +48,6 @@ export function recordMissAVAccessDiagnostic(event: typeof events[number], targe
   // Scripting's console; the in-memory history can be inspected separately.
   if (["challenge", "blocked", "rejected", "unconfirmed", "store-unavailable", "load-error", "unavailable", "incomplete"].includes(entry.state)) {
     try { console.warn("MISSAV access diagnostic", JSON.stringify(entry)) } catch { /* Diagnostics cannot break content loading. */ }
-  } else if (event === "detail") {
-    try { console.info("MISSAV detail diagnostic", JSON.stringify(entry)) } catch { /* Do not expose raw errors or documents. */ }
   }
 }
 
