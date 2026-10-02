@@ -73,7 +73,6 @@ function pageHarness(relative, exported) {
     if (specifier === "../storage") return storage
     if (specifier === "../playback-progress") return progress
     if (specifier === "../client") return { ...requestTypes, missavClient: { searchVideoPage: async () => ({ items: [] }) } }
-    if (specifier === "../account") return { loadMissAVSavedVideos: async () => ({ items: [], page: 1, hasNext: false }) }
     if (specifier === "../design") return { PageBackground: "PageBackground", SectionHeading: "SectionHeading", ActionRow: "ActionRow" }
     if (specifier === "./components/media_cards") return { MediaHero: "MediaHero", MediaTile: "MediaTile" }
     if (specifier === "./components/video_row") return { VideoRowList: "VideoRowList" }
@@ -117,16 +116,25 @@ try {
 
   const callbacks = { onFavouriteChanged() {}, onHistoryChanged() {}, onDiscover() {}, onLibrary() {} }
   const library = pageHarness("../page/library.tsx", "LibraryPage")
-  let nodes = library({ ...callbacks, favouritesRevision: 0, historyRevision: 0, accountRevision: 0 })
+  await storage.toggleMissAVFavourite(first)
+  let nodes = library({ ...callbacks, favouritesRevision: 0, historyRevision: 0 })
   await settle()
+  nodes = library({ ...callbacks, favouritesRevision: 0, historyRevision: 0 })
+  assert.deepEqual(named(nodes, "VideoRowList").props.items.map(item => item.videoCode), [first.videoCode], "Local favourites remain the default library view")
+  assert.equal(nodes.some(node => node.type === "Menu"), false, "No obsolete website/local source picker")
+  await storage.toggleMissAVFavourite(first)
+  library({ ...callbacks, favouritesRevision: 1, historyRevision: 0 })
+  await settle()
+  nodes = library({ ...callbacks, favouritesRevision: 1, historyRevision: 0 })
+  assert.equal(nodes.some(node => node.type === "VideoRowList"), false, "Removing a local favourite refreshes the library")
   named(nodes, "Picker").props.onChanged("history")
-  nodes = library({ ...callbacks, favouritesRevision: 0, historyRevision: 0, accountRevision: 0 })
+  nodes = library({ ...callbacks, favouritesRevision: 0, historyRevision: 0 })
   const rowList = named(nodes, "VideoRowList")
   assert.equal(rowList.props.status(first), "继续观看 · 12:34")
   assert.equal(rowList.props.status(legacy), "继续观看 · 00:00")
   assert.equal(rowList.props.statusSystemImage, "play.circle")
   rowList.props.onOpen(first)
-  assert.equal(named(library({ ...callbacks, favouritesRevision: 0, historyRevision: 0, accountRevision: 0 }), "ScrollView").props.navigationDestination.content.props.video.videoCode, first.videoCode)
+  assert.equal(named(library({ ...callbacks, favouritesRevision: 0, historyRevision: 0 }), "ScrollView").props.navigationDestination.content.props.video.videoCode, first.videoCode)
 
   const home = pageHarness("../page/home.tsx", "MediaHomePage")
   home({ ...callbacks, revision: 0 })
@@ -136,10 +144,10 @@ try {
   assert.equal(hero.props.video.videoCode, first.videoCode)
 
   await database.savePlaybackProgress(first.videoCode, 3723.9, 7800)
-  library({ ...callbacks, favouritesRevision: 0, historyRevision: 1, accountRevision: 0 })
+  library({ ...callbacks, favouritesRevision: 0, historyRevision: 1 })
   home({ ...callbacks, revision: 1 })
   await settle()
-  assert.equal(named(library({ ...callbacks, favouritesRevision: 0, historyRevision: 1, accountRevision: 0 }), "VideoRowList").props.status(first), "继续观看 · 1:02:03", "Closing playback and refreshing its revision must expose the latest saved progress")
+  assert.equal(named(library({ ...callbacks, favouritesRevision: 0, historyRevision: 1 }), "VideoRowList").props.status(first), "继续观看 · 1:02:03", "Closing playback and refreshing its revision must expose the latest saved progress")
   hero = named(home({ ...callbacks, revision: 1 }), "MediaHero")
   assert.equal(hero.props.eyebrow, "继续观看 · 1:02:03")
 

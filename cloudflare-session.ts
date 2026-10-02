@@ -150,7 +150,7 @@ function readCloudflareSession(host: string): { cookies: StoredCloudflareCookie[
 }
 
 function discardSnapshot(key: string, value: string): void {
-  // Remove only the unchanged Cloudflare backup, never native/account cookies.
+  // Remove only the unchanged Cloudflare backup, never shared native cookies.
   try { if (Keychain.get(key) === value) Keychain.remove(key) } catch { /* Keychain cleanup is best-effort. */ }
 }
 

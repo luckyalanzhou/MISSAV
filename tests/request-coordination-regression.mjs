@@ -6,7 +6,7 @@ const storage = new Map()
 globalThis.Storage = { get: key => storage.get(key), set: (key, value) => storage.set(key, value) }
 globalThis.Keychain = { get: () => null, set: () => {} }
 const { missavClient, MissAVRequestScope, isMissAVRequestCancelled } = await import(compile("../client.ts"))
-const { openMissAVSiteVerification } = await import(compile("../account.ts"))
+const { openMissAVSiteVerification } = await import(compile("../site-verification.ts"))
 const { setMissAVBaseURL } = await import(compile("../domain.ts"))
 const diagnostics = await import(compile("../access-diagnostics.ts"))
 const freshClient = () => new missavClient.constructor()

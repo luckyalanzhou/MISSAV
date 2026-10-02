@@ -14,13 +14,11 @@ export function HomePage(props: { onClose: () => void }) {
   const historyRevision = useObservable(0)
   const domainRevision = useObservable(0)
   const accessRevision = useObservable(0)
-  const accountRevision = useObservable(0)
   const settingsPresented = useObservable(false)
   const bumpFavourites = () => favouritesRevision.setValue(favouritesRevision.value + 1)
   const bumpHistory = () => historyRevision.setValue(historyRevision.value + 1)
   const bumpDomain = () => domainRevision.setValue(domainRevision.value + 1)
   const bumpAccess = () => accessRevision.setValue(accessRevision.value + 1)
-  const bumpAccount = () => accountRevision.setValue(accountRevision.value + 1)
   const supportsMinimization = Script.supportsMinimization()
   const toolbar = <Toolbar>
     <ToolbarItem placement="topBarLeading" sharedBackgroundVisibility="visible">
@@ -28,7 +26,7 @@ export function HomePage(props: { onClose: () => void }) {
     </ToolbarItem>
     <ToolbarItem placement="principal"><Text font="headline" fontWeight="semibold">{["首页", "浏览", "资料库", "搜索"][selection.value] || "MISSAV"}</Text></ToolbarItem>
     <ToolbarItem placement="topBarTrailing" sharedBackgroundVisibility="visible">
-      <Button action={() => settingsPresented.setValue(true)} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" navigationDestination={{ isPresented: settingsPresented, content: <SettingsPage onDomainChanged={bumpDomain} onAccessVerified={bumpAccess} onAccountChanged={bumpAccount} /> }} accessibilityLabel="设置"><Image systemName="gearshape" font="headline" foregroundStyle="label" /></Button>
+      <Button action={() => settingsPresented.setValue(true)} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" navigationDestination={{ isPresented: settingsPresented, content: <SettingsPage onDomainChanged={bumpDomain} onAccessVerified={bumpAccess} /> }} accessibilityLabel="设置"><Image systemName="gearshape" font="headline" foregroundStyle="label" /></Button>
     </ToolbarItem>
     {supportsMinimization ? <ToolbarItem placement="topBarTrailing" sharedBackgroundVisibility="visible">
       <Button action={() => { if (!Script.isMinimized()) Script.minimize().catch(() => {}) }} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="最小化浏览器"><Image systemName="arrow.down.right.and.arrow.up.left" font="headline" foregroundStyle="label" /></Button>
@@ -40,7 +38,7 @@ export function HomePage(props: { onClose: () => void }) {
     <TabView selection={selection} tint="systemPink" tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="onScrollDown" toolbar={toolbar}>
       <Tab title="首页" systemImage="house" value={0}><MediaHomePage key={`home-${domainRevision.value}`} accessRevision={accessRevision.value} revision={localRevision} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} onLibrary={() => selection.setValue(2)} /></Tab>
       <Tab title="浏览" systemImage="square.grid.2x2" value={1}><DiscoverPage key={`discover-${domainRevision.value}`} accessRevision={accessRevision.value} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} /></Tab>
-      <Tab title="资料库" systemImage="play.square.stack" value={2}><LibraryPage favouritesRevision={favouritesRevision.value} historyRevision={historyRevision.value} accountRevision={accountRevision.value} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
+      <Tab title="资料库" systemImage="play.square.stack" value={2}><LibraryPage favouritesRevision={favouritesRevision.value} historyRevision={historyRevision.value} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
       <Tab title="搜索" systemImage="magnifyingglass" role="search" value={3}><SearchPage key={`search-${domainRevision.value}`} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} /></Tab>
     </TabView>
   </NavigationStack>

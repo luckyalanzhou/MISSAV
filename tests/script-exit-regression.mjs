@@ -42,6 +42,7 @@ function scenario(failure) {
     } },
     "./listing-cache": { installMissAVListingCache: () => { if (failure === "cache") throw new Error("cache") } },
     "./listing-cache-db": { missavListingCacheDatabase: {} },
+    "./removed-account-migration": { removeLegacyMissAVAccountData: () => { if (failure === "migration") throw new Error("migration") } },
   }, { error: () => calls.push("error"), present: () => { throw new Error("Must not hold exit open behind console") } })
   return { calls, presentation, resolve: resolvePresentation, reject: rejectPresentation }
 }
@@ -60,6 +61,11 @@ const nativeDismiss = scenario()
 nativeDismiss.resolve()
 await tick()
 assert.deepEqual(nativeDismiss.calls, ["enable", "cleanup", "exit"])
+const failedMigration = scenario("migration")
+assert.ok(failedMigration.presentation, "Legacy account cleanup failure must not prevent opening Home")
+failedMigration.resolve()
+await tick()
+assert.equal(failedMigration.calls.filter(call => call === "exit").length, 1)
 for (const failure of ["setup", "cache", "cleanup", "presentation"]) {
   const state = scenario(failure)
   if (failure === "cleanup") state.presentation.element.props.onClose()

@@ -1,21 +1,16 @@
-import { Button, HStack, Image, List, Navigation, Picker, Section, SecureField, Text, TextField, VStack, useState } from "scripting"
+import { Button, HStack, Image, List, Navigation, Picker, Section, SecureField, Text, VStack, useState } from "scripting"
 import { submitMissAVAccess } from "../access"
-import { getMissAVAccountSnapshot, loginMissAV, openMissAVSiteVerification, signOutMissAV, verifyMissAVAccount, type MissAVAccountSnapshot } from "../account"
+import { openMissAVSiteVerification } from "../site-verification"
 import { ACCENT } from "../design"
 import { getMissAVBaseURL, getMissAVDomainLabel, getMissAVLandingURL, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../domain"
 
-export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerified?: () => void; onAccountChanged?: () => void; onAccessReady?: () => void; accessRequired?: boolean }) {
+export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerified?: () => void; onAccessReady?: () => void; accessRequired?: boolean }) {
   const dismiss = Navigation.useDismiss()
   const [domain, setDomain] = useState<MissAVBaseURL>(() => getMissAVBaseURL())
   const [customDomain, setCustomDomain] = useState("")
-  const [account, setAccount] = useState<MissAVAccountSnapshot>(() => getMissAVAccountSnapshot())
-  const [accountBusy, setAccountBusy] = useState(false)
-  const [accountMessage, setAccountMessage] = useState<string | null>(null)
   const [accessBusy, setAccessBusy] = useState(false)
   const [accessMessage, setAccessMessage] = useState<string | null>(null)
-  const [loginEmail, setLoginEmail] = useState(() => getMissAVAccountSnapshot().accountEmail ?? "")
-  const [loginPassword, setLoginPassword] = useState("")
-  const operationBusy = accountBusy || accessBusy
+  const operationBusy = accessBusy
 
   function changeDomain(value: string) {
     if (operationBusy) return
@@ -23,31 +18,8 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     if (next === domain || !MISSAV_DOMAIN_OPTIONS.some(option => option.value === next)) return
     setMissAVBaseURL(next)
     setDomain(next)
-    setAccount(getMissAVAccountSnapshot())
-    setAccountMessage(null)
     setAccessMessage(null)
     props.onDomainChanged()
-  }
-
-  async function loginAccount() {
-    if (operationBusy) return
-    const email = loginEmail.trim()
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { setAccountMessage("请输入 MISSAV 注册邮箱，不能填写账号显示名。"); return }
-    if (!loginPassword) { setAccountMessage("请输入 MISSAV 密码。"); return }
-    setAccountBusy(true)
-    setAccountMessage(null)
-    try {
-      const next = await loginMissAV(email, loginPassword)
-      setAccount(next)
-      setLoginEmail(next.accountEmail || email)
-      setAccountMessage("MISSAV 账号已登录，密码未保存。")
-      props.onAccountChanged?.()
-    } catch (reason) {
-      setAccountMessage(reason instanceof Error ? reason.message : "MISSAV 登录失败，请稍后重试。")
-    } finally {
-      setLoginPassword("")
-      setAccountBusy(false)
-    }
   }
 
   async function verifySiteAccess() {
@@ -71,32 +43,6 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     } finally { setAccessBusy(false) }
   }
 
-  async function refreshAccount() {
-    if (operationBusy) return
-    setAccountBusy(true)
-    setAccountMessage(null)
-    try {
-      const next = await verifyMissAVAccount()
-      setAccount(next)
-      setAccountMessage(next.state === "signedIn" ? "网站账号会话有效。" : next.state === "blocked" ? "暂时无法确认网站账号会话，请稍后重试。" : "登录已失效，请重新登录。")
-    } catch (reason) {
-      setAccountMessage(reason instanceof Error ? reason.message : "网站账号暂时无法验证。")
-    } finally { setAccountBusy(false) }
-  }
-
-  async function logoutAccount() {
-    if (operationBusy) return
-    setAccountBusy(true)
-    setAccountMessage(null)
-    try {
-      signOutMissAV()
-      setAccount(getMissAVAccountSnapshot())
-      setAccountMessage("已退出当前站点账号。")
-      props.onAccountChanged?.()
-    } catch (reason) {
-      setAccountMessage(reason instanceof Error ? reason.message : "网站账号暂时无法退出。")
-    } finally { setAccountBusy(false) }
-  }
 
   function saveCustomDomain() {
     const ready = submitMissAVAccess(customDomain)
@@ -113,23 +59,13 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
   </List>
 
   return <List listStyle="insetGroup" navigationTitle="设置" navigationBarTitleDisplayMode="large">
-    <Section header={<Text>访问站点</Text>} footer={<Text>网站账号登录与 Cloudflare 线路验证相互独立。栏目提示需要验证时，请点击“验证访问线路”。如果仍无法访问，可切换域名；更改将应用于浏览、搜索、详情和播放。</Text>}>
+    <Section header={<Text>访问站点</Text>} footer={<Text>栏目提示需要验证时，请点击“验证访问线路”。如果仍无法访问，可切换域名；更改将应用于浏览、搜索、详情和播放。</Text>}>
       <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy}>
         {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
       </Picker>
       <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} action={() => { void Safari.openURL(getMissAVLandingURL(domain)) }} />
       <Button title={accessBusy ? "正在验证访问线路" : "验证访问线路"} systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} action={() => { void verifySiteAccess() }} />
       {accessMessage ? <Text font="footnote" foregroundStyle="secondaryLabel">{accessMessage}</Text> : undefined}
-    </Section>
-
-    <Section header={<Text>网站账号</Text>} footer={<Text>邮箱和密码只用于本次登录请求，不会保存；登录成功后仅将网站会话保存在系统钥匙串中。网站收藏与本机收藏分开显示。</Text>}>
-      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName={account.state === "signedIn" ? "person.crop.circle.badge.checkmark" : account.state === "expired" ? "person.crop.circle.badge.exclamationmark" : account.state === "blocked" ? "person.crop.circle.badge.questionmark" : "person.crop.circle"} foregroundStyle={account.state === "signedIn" ? "systemGreen" : account.state === "signedOut" ? "secondaryLabel" : "systemOrange"} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">{account.state === "signedIn" ? "已登录网站账号" : account.state === "expired" ? "登录已失效" : account.state === "blocked" ? "网站账号暂时无法验证" : "未登录网站账号"}</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{account.accountLabel || "用于读取网站收藏"}</Text></VStack></HStack>
-      {account.state !== "signedIn" ? <TextField title="注册邮箱" value={loginEmail} onChanged={setLoginEmail} textContentType="username" keyboardType="emailAddress" autocorrectionDisabled submitLabel="next" /> : undefined}
-      {account.state !== "signedIn" ? <SecureField title="密码" value={loginPassword} onChanged={setLoginPassword} textContentType="password" submitLabel="go" onSubmit={() => { void loginAccount() }} /> : undefined}
-      {account.state !== "signedIn" ? <Button title={accountBusy ? "正在登录" : "登录 MISSAV"} systemImage="person.badge.key" disabled={operationBusy || !loginEmail.trim() || !loginPassword} tint={ACCENT} action={() => { void loginAccount() }} /> : undefined}
-      {account.state === "signedIn" ? <Button title="验证当前账号" systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} action={() => { void refreshAccount() }} /> : undefined}
-      {accountMessage ? <Text font="footnote" foregroundStyle="secondaryLabel">{accountMessage}</Text> : undefined}
-      {account.state === "signedIn" ? <Button title="退出网站账号" systemImage="rectangle.portrait.and.arrow.right" role="destructive" disabled={operationBusy} action={() => { void logoutAccount() }} /> : undefined}
     </Section>
 
     <Section header={<Text>数据与隐私</Text>} footer={<Text>如需清除播放或浏览记录，请前往资料库中的对应分类。</Text>}>

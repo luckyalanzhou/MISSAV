@@ -12,7 +12,7 @@ const session = await import(compile("../cloudflare-session.ts"))
 const { setMissAVBaseURL, getMissAVLandingURL, resolveMissAVURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE } = await import(compile("../domain.ts"))
 const { missavClient } = await import(compile("../client.ts"))
 const { MISSAV_COLLECTION_OPTIONS, isMissAVDirectoryCollection } = await import(compile("../collections.ts"))
-const { openMissAVSiteVerification } = await import(compile("../account.ts"))
+const { openMissAVSiteVerification } = await import(compile("../site-verification.ts"))
 
 const nativeTimeout = globalThis.setTimeout
 // Accelerate polling only, keeping the production timeout behavior intact.
@@ -94,10 +94,6 @@ try {
   setMissAVBaseURL("https://missav.ws/")
   const settingsSource = readFileSync(new URL("../page/settings.tsx", import.meta.url), "utf8")
   assert.match(settingsSource, /Safari\.openURL\(getMissAVLandingURL\(domain\)\)/)
-  const accountSource = readFileSync(new URL("../account.ts", import.meta.url), "utf8")
-  for (const path of ["saved", "login", "api/login"]) {
-    assert.ok(accountSource.includes(`/${"${MISSAV_LOCALE}"}/${path}`), `${path} must use the shared locale`)
-  }
 
   const cookie = (value, domain = ".missav.ws", expiresDate = new Date(Date.now() + 60_000)) => ({ name: "cf_clearance", value, domain, expiresDate })
   let liveCookies = [cookie("fixture-old")]
@@ -366,11 +362,10 @@ try {
     return Promise.resolve()
   }
   assert.equal((await openMissAVSiteVerification()).status, "unavailable")
-  // Existing pure parser/session/account tests use only Script.exit reporting.
+  // Existing pure parser/session tests use only Script.exit reporting.
   // Execute them here without pretending to run the native Scripting host.
   await import(compile("../tests/client-parser-regression.ts"))
   await import(compile("../tests/cloudflare-session-regression.ts"))
-  await import(compile("../tests/account-auth-regression.ts"))
   console.log("MISSAV native page loading, dynamic routes, live cookies and verification regressions passed")
 } finally {
   globalThis.setTimeout = nativeTimeout

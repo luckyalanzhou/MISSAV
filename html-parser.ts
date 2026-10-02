@@ -103,7 +103,7 @@ function cloudflareContentMarkup(html: string): string {
     .replace(/<(script|style|noscript|template)\b[\s\S]*?<\/\1>/gi, " ")
 }
 
-// Existing account callers must reject both a challenge and an access-denied page.
+// Site callers must reject both a challenge and an access-denied page.
 export function isCloudflareChallengeHTML(html: string | null): boolean {
   return classifyCloudflareHTML(html) !== "none"
 }

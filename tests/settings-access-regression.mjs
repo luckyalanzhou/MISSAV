@@ -1,4 +1,4 @@
-// Execute the real Settings TSX with only native UI/account operations mocked.
+// Execute the real Settings TSX with only native UI/route verification mocked.
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -13,13 +13,12 @@ const settle = async () => { for (let i = 0; i < 5; i++) await Promise.resolve()
 const button = (nodes, title) => nodes.find(node => node.type === "Button" && node.props.title === title)
 const text = nodes => nodes.filter(node => node.type === "Text").map(node => node.props.children).filter(value => typeof value === "string").join("\n")
 
-function harness(initialState) {
+function harness() {
   const states = []
   const pending = []
-  const calls = { accountVerified: 0, accessRefreshed: 0, accountChanged: 0, domainChanged: 0 }
+  const calls = { accessRefreshed: 0, domainChanged: 0 }
   let hook = 0
   let domain = "https://missav.ws/"
-  const snapshot = () => ({ state: initialState, domain, accountLabel: "Fixture account" })
   const scripting = {
     ...Object.fromEntries(["Button", "HStack", "Image", "List", "Picker", "Section", "SecureField", "Text", "TextField", "VStack"].map(name => [name, name])),
     Navigation: { useDismiss: () => () => {} },
@@ -35,12 +34,8 @@ function harness(initialState) {
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "../design") return { ACCENT: "pink" }
     if (specifier === "../access") return { submitMissAVAccess: () => true }
-    if (specifier === "../account") return {
-      getMissAVAccountSnapshot: snapshot,
-      loginMissAV: async () => ({ ...snapshot(), state: "signedIn", accountEmail: "fixture@example.test" }),
+    if (specifier === "../site-verification") return {
       openMissAVSiteVerification: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
-      signOutMissAV: () => { initialState = "signedOut" },
-      verifyMissAVAccount: async () => { calls.accountVerified++; return { ...snapshot(), state: "signedIn" } },
     }
     if (specifier === "../domain") return {
       getMissAVBaseURL: () => domain,
@@ -60,89 +55,58 @@ function harness(initialState) {
       nodes.push(value)
       visit(value.props.children)
     }
-    visit(module.exports.SettingsPage({ onDomainChanged: () => calls.domainChanged++, onAccessVerified: () => calls.accessRefreshed++, onAccountChanged: () => calls.accountChanged++ }))
+    visit(module.exports.SettingsPage({ onDomainChanged: () => calls.domainChanged++, onAccessVerified: () => calls.accessRefreshed++ }))
     return nodes
   } }
 }
 
-for (const state of ["signedOut", "signedIn", "expired", "blocked"]) {
-  const page = harness(state)
-  const nodes = page.render()
-  assert.ok(button(nodes, "验证访问线路"), `${state}: the access button is independent of login state`)
-  const accessSection = nodes.find(node => node.type === "Section" && node.props.header?.props.children === "访问站点")
-  assert.ok(accessSection.props.children.some(child => child?.type === "Button" && child.props.title === "验证访问线路"))
-  assert.equal(nodes.filter(node => node.type === "Button" && node.props.title === "验证访问线路").length, 1)
-  if (state === "blocked") {
-    assert.match(text(nodes), /网站账号暂时无法验证/)
-    assert.doesNotMatch(text(nodes), /需要完成网站验证/, "An unavailable account check does not prove a Cloudflare challenge")
-  }
-}
-
-const page = harness("signedIn")
-button(page.render(), "验证当前账号").props.action()
-await settle()
+const page = harness()
 let nodes = page.render()
-assert.equal(page.calls.accountVerified, 1)
-assert.equal(page.calls.accessRefreshed, 0, "Validating an account cannot mark browsing routes as verified")
-assert.equal(page.pending.length, 0)
-assert.match(text(nodes), /网站账号会话有效。/)
-assert.doesNotMatch(text(nodes), /栏目访问仍可能需要/, "An account check must not invent a route-verification warning")
 assert.ok(button(nodes, "验证访问线路"))
+assert.equal(nodes.filter(node => node.type === "Button" && node.props.title === "验证访问线路").length, 1)
+assert.doesNotMatch(text(nodes), /网站账号|网站收藏|登录|密码/)
+assert.equal(nodes.some(node => node.type === "SecureField" || node.type === "TextField"), false)
+const accessSection = nodes.find(node => node.type === "Section" && node.props.header?.props.children === "访问站点")
+assert.ok(accessSection.props.children.some(child => child?.type === "Button" && child.props.title === "验证访问线路"))
 button(nodes, "验证访问线路").props.action()
 nodes = page.render()
 assert.equal(button(nodes, "正在验证访问线路").props.disabled, true)
-assert.equal(button(nodes, "验证当前账号").props.disabled, true)
-assert.equal(button(nodes, "退出网站账号").props.disabled, true)
 assert.equal(nodes.find(node => node.type === "Picker").props.disabled, true)
+button(nodes, "正在验证访问线路").props.action()
+nodes.find(node => node.type === "Picker").props.onChanged("https://missav.ai/")
+assert.equal(page.pending.length, 1, "Busy state prevents another verification")
+assert.equal(page.calls.domainChanged, 0, "Do not change origin while verification is pending")
 page.pending.at(-1).resolve({ status: "accessible", challengeCompleted: false })
 await settle()
 nodes = page.render()
-assert.equal(page.calls.accessRefreshed, 1, "Only successful access verification refreshes Home/Browse")
+assert.equal(page.calls.accessRefreshed, 1)
 assert.match(text(nodes), /已检查栏目可访问，本次无需 Cloudflare 验证/)
-assert.doesNotMatch(text(nodes), /Cloudflare 验证完成|栏目访问仍可能需要/)
-assert.match(text(nodes), /已登录网站账号/, "Access verification preserves the login state")
+assert.doesNotMatch(text(nodes), /Cloudflare 验证完成/)
 assert.equal(button(nodes, "验证访问线路").props.disabled, false)
-assert.match(text(nodes), /网站账号会话有效/, "Account and access messages remain independent")
-
 button(nodes, "验证访问线路").props.action()
 page.pending.at(-1).resolve({ status: "accessible", challengeCompleted: true })
 await settle()
 nodes = page.render()
 assert.equal(page.calls.accessRefreshed, 2)
 assert.match(text(nodes), /Cloudflare 验证完成，已检查栏目可访问/)
-assert.doesNotMatch(text(nodes), /本次无需 Cloudflare 验证|栏目访问仍可能需要/)
-button(nodes, "验证当前账号").props.action()
-await settle()
-nodes = page.render()
-assert.match(text(nodes), /网站账号会话有效。/)
-assert.match(text(nodes), /Cloudflare 验证完成/)
-assert.doesNotMatch(text(nodes), /栏目访问仍可能需要/, "Account verification after an access check cannot restore the old static warning")
-
-for (const status of ["incomplete", "unavailable", "error"]) {
+assert.doesNotMatch(text(nodes), /本次无需 Cloudflare 验证/)
+for (const status of ["blocked", "incomplete", "unavailable", "error"]) {
   button(page.render(), "验证访问线路").props.action()
   if (status === "error") page.pending.at(-1).reject(new Error("Fixture verification unavailable"))
   else page.pending.at(-1).resolve({ status, probe: { title: "日本 AV" } })
   await settle()
   nodes = page.render()
-  assert.equal(page.calls.accessRefreshed, 2, "Failed/unfinished checks must not refresh as if verified")
+  assert.equal(page.calls.accessRefreshed, 2, "Failed/unfinished checks cannot refresh as if verified")
   assert.doesNotMatch(text(nodes), /常用栏目访问正常|Cloudflare 验证完成/)
   assert.ok(button(nodes, "验证访问线路"))
-  assert.match(text(nodes), /已登录网站账号/)
 }
 nodes.find(node => node.type === "Picker").props.onChanged("https://missav.ai/")
 nodes = page.render()
 assert.equal(page.calls.domainChanged, 1)
-assert.doesNotMatch(text(nodes), /Fixture verification unavailable|网站账号会话有效/, "Switching domains clears old account/access messages")
-
-const login = harness("signedOut")
-nodes = login.render()
-nodes.find(node => node.type === "TextField").props.onChanged("fixture@example.test")
-nodes.find(node => node.type === "SecureField").props.onChanged("fixture-password")
-button(login.render(), "登录 MISSAV").props.action()
-await settle()
-nodes = login.render()
-assert.match(text(nodes), /已登录网站账号/)
-assert.ok(button(nodes, "验证访问线路"), "The route verification entry remains after login")
-assert.equal(login.calls.accountChanged, 1)
-assert.equal(login.calls.accessRefreshed, 0)
-console.log("PASS: access verification visible for every account state; independent messages, successful refresh and domain reset")
+assert.doesNotMatch(text(nodes), /Fixture verification unavailable/)
+let opened
+globalThis.Safari = { openURL: url => { opened = url; return Promise.resolve() } }
+button(nodes, "在 Safari 中打开").props.action()
+assert.equal(opened, "https://missav.ai/cn/")
+delete globalThis.Safari
+console.log("PASS: no account UI; route verification, busy protection, successful refresh and domain reset preserved")

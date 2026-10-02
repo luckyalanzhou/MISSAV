@@ -1,5 +1,6 @@
 import { Divider, HStack, Image, LazyVGrid, NavigationLink, NavigationStack, ScrollView, Script, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import { isMissAVAccessReady } from "./access"
+import { removeLegacyMissAVAccountData } from "./removed-account-migration"
 import { missavClient, type MissAVVideoItem } from "./client"
 import { ACCESSORY_ALIGNMENT_WIDTH, ACCENT, ICON_ALIGNMENT_WIDTH, MEDIA_RADIUS, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, ROW_MIN_HEIGHT, SECTION_SPACING } from "./design"
 import { loadMissAVFavourites, loadMissAVHistory } from "./storage"
@@ -25,13 +26,11 @@ export default function MISSAVHomeScreenView() {
   const [favouritesRevision, setFavouritesRevision] = useState(0)
   const [historyRevision, setHistoryRevision] = useState(0)
   const [domainRevision, setDomainRevision] = useState(0)
-  const [accountRevision, setAccountRevision] = useState(0)
   const loadGeneration = useRef(0)
   const lastRemoteLoad = useRef(0)
   const bumpFavourites = () => setFavouritesRevision(value => value + 1)
   const bumpHistory = () => setHistoryRevision(value => value + 1)
   const bumpDomain = () => setDomainRevision(value => value + 1)
-  const bumpAccount = () => setAccountRevision(value => value + 1)
   const refreshAfterDomainOrAccessChange = () => { lastRemoteLoad.current = 0; bumpDomain() }
 
   async function load(forceRemote = false) {
@@ -68,6 +67,7 @@ export default function MISSAVHomeScreenView() {
   }), [accessReady])
 
   useEffect(() => {
+    try { removeLegacyMissAVAccountData() } catch { console.error("清理旧会话备份失败，下次启动重试。") }
     if (!accessReady) return
     void load()
     return Script.onHomeTabEvent(event => { if (event === "selected") void load() })
@@ -87,7 +87,7 @@ export default function MISSAVHomeScreenView() {
         <Divider />
         <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle="plain"><HomeAction title="搜索" subtitle="按番号、女优或作品标题搜索" systemImage="magnifyingglass" /></NavigationLink>
         <Divider />
-        <NavigationLink destination={<LibraryPage favouritesRevision={favouritesRevision} historyRevision={historyRevision} accountRevision={accountRevision} {...common} onDiscover={() => {}} />} buttonStyle="plain"><HomeAction title="资料库" subtitle={`${data.favourites.length} 部本机收藏作品`} systemImage="play.square.stack" /></NavigationLink>
+        <NavigationLink destination={<LibraryPage favouritesRevision={favouritesRevision} historyRevision={historyRevision} {...common} onDiscover={() => {}} />} buttonStyle="plain"><HomeAction title="资料库" subtitle={`${data.favourites.length} 部本机收藏作品`} systemImage="play.square.stack" /></NavigationLink>
         <Divider />
         <NavigationLink destination={<RecommendationsPage revision={favouritesRevision + historyRevision} {...common} onDiscover={() => {}} />} buttonStyle="plain"><HomeAction title="为你推荐" subtitle="根据本机收藏和观看记录生成" systemImage="sparkles" /></NavigationLink>
       </VStack>
@@ -95,7 +95,7 @@ export default function MISSAVHomeScreenView() {
       {data.trending.length ? <VideoSection title="今日热门" subtitle="今日观看较多的作品" items={data.trending} {...common} /> : undefined}
       {!loading && !data.recent.length && !data.trending.length ? <StateView title="暂时没有可显示的内容" description={error || "前往浏览或搜索页面开始探索。"} systemImage="play.rectangle" /> : undefined}
       {error && (data.recent.length || data.trending.length) ? <HStack spacing={8}><Image systemName="wifi.exclamationmark" foregroundStyle="secondaryLabel" /><Text font="footnote" foregroundStyle="secondaryLabel">{error}</Text></HStack> : undefined}
-      <NavigationLink destination={<SettingsPage onDomainChanged={refreshAfterDomainOrAccessChange} onAccessVerified={refreshAfterDomainOrAccessChange} onAccountChanged={bumpAccount} />} buttonStyle="plain"><HStack spacing={12} padding={{ vertical: 8 }} frame={{ maxWidth: "infinity", minHeight: 54 }} contentShape="rect"><Image systemName="gearshape" foregroundStyle="secondaryLabel" frame={{ width: 28 }} /><Text font="body" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }}>设置</Text><Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" /></HStack></NavigationLink>
+      <NavigationLink destination={<SettingsPage onDomainChanged={refreshAfterDomainOrAccessChange} onAccessVerified={refreshAfterDomainOrAccessChange} />} buttonStyle="plain"><HStack spacing={12} padding={{ vertical: 8 }} frame={{ maxWidth: "infinity", minHeight: 54 }} contentShape="rect"><Image systemName="gearshape" foregroundStyle="secondaryLabel" frame={{ width: 28 }} /><Text font="body" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }}>设置</Text><Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" /></HStack></NavigationLink>
     </VStack>
   </ScrollView></ZStack></NavigationStack>
 }

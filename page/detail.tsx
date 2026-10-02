@@ -1,8 +1,7 @@
-import { Button, Divider, EnvironmentValuesReader, HStack, Image, LazyVStack, Navigation, NavigationStack, ProgressView, QuickLook, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type DynamicTypeSize, type ScrollViewProxy } from "scripting"
+import { Button, Divider, HStack, Image, LazyVStack, Navigation, NavigationStack, ProgressView, QuickLook, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../client"
 import { ACCENT, Badge, MEDIA_HERO_RADIUS, PAGE_BOTTOM_PADDING, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, PageBackground, SECONDARY_ACTION_HEIGHT, SECTION_SPACING, SectionHeading } from "../design"
 import { chooseAndPresentMissAVPlayer } from "../player"
-import { getMissAVAccountSnapshot, getMissAVWebsiteSavedState, setMissAVWebsiteSaved } from "../account"
 import { isMissAVFavourite, rememberMissAVDetail, toggleMissAVFavourite } from "../storage"
 import { hasMissAVSubtitle, isMissAVSubtitleEnabled, saveMissAVSubtitle, setMissAVSubtitleEnabled } from "../subtitles"
 import { downloadSubtitleCatFile, searchSubtitleCatFiles, type SubtitleCatSearchResult, type SubtitleCatSubtitleFile } from "../subtitlecat"
@@ -28,16 +27,12 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   const [subtitleBusy, setSubtitleBusy] = useState(false)
   const [favourite, setFavourite] = useState<boolean | null>(null)
   const [favouriteError, setFavouriteError] = useState<string | null>(null)
-  const [websiteSaved, setWebsiteSaved] = useState<boolean | null>(null)
-  const [websiteSavedError, setWebsiteSavedError] = useState<string | null>(null)
-  const [changingFavourite, setChangingFavourite] = useState<"local" | "website" | null>(null)
+  const [changingFavourite, setChangingFavourite] = useState(false)
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const tagSearchPresented = useObservable(false)
   const generation = useRef(0)
   const requestScope = useRef<MissAVRequestScope | null>(null)
-  const websiteScope = useRef<MissAVRequestScope | null>(null)
   const favouriteGeneration = useRef(0)
-  const websiteGeneration = useRef(0)
   const subtitleGeneration = useRef(0)
   const appeared = useRef(false)
   const initializedVideo = useRef<string | null>(null)
@@ -49,10 +44,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
     const trace = createMissAVDetailTrace(props.video.detailPath, progress => { if (current === generation.current) setLoadProgress(progress) })
     detailTrace.current = trace
     trace.mark("entered")
-    ++websiteGeneration.current
-    websiteScope.current?.cancel()
-    setWebsiteSaved(null)
-    setWebsiteSavedError(null)
     const scope = new MissAVRequestScope()
     requestScope.current = scope
     setLoading(true); setDetailError(null)
@@ -73,27 +64,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
           setDetailError("详情请求已中断，请在访问线路验证结束后重试。")
         } else setDetailError(reason instanceof Error ? reason.message : String(reason))
       }
-    } finally { if (current === generation.current) { setLoading(false); requestScope.current = null; if (appeared.current && !scope.cancelled) void loadWebsiteSaved() } }
-  }
-
-  async function loadWebsiteSaved() {
-    const current = ++websiteGeneration.current
-    websiteScope.current?.cancel()
-    setWebsiteSaved(null)
-    const account = getMissAVAccountSnapshot()
-    if (account.state !== "signedIn") {
-      setWebsiteSavedError(account.state === "expired" ? "网站账号已失效，请在设置中重新登录。" : "登录网站账号后，即可使用网站收藏。")
-      return
-    }
-    const scope = new MissAVRequestScope()
-    websiteScope.current = scope
-    setWebsiteSavedError(null)
-    try {
-      const value = await getMissAVWebsiteSavedState(props.video.detailPath, scope)
-      if (current === websiteGeneration.current) setWebsiteSaved(value.saved)
-    } catch (reason) {
-      if (current === websiteGeneration.current && !isMissAVRequestCancelled(reason)) setWebsiteSavedError(reason instanceof Error ? reason.message : "网站收藏状态读取失败。")
-    } finally { if (websiteScope.current === scope) websiteScope.current = null }
+    } finally { if (current === generation.current) { setLoading(false); requestScope.current = null } }
   }
 
   function loadLocalFavourite() {
@@ -119,7 +90,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
         loadLocalFavourite()
         void rememberMissAVDetail(props.video, props.initialDetail).then(props.onHistoryChanged).catch(reason => console.error("保存浏览记录失败:", reason))
       }
-      setWebsiteSaved(null)
       setSubtitleAvailable(false); setSubtitleEnabled(true)
       const subtitleRequest = ++subtitleGeneration.current
       void hasMissAVSubtitle(props.video.videoCode).then(available => {
@@ -129,7 +99,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
       }).catch(reason => console.error("读取字幕状态失败:", reason))
     }
     if (needsReload.current) { needsReload.current = false; void load() }
-    else if (websiteSaved === null) void loadWebsiteSaved()
   }
 
   function disappear() {
@@ -145,8 +114,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
       requestScope.current = null
       setLoading(false)
     }
-    ++websiteGeneration.current
-    websiteScope.current?.cancel(); websiteScope.current = null
   }
 
   async function play(source: MissAVVideoSource, subtitlePreview = false) {
@@ -193,18 +160,10 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
 
   async function changeFavourite() {
     if (changingFavourite || favourite === null) return
-    setChangingFavourite("local")
+    setChangingFavourite(true)
     try { const next = await toggleMissAVFavourite(props.video); setFavourite(next); props.onFavouriteChanged() }
     catch (reason) { await Dialog.alert({ title: "本机收藏操作失败", message: reason instanceof Error ? reason.message : String(reason) }) }
-    finally { setChangingFavourite(null) }
-  }
-
-  async function changeWebsiteSaved() {
-    if (changingFavourite || websiteSaved === null) return
-    setChangingFavourite("website")
-    try { const result = await setMissAVWebsiteSaved(props.video.detailPath, !websiteSaved); setWebsiteSaved(result.saved); props.onFavouriteChanged() }
-    catch (reason) { await Dialog.alert({ title: "网站收藏操作失败", message: reason instanceof Error ? reason.message : String(reason) }) }
-    finally { setChangingFavourite(null) }
+    finally { setChangingFavourite(false) }
   }
 
   const resolved = detail ?? { ...props.video, videoCode: props.video.videoCode, genres: [], sources: [] }
@@ -232,15 +191,9 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
         </HStack> : undefined}
         {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在脚本目录的 subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
         {primarySource ? <Button title="本地字幕叠层测试" systemImage="captions.bubble" buttonStyle="bordered" disabled={Boolean(openingSource)} action={() => { void play(primarySource, true) }} /> : undefined}
-        <EnvironmentValuesReader keys={["horizontalSizeClass", "dynamicTypeSize"]}>{environment => {
-          const vertical = environment.horizontalSizeClass === "compact" || isAccessibilityTypeSize(environment.dynamicTypeSize)
-          const local = <FavouriteButton kind="local" value={favourite} error={favouriteError} changing={changingFavourite} action={() => { void changeFavourite() }} />
-          const website = <FavouriteButton kind="website" value={websiteSaved} error={websiteSavedError} changing={changingFavourite} action={() => { void changeWebsiteSaved() }} />
-          return vertical ? <VStack spacing={10} frame={{ maxWidth: "infinity" }}>{local}{website}</VStack> : <HStack spacing={10} alignment="center" frame={{ maxWidth: "infinity" }}>{local}{website}</HStack>
-        }}</EnvironmentValuesReader>
+        <FavouriteButton value={favourite} error={favouriteError} changing={changingFavourite} action={() => { void changeFavourite() }} />
         {favouriteError ? <Text font="caption" foregroundStyle="systemRed" lineLimit={4} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{`本机收藏：${favouriteError}`}</Text> : undefined}
-        {websiteSavedError ? <Text font="caption" foregroundStyle="systemRed" lineLimit={4} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{`网站收藏：${websiteSavedError}`}</Text> : undefined}
-        {!favouriteError && !websiteSavedError ? <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={4} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{websiteSaved === null ? "正在读取收藏状态。" : "网站收藏将同步至当前网站账号；本机收藏仅保存在此设备。"}</Text> : undefined}
+        {!favouriteError ? <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={4} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">本机收藏仅保存在此设备。</Text> : undefined}
       </VStack>
 
       {loading && loadProgress ? <Text font="caption" foregroundStyle="secondaryLabel">{MISSAV_DETAIL_STAGE_LABELS[loadProgress.stage]}</Text> : undefined}
@@ -441,18 +394,12 @@ function normalizeSubtitleAssociationCode(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, "-").replace(/[^A-Z0-9_-]/g, "")
 }
 
-function isAccessibilityTypeSize(size: DynamicTypeSize) {
-  return size.startsWith("accessibility")
-}
-
-function FavouriteButton(props: { kind: "local" | "website"; value: boolean | null; error: string | null; changing: "local" | "website" | null; action: () => void }) {
-  const local = props.kind === "local"
-  const noun = local ? "本机收藏" : "网站收藏"
-  const icon = local ? (props.value ? "heart.fill" : "heart") : (props.value ? "bookmark.fill" : "bookmark")
-  const title = props.error ? `${noun}不可用` : props.value === null ? `正在读取${noun}` : props.value ? `已加入${noun}` : `加入${noun}`
-  const accessibility = props.error ? `${noun}不可用` : props.value === null ? `正在读取${noun}状态` : props.value ? `已加入${noun}，轻点取消` : `未加入${noun}，轻点加入`
+function FavouriteButton(props: { value: boolean | null; error: string | null; changing: boolean; action: () => void }) {
+  const icon = props.value ? "heart.fill" : "heart"
+  const title = props.error ? "本机收藏不可用" : props.value === null ? "正在读取本机收藏" : props.value ? "已加入本机收藏" : "加入本机收藏"
+  const accessibility = props.error ? "本机收藏不可用" : props.value === null ? "正在读取本机收藏状态" : props.value ? "已加入本机收藏，轻点取消" : "未加入本机收藏，轻点加入"
   return <Button action={props.action} disabled={Boolean(props.changing) || props.value === null || Boolean(props.error)} buttonStyle="bordered" tint={props.value ? "systemRed" : ACCENT} frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={accessibility}>
-    <HStack spacing={7}>{props.changing === props.kind ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : <Image systemName={icon} />}<Text font="subheadline" fontWeight="semibold" lineLimit={2} multilineTextAlignment="center">{title}</Text></HStack>
+    <HStack spacing={7}>{props.changing ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : <Image systemName={icon} />}<Text font="subheadline" fontWeight="semibold" lineLimit={2} multilineTextAlignment="center">{title}</Text></HStack>
   </Button>
 }
 

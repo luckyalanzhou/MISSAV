@@ -19,7 +19,7 @@ export async function readSubtitleWebViewDocument(controller: WebViewController,
   } finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
-// Subtitle-only readiness: do not change the site's account/verification loader.
+// Subtitle-only readiness: do not change the site's verification loader.
 export async function loadSubtitleWebViewDocument(controller: WebViewController, url: string, options: {
   accept: (document: SubtitleWebViewDocument) => boolean
   checkCancelled: () => void
