@@ -1,4 +1,4 @@
-import { Button, Divider, HStack, Image, LazyVStack, Navigation, NavigationStack, ProgressView, QuickLook, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
+import { Button, Divider, HStack, Image, LazyVStack, ProgressView, QuickLook, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../client"
 import { ACCENT, Badge, MEDIA_HERO_RADIUS, PAGE_BOTTOM_PADDING, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, PageBackground, SECONDARY_ACTION_HEIGHT, SECTION_SPACING, SectionHeading } from "../design"
 import { chooseAndPresentMissAVPlayer } from "../player"
@@ -23,7 +23,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   const [openingSource, setOpeningSource] = useState<string | null>(null)
   const [subtitleAvailable, setSubtitleAvailable] = useState(false)
   const [subtitleEnabled, setSubtitleEnabled] = useState(true)
-  const [subtitleBusy, setSubtitleBusy] = useState(false)
+  const [subtitleSearchPresented, setSubtitleSearchPresented] = useState(false)
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const tagSearchPresented = useObservable(false)
   const generation = useRef(0)
@@ -124,26 +124,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
     }
   }
 
-  async function searchSubtitles() {
-    if (subtitleBusy) return
-    setSubtitleBusy(true)
-    try {
-      await Navigation.present({
-        element: <SubtitleSearchPage videoCode={code} onDownloaded={downloadedCode => {
-          if (normalizeSubtitleAssociationCode(downloadedCode) !== normalizeSubtitleAssociationCode(code)) return
-          setSubtitleAvailable(true)
-          setSubtitleEnabled(true)
-          void props.preparation?.refreshSubtitles()
-        }} />,
-        modalPresentationStyle: "overFullScreen",
-      })
-    } catch (reason) {
-      await Dialog.alert({ title: "字幕搜索失败", message: reason instanceof Error ? reason.message : String(reason) })
-    } finally {
-      setSubtitleBusy(false)
-    }
-  }
-
   const resolved = detail ?? { ...props.video, videoCode: props.video.videoCode, genres: [], sources: [] }
   const primarySource = detail?.sources[0]
   const code = props.video.videoCode.toUpperCase()
@@ -164,7 +144,16 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
       <VStack spacing={10} frame={{ maxWidth: "infinity" }}>
         {primarySource ? <Button action={() => { void play(primarySource) }} disabled={Boolean(openingSource)} buttonStyle="borderedProminent" controlSize="large" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: PRIMARY_ACTION_HEIGHT }} accessibilityLabel={openingSource === primarySource.url ? `正在打开 ${primarySource.label}` : `播放 ${primarySource.label}`}><HStack spacing={8}>{openingSource === primarySource.url ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="play.fill" />}<Text font="headline" fontWeight="bold">{openingSource === primarySource.url ? "正在打开" : `播放 ${primarySource.label}`}</Text></HStack></Button> : loading ? <StateView title="正在获取播放信息" loading presentation="row" /> : undefined}
         {primarySource ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
-          <Button action={() => { void searchSubtitles() }} disabled={subtitleBusy || Boolean(openingSource)} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>{subtitleBusy ? "正在搜索…" : "搜索字幕"}</Text></HStack></Button>
+          <Button action={() => setSubtitleSearchPresented(true)} disabled={subtitleSearchPresented || Boolean(openingSource)} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`} navigationDestination={{
+            isPresented: subtitleSearchPresented,
+            onChanged: setSubtitleSearchPresented,
+            content: subtitleSearchPresented ? <SubtitleSearchPage videoCode={code} onClose={() => setSubtitleSearchPresented(false)} onDownloaded={downloadedCode => {
+              if (normalizeSubtitleAssociationCode(downloadedCode) !== normalizeSubtitleAssociationCode(code)) return
+              setSubtitleAvailable(true)
+              setSubtitleEnabled(true)
+              void props.preparation?.refreshSubtitles()
+            }} /> : <VStack />,
+          }}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>搜索字幕</Text></HStack></Button>
           {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={subtitleEnabled ? "关闭本作品字幕显示" : "开启本作品字幕显示"}><HStack spacing={7}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text>{subtitleEnabled ? "关闭字幕" : "开启字幕"}</Text></HStack></Button> : undefined}
         </HStack> : undefined}
         {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在脚本目录的 subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
@@ -187,8 +176,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   </ScrollView></ZStack>
 }
 
-function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode: string) => void }) {
-  const dismiss = Navigation.useDismiss()
+function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode: string) => void; onClose: () => void }) {
   const [query, setQuery] = useState(props.videoCode)
   const [title, setTitle] = useState("")
   const [files, setFiles] = useState<SubtitleCatSubtitleFile[]>([])
@@ -204,7 +192,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   const subtitleOperation = useRef(false)
   const active = useRef(true)
 
-  function closeSearch() { active.current = false; stopSearch(); dismiss() }
+  function closeSearch() { active.current = false; stopSearch(); props.onClose() }
 
   function stopSearch() {
     const session = searchSession.current
@@ -322,17 +310,11 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
     }
   }, [])
 
-  return <NavigationStack><ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="systemBackground">
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="systemBackground" navigationTitle="按番号搜索字幕" navigationBarTitleDisplayMode="inline">
     <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      <HStack spacing={10} padding={{ horizontal: PAGE_PADDING, vertical: 8 }} frame={{ maxWidth: "infinity", minHeight: 52 }}>
-        <VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          <Text font="headline" fontWeight="bold">按番号搜索字幕</Text>
-          <Text font="caption" foregroundStyle="secondaryLabel">仅搜索简体中文和繁体中文字幕</Text>
-        </VStack>
-        <Button action={closeSearch} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭字幕搜索"><Image systemName="xmark" foregroundStyle="secondaryLabel" /></Button>
-      </HStack>
       <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
+          <Text font="caption" foregroundStyle="secondaryLabel">仅搜索简体中文和繁体中文字幕</Text>
           <HStack spacing={8} padding={{ horizontal: 12 }} frame={{ maxWidth: "infinity", minHeight: 50 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
             <TextField title="番号" prompt="例如 SSIS-655" value={query} onChanged={setQuery} onSubmit={() => { void search() }} autocorrectionDisabled frame={{ maxWidth: "infinity" }} />
             <Button action={() => { void search() }} disabled={loading || Boolean(downloadingId) || !query.trim()} buttonStyle="borderedProminent" tint={ACCENT} accessibilityLabel="搜索字幕">
@@ -361,7 +343,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
         </VStack>
       </ScrollView>
     </VStack>
-  </ZStack></NavigationStack>
+  </ZStack>
 }
 
 function normalizeSubtitleAssociationCode(value: string): string {

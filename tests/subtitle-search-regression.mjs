@@ -1,4 +1,4 @@
-// Exercise the real search modal with only the iOS bridge/network mocked.
+// Exercise the real native search destination with only the iOS bridge/network mocked.
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
@@ -20,6 +20,7 @@ function harness() {
   const states = []
   const refs = []
   const effects = []
+  let cleanups = []
   const pending = []
   const controllers = []
   const saved = []
@@ -37,7 +38,6 @@ function harness() {
   }
   const scripting = {
     ...Object.fromEntries(["Button", "Divider", "HStack", "Image", "LazyVStack", "NavigationStack", "ProgressView", "ScrollView", "Text", "TextField", "VStack", "ZStack"].map(name => [name, name])),
-    Navigation: { useDismiss: () => () => { dismissed++ } },
     QuickLook: { previewText: async content => previews.push(content) },
     useState: initial => {
       const index = hook++
@@ -74,7 +74,7 @@ function harness() {
   function render() {
     hook = 0
     const nodes = []
-    const tree = module.exports.SearchPage({ videoCode: "FNS-258", onDownloaded: code => associated.push(code) })
+    const tree = module.exports.SearchPage({ videoCode: "FNS-258", onDownloaded: code => associated.push(code), onClose: () => { dismissed++; unmount() } })
     function visit(node) {
       if (Array.isArray(node)) { node.forEach(visit); return }
       if (!node?.props) return
@@ -84,10 +84,12 @@ function harness() {
     visit(tree)
     return nodes
   }
+  function unmount() { cleanups.forEach(cleanup => cleanup?.()); cleanups = [] }
   return { render, pending, controllers, saved, associated, previews,
     holdDownloads() { holdDownloads = true },
     finishDownload() { heldDownloads.shift()("fixture SRT") },
-    mount() { render(); mounted = true; return effects.map(effect => effect()) },
+    mount() { render(); mounted = true; cleanups = effects.map(effect => effect()); return cleanups },
+    back() { dismissed++; unmount() },
     startWebView() { const request = pending.at(-1); request.controller = new Controller(); request.options.onControllerChange(request.controller); return request.controller },
     get dismissed() { return dismissed },
   }
@@ -97,6 +99,9 @@ const resolveSearch = (page, result = {}) => page.pending.at(-1).resolve({ files
 
 const page = harness()
 page.mount()
+assert.ok(page.render().some(node => node.props.navigationTitle === "按番号搜索字幕" && node.props.navigationBarTitleDisplayMode === "inline"), "Use the system navigation title")
+assert.equal(page.render().some(node => node.type === "NavigationStack"), false, "Reuse the parent navigation stack so native back is available")
+assert.equal(page.render().some(node => node.props.accessibilityLabel === "关闭字幕搜索"), false, "No custom close button")
 assert.equal(page.pending.length, 1, "Search the remaining provider immediately on mount")
 assert.equal(page.pending[0].code, "FNS-258")
 page.pending[0].options.onProgress({ files: [file], searchResultCount: 3, processedDetailCount: 1, failedDetailCount: 0 })
@@ -145,7 +150,7 @@ assert.match(texts(empty.render()), /没有找到这个番号的简体或繁体�
 const closed = harness()
 closed.mount()
 const closedController = closed.startWebView()
-closed.render().find(node => node.type === "Button" && node.props.accessibilityLabel === "关闭字幕搜索").props.action()
+closed.back()
 assert.ok(closedController.dismissed, "Closing search immediately dismisses a visible validation window")
 resolveSearch(closed)
 await settle()
@@ -196,7 +201,7 @@ for (const action of ["onDownload", "onPreview"]) {
   const late = harness()
   late.mount(); resolveSearch(late); await settle(); late.holdDownloads()
   late.render().find(node => node.type === "SubtitleFileRow").props[action](file)
-  late.render().find(node => node.type === "Button" && node.props.accessibilityLabel === "关闭字幕搜索").props.action()
+  late.back()
   late.finishDownload(); await settle()
   assert.deepEqual(late.saved, [], "A dismissed search page must not associate late download results")
   assert.deepEqual(late.previews, [], "A late result must not open QuickLook after dismissal")
