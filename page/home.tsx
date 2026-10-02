@@ -35,17 +35,18 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
     setRemoteLoading(true)
     setRemoteError(null)
     const results = await Promise.allSettled([
-      missavClient.searchVideoPage({ collection: "today-hot", page: 1, sort: "today_views", filter: "" }, { forceRefresh: force, scope }),
-      missavClient.searchVideoPage({ collection: "new", page: 1, sort: "published_at", filter: "" }, { forceRefresh: force, scope }),
+      missavClient.searchVideoPage({ collection: "today-hot", page: 1, sort: "today_views", filter: "" }, { forceRefresh: force, scope, allowStale: true }),
+      missavClient.searchVideoPage({ collection: "new", page: 1, sort: "published_at", filter: "" }, { forceRefresh: force, scope, allowStale: true }),
     ])
     if (current !== remoteGeneration.current) return
     setRemote(previous => ({
       trending: results[0].status === "fulfilled" ? results[0].value.items.slice(0, 10) : previous.trending,
       latest: results[1].status === "fulfilled" ? results[1].value.items.slice(0, 10) : previous.latest,
     }))
-    const failures = results.flatMap((result, index) => result.status === "rejected" && !isMissAVRequestCancelled(result.reason)
-      ? [`${index === 0 ? "今日热门" : "最近更新"}：${errorMessage(result.reason)}`]
-      : [])
+    const failures = results.flatMap((result, index) => {
+      const message = result.status === "fulfilled" ? result.value.refreshError : !isMissAVRequestCancelled(result.reason) ? errorMessage(result.reason) : undefined
+      return message ? [`${index === 0 ? "今日热门" : "最近更新"}：${message}`] : []
+    })
     if (failures.length) setRemoteError(`在线内容更新失败（${failures.join("；")}）。`)
     setRemoteLoading(false)
     requestScope.current = null

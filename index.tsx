@@ -2,10 +2,13 @@ import { Navigation, Script } from "scripting"
 import { HomePage } from "./page"
 import { getMissAVDatabase } from "./database"
 import { installMissAVLifecycle } from "./lifecycle"
+import { installMissAVListingCache } from "./listing-cache"
+import { missavListingCacheDatabase } from "./listing-cache-db"
 
 async function main() {
   Script.enableMinimize()
   const removeLifecycleListeners = installMissAVLifecycle(Script)
+  installMissAVListingCache(missavListingCacheDatabase)
   void getMissAVDatabase().catch(error => console.error(error))
   try {
     await Navigation.present({

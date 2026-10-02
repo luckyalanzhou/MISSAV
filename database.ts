@@ -39,8 +39,11 @@ export function getMissAVDatabase(): Promise<SQLite.Database> {
       await db.execute(`CREATE TABLE IF NOT EXISTS browse_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_viewed_at INTEGER NOT NULL, last_viewed_at INTEGER NOT NULL, view_count INTEGER NOT NULL DEFAULT 1)`)
       await db.execute(`CREATE TABLE IF NOT EXISTS playback_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_played_at INTEGER NOT NULL, last_played_at INTEGER NOT NULL, play_count INTEGER NOT NULL DEFAULT 1, quality_label TEXT NOT NULL)`)
       await db.execute(`CREATE TABLE IF NOT EXISTS playback_progress (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, position_seconds REAL NOT NULL, duration_seconds REAL, updated_at INTEGER NOT NULL)`)
+      await db.execute("CREATE TABLE IF NOT EXISTS listing_cache (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, saved_at INTEGER NOT NULL)")
       await db.createIndex("idx_browse_last_viewed", { table: "browse_history", columns: ["last_viewed_at"], ifNotExists: true })
       await db.createIndex("idx_playback_last_played", { table: "playback_history", columns: ["last_played_at"], ifNotExists: true })
+      await db.createIndex("idx_favourites_added", { table: "favourites", columns: ["added_at"], ifNotExists: true })
+      await db.createIndex("idx_listing_saved", { table: "listing_cache", columns: ["saved_at"], ifNotExists: true })
       await migrateLegacyRecords(db)
       return db
     })()
@@ -52,13 +55,14 @@ export function getMissAVDatabase(): Promise<SQLite.Database> {
   return databasePromise!
 }
 
-async function upsertVideo(db: SQLite.Database, video: MissAVVideoItem, detail?: MissAVVideoDetail): Promise<void> {
-  await db.execute(`INSERT INTO videos (video_code, title, detail_path, cover_url, duration, badge, actress, genres_json, maker, updated_at)
+function videoUpsertStep(video: MissAVVideoItem, detail?: MissAVVideoDetail) {
+  return { sql: `INSERT INTO videos (video_code, title, detail_path, cover_url, duration, badge, actress, genres_json, maker, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(video_code) DO UPDATE SET title=excluded.title, detail_path=excluded.detail_path, cover_url=excluded.cover_url, duration=excluded.duration, badge=excluded.badge,
       actress=COALESCE(excluded.actress, videos.actress), genres_json=COALESCE(excluded.genres_json, videos.genres_json), maker=COALESCE(excluded.maker, videos.maker), updated_at=excluded.updated_at`,
-    [video.videoCode, detail?.title || video.title, video.detailPath, detail?.coverUrl || video.coverUrl, detail?.duration || video.duration || null, video.badge || null, detail?.actress || null, detail ? JSON.stringify(detail.genres) : null, detail?.maker || null, Date.now()])
+    args: [video.videoCode, detail?.title || video.title, video.detailPath, detail?.coverUrl || video.coverUrl, detail?.duration || video.duration || null, video.badge || null, detail?.actress || null, detail ? JSON.stringify(detail.genres) : null, detail?.maker || null, Date.now()] }
 }
+async function upsertVideo(db: SQLite.Database, video: MissAVVideoItem, detail?: MissAVVideoDetail): Promise<void> { const step = videoUpsertStep(video, detail); await db.execute(step.sql, step.args) }
 
 export async function saveVideoDetail(video: MissAVVideoItem, detail: MissAVVideoDetail): Promise<void> { const db = await getMissAVDatabase(); await upsertVideo(db, video, detail) }
 
@@ -77,15 +81,15 @@ export async function toggleFavourite(video: MissAVVideoItem): Promise<boolean> 
 }
 
 export async function recordBrowse(video: MissAVVideoItem, detail?: MissAVVideoDetail): Promise<void> {
-  const db = await getMissAVDatabase(); await upsertVideo(db, video, detail); await updateBrowseRecord(db, video.videoCode)
+  const db = await getMissAVDatabase(); await db.transaction([videoUpsertStep(video, detail), browseRecordStep(video.videoCode)])
 }
 export async function saveVideoDetailAndRecordBrowse(video: MissAVVideoItem, detail: MissAVVideoDetail): Promise<void> {
-  const db = await getMissAVDatabase(); await upsertVideo(db, video, detail); await updateBrowseRecord(db, video.videoCode)
+  await recordBrowse(video, detail)
 }
-async function updateBrowseRecord(db: SQLite.Database, videoCode: string): Promise<void> {
+function browseRecordStep(videoCode: string) {
   const now = Date.now()
-  await db.execute(`INSERT INTO browse_history (video_code, first_viewed_at, last_viewed_at, view_count) VALUES (?, ?, ?, 1)
-    ON CONFLICT(video_code) DO UPDATE SET last_viewed_at=excluded.last_viewed_at, view_count=browse_history.view_count+1`, [videoCode, now, now])
+  return { sql: `INSERT INTO browse_history (video_code, first_viewed_at, last_viewed_at, view_count) VALUES (?, ?, ?, 1)
+    ON CONFLICT(video_code) DO UPDATE SET last_viewed_at=excluded.last_viewed_at, view_count=browse_history.view_count+1`, args: [videoCode, now, now] }
 }
 export async function loadBrowseHistory(limit = 100): Promise<MissAVBrowseRecord[]> {
   const db = await getMissAVDatabase()
@@ -93,9 +97,9 @@ export async function loadBrowseHistory(limit = 100): Promise<MissAVBrowseRecord
 }
 
 export async function recordPlayback(video: MissAVVideoItem, source: MissAVVideoSource): Promise<void> {
-  const db = await getMissAVDatabase(); await upsertVideo(db, video); const now = Date.now()
-  await db.execute(`INSERT INTO playback_history (video_code, first_played_at, last_played_at, play_count, quality_label) VALUES (?, ?, ?, 1, ?)
-    ON CONFLICT(video_code) DO UPDATE SET last_played_at=excluded.last_played_at, play_count=playback_history.play_count+1, quality_label=excluded.quality_label`, [video.videoCode, now, now, source.label])
+  const db = await getMissAVDatabase(); const now = Date.now()
+  await db.transaction([videoUpsertStep(video), { sql: `INSERT INTO playback_history (video_code, first_played_at, last_played_at, play_count, quality_label) VALUES (?, ?, ?, 1, ?)
+    ON CONFLICT(video_code) DO UPDATE SET last_played_at=excluded.last_played_at, play_count=playback_history.play_count+1, quality_label=excluded.quality_label`, args: [video.videoCode, now, now, source.label] }])
 }
 export async function loadPlaybackHistory(limit = 100): Promise<MissAVPlaybackRecord[]> {
   const db = await getMissAVDatabase()
@@ -121,8 +125,7 @@ export async function savePlaybackProgress(videoCode: string, positionSeconds: n
 }
 export async function clearPlaybackHistory(): Promise<void> {
   const db = await getMissAVDatabase()
-  await db.execute("DELETE FROM playback_progress")
-  await db.execute("DELETE FROM playback_history")
+  await db.transaction([{ sql: "DELETE FROM playback_progress" }, { sql: "DELETE FROM playback_history" }])
 }
 export async function clearBrowseHistory(): Promise<void> { const db = await getMissAVDatabase(); await db.execute("DELETE FROM browse_history") }
 

@@ -68,10 +68,11 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
     if (sourceChanged) { setItems([]); setHasNext(false); setPage(1) }
     try {
       const result = nextSource.kind === "query"
-        ? await missavClient.searchVideoPage({ query: nextSource.query, page: nextPage, sort: "released_at", filter: "" }, { forceRefresh, scope })
-        : await missavClient.searchVideoPage({ collection: nextSource.collection, page: nextPage, sort: defaultMissAVCollectionSort(nextSource.collection), filter: "" }, { forceRefresh, scope })
+        ? await missavClient.searchVideoPage({ query: nextSource.query, page: nextPage, sort: "released_at", filter: "" }, { forceRefresh, scope, allowStale: true })
+        : await missavClient.searchVideoPage({ collection: nextSource.collection, page: nextPage, sort: defaultMissAVCollectionSort(nextSource.collection), filter: "" }, { forceRefresh, scope, allowStale: true })
       if (gen !== generation.current) return
       setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1)
+      setError(result.refreshError || null)
     } catch (reason) {
       if (gen === generation.current && !isMissAVRequestCancelled(reason)) setError(reason instanceof Error ? reason.message : String(reason))
     } finally { if (gen === generation.current) { setLoading(false); requestScope.current = null } }
@@ -130,7 +131,7 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
             </VStack>
           </VStack>
           {loading && !items.length ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 260 }} /> : error && !items.length ? <StateView title={source.kind === "query" && !source.query ? "输入搜索内容" : "加载失败"} description={error} kind="error" action={source.kind === "query" && !source.query ? undefined : () => { void loadResults(source, page, true) }} /> : !items.length ? <StateView title="未找到结果" description="请尝试其他番号、女优、作品标题或浏览分类。" kind="empty" systemImage="magnifyingglass" action={showDiscovery} actionTitle="浏览分类" /> : <SearchResultList items={items} layout={resultLayout} onOpen={open} />}
-          {error && items.length ? <Text font="footnote" foregroundStyle="secondaryLabel">新结果加载失败，当前仍显示上次成功的结果。</Text> : undefined}
+          {error && items.length ? <Text font="footnote" foregroundStyle="secondaryLabel">{error}</Text> : undefined}
           {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void loadResults(source, page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void loadResults(source, page + 1) }} /></HStack> : undefined}
         </VStack>}
         </VStack>

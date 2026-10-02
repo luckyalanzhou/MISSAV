@@ -52,9 +52,10 @@ export function DiscoverPage(props: { accessRevision?: number; onFavouriteChange
     if (queryChanged) { setItems([]); setCategories([]); setHasNext(true) }
     setLoading(true); setError(null)
     try {
-      const result = await missavClient.searchVideoPage(nextQuery, { forceRefresh, scope })
+      const result = await missavClient.searchVideoPage(nextQuery, { forceRefresh, scope, allowStale: true })
       if (gen !== generation.current) return
       setItems(result.items); setCategories(result.categories || []); setHasNext(result.hasNext); setPage(result.page)
+      setError(result.refreshError || null)
     } catch (reason) { if (gen === generation.current && !isMissAVRequestCancelled(reason)) setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { if (gen === generation.current) { setLoading(false); requestScope.current = null } }
   }
@@ -109,7 +110,7 @@ export function DiscoverPage(props: { accessRevision?: number; onFavouriteChange
             {recommendations.length ? <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 14 }]} spacing={20}>{recommendations.map(video => <MediaGridCard key={video.videoCode} video={video} onOpen={open} />)}</LazyVGrid> : undefined}
           </>}
 
-          {error && items.length ? <StateView title="刷新失败" description="正在显示上次结果。" kind="error" action={() => { void load({}, true) }} actionTitle="重试" /> : undefined}
+          {error && (items.length || categories.length) ? <StateView title="刷新失败" description={error} kind="error" action={() => { void load({}, true) }} actionTitle="重试" /> : undefined}
           {items.length || categories.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load({ page: page - 1 }) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load({ page: page + 1 }) }} /></HStack> : undefined}
         </VStack>
       </VStack>

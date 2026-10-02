@@ -2,6 +2,7 @@ import { fetch } from "scripting"
 import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
 import { captureCloudflareSession, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
 import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
+import { readCachedListing, writeCachedListing, LISTING_CACHE_FRESH_MS } from "./listing-cache"
 import * as SiteHTML from "./html-parser"
 import { isMatchingWebViewURL, loadWebViewPage, type WebViewDocument } from "./webview"
 import { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
@@ -32,7 +33,7 @@ export type MissAVVideoSource = { label: string; qualityHeight?: number; url: st
 export type MissAVVideoDetail = { title: string; videoCode: string; coverUrl: string; duration?: string; releaseDate?: string; actress?: string; genres: string[]; maker?: string; sources: MissAVVideoSource[]; watchUrl: string }
 export type MissAVCategoryItem = { title: string; path: string; coverUrl?: string }
 export type MissAVSearchParams = { collection?: MissAVCollection; query?: string; page?: number; sort?: MissAVSort; filter?: MissAVFilter; categoryPath?: string }
-export type MissAVSearchPage = { items: MissAVVideoItem[]; categories?: MissAVCategoryItem[]; page: number; hasNext: boolean; title: string }
+export type MissAVSearchPage = { items: MissAVVideoItem[]; categories?: MissAVCategoryItem[]; page: number; hasNext: boolean; title: string; cachedAt?: number; stale?: boolean; refreshError?: string }
 export type MissAVAccessProbe = { collection: MissAVCollection; title: string; url: string; params: MissAVSearchParams }
 
 const SEARCH_PAGE_CACHE_TTL_MS = 45_000
@@ -66,7 +67,7 @@ class MissAVClient {
   private activePageScopes = new Set<MissAVRequestScope>()
   private verificationGate: { promise: Promise<void>; release: () => void; cachedKeys: Set<string> } | null = null
 
-  async searchVideoPage(params: MissAVSearchParams, options: { forceRefresh?: boolean; scope?: MissAVRequestScope } = {}): Promise<MissAVSearchPage> {
+  async searchVideoPage(params: MissAVSearchParams, options: { forceRefresh?: boolean; scope?: MissAVRequestScope; allowStale?: boolean } = {}): Promise<MissAVSearchPage> {
     const caller = options.scope || new MissAVRequestScope()
     await this.waitForVerification(caller)
     caller.assertActive()
@@ -83,13 +84,19 @@ class MissAVClient {
       this.searchPageCache.delete(url)
     }
     const pending = this.searchPageRequests.get(url)
-    if (pending && !pending.scope.cancelled && (!forceRefresh || pending.forceRefresh)) return this.consumeSearchPage(pending, caller)
+    if (pending && !pending.scope.cancelled && (!forceRefresh || pending.forceRefresh)) return this.consumeSearchPage(pending, caller, url, options.allowStale)
 
     const requestId = ++this.searchRequestId
     const scope = new MissAVRequestScope()
     let parseMs = 0, parseCount = 0
     let parseState: "normal" | "cancelled" | "load-error" = "load-error"
     const request = (async () => {
+      const persistent = await scope.waitFor(readCachedListing(url))
+      scope.assertActive()
+      if (!forceRefresh && persistent && Date.now() - persistent.savedAt < LISTING_CACHE_FRESH_MS) {
+        parseState = "normal"
+        return { ...persistent.value, cachedAt: persistent.savedAt }
+      }
       const directory = params.collection && isMissAVDirectoryCollection(params.collection) && !params.categoryPath && !params.query ? params.collection : null
       // WebKit readiness polling can return an identical snapshot repeatedly.
       // Retain only the last snapshot per request, not a growing HTML cache.
@@ -137,15 +144,18 @@ class MissAVClient {
       parseState = "normal"
       return value
     })()
-    const tracked = request.then(value => {
+    const tracked = request.then(async value => {
       scope.assertActive()
+      if (new URL(url).origin !== new URL(getMissAVBaseURL()).origin) { scope.cancel(); scope.assertActive() }
       if (this.searchPageRequests.get(url)?.requestId === requestId) {
         if (this.searchPageCache.size >= MAX_CACHED_SEARCH_PAGES) {
           const oldestKey = this.searchPageCache.keys().next().value
           if (oldestKey) this.searchPageCache.delete(oldestKey)
         }
-        this.searchPageCache.set(url, { expiresAt: Date.now() + SEARCH_PAGE_CACHE_TTL_MS, value })
+        this.searchPageCache.set(url, { expiresAt: (value.cachedAt || Date.now()) + SEARCH_PAGE_CACHE_TTL_MS, value })
+        if (!value.cachedAt) await writeCachedListing(url, value, Date.now())
       }
+      scope.assertActive()
       return value
     }).catch(error => {
       parseState = isMissAVRequestCancelled(error) ? "cancelled" : "load-error"
@@ -161,12 +171,21 @@ class MissAVClient {
     const task: PendingSearchPage = { requestId, forceRefresh, promise: tracked, scope, consumers: 0, settled: false }
     void tracked.then(() => { task.settled = true }, () => { task.settled = true })
     this.searchPageRequests.set(url, task)
-    return this.consumeSearchPage(task, caller)
+    return this.consumeSearchPage(task, caller, url, options.allowStale)
   }
 
-  private consumeSearchPage(task: PendingSearchPage, caller: MissAVRequestScope): Promise<MissAVSearchPage> {
+  private consumeSearchPage(task: PendingSearchPage, caller: MissAVRequestScope, url: string, allowStale = false): Promise<MissAVSearchPage> {
     task.consumers += 1
-    return caller.waitFor(task.promise).then(copySearchPage).finally(() => {
+    return caller.waitFor(task.promise).then(copySearchPage).catch(async error => {
+      // Fallback is a per-consumer choice. Verification and recommendations
+      // never accept stale content as evidence of online accessibility.
+      if (!allowStale || task.scope.cancelled || isMissAVRequestCancelled(error)) throw error
+      const cached = await caller.waitFor(readCachedListing(url))
+      caller.assertActive()
+      if (!cached || new URL(url).origin !== new URL(getMissAVBaseURL()).origin) throw error
+      return { ...copySearchPage(cached.value), stale: true, cachedAt: cached.savedAt,
+        refreshError: `正在显示本地缓存（${new Date(cached.savedAt).toLocaleString("zh-CN")}）。${error instanceof Error ? error.message : "在线内容暂时无法更新。"}` }
+    }).finally(() => {
       task.consumers -= 1
       if (!task.settled && task.consumers === 0) task.scope.cancel()
     })

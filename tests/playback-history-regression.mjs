@@ -15,6 +15,11 @@ globalThis.FileManager = { documentsDirectory: "/fixture" }
 const sqlite = new DatabaseSync(":memory:")
 sqlite.exec("PRAGMA foreign_keys = ON")
 const nativeBridge = {
+  transaction: async steps => {
+    sqlite.exec("BEGIN")
+    try { for (const step of steps) sqlite.prepare(step.sql).run(...(step.args || [])); sqlite.exec("COMMIT") }
+    catch (error) { sqlite.exec("ROLLBACK"); throw error }
+  },
   execute: async (sql, params = []) => sqlite.prepare(sql).run(...params),
   fetchAll: async (sql, params = []) => sqlite.prepare(sql).all(...params),
   fetchOne: async (sql, params = []) => sqlite.prepare(sql).get(...params) || null,
