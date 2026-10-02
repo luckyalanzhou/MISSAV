@@ -5,7 +5,7 @@ import { dirname, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 const { babelTransform } = createRequire(import.meta.url)(process.argv[2] || "playwright/lib/transform/babelBundle.js")
 const modules = new Map(), assets = [], players = [], timers = new Map()
-let nextTimer = 0, mode = "waiting", close, modal, audioFailure
+let nextTimer = 0, mode = "waiting", close, modal, audioFailure, suppressStatusCallback = false
 let cleanups = []
 const scripting = {
   Device: { supportedInterfaceOrientations: ["portrait"] },
@@ -24,16 +24,19 @@ const scripting = {
   ...Object.fromEntries(["AVPlayerView", "ForEach", "Text", "ZStack"].map(tag => [tag, tag])),
 }
 globalThis.Storage = { get: () => undefined }
+const oldTimeControlStatus = globalThis.TimeControlStatus
+// Deliberately non-string enum values catch string-only status comparisons.
+globalThis.TimeControlStatus = { paused: 0, waitingToPlayAtSpecifiedRate: 1, playing: 2 }
 globalThis.AVAsset = class { constructor(url, options) { this.source = url; this.options = options; this.disposals = 0; assets.push(this) } dispose() { this.disposals++ } }
 globalThis.AVPlayer = class {
-  currentTime = 0; duration = 600; timeControlStatus = "paused"; sourceLoads = 0; disposals = 0
+  currentTime = 0; duration = 600; timeControlStatus = TimeControlStatus.paused; sourceLoads = 0; disposals = 0
   constructor() { players.push(this) }
   setSource(source) {
     this.source = source; this.sourceLoads++
     if (mode === "ready" || String(source?.source ?? source).includes("fresh")) this.onReadyToPlay()
     return true
   }
-  play() { this.timeControlStatus = "playing"; this.onTimeControlStatusChanged?.("playing"); return true }
+  play() { this.timeControlStatus = TimeControlStatus.playing; if (!suppressStatusCallback) this.onTimeControlStatusChanged?.(this.timeControlStatus); return true }
   stop() {} dispose() { this.disposals++ }
 }
 globalThis.SharedAudioSession = { setCategory() { if (audioFailure) throw Error("OSStatus error -50") }, setActive() {} }
@@ -104,6 +107,58 @@ try {
   audioFailure = false
 
   mode = "ready"
+  const enumPlayback = present(request())
+  await settle()
+  const enumPlayer = players.at(-1)
+  const staleStartupCallback = [...timers.values()].find(timer => timer.delay === 18_000)?.callback
+  assert.equal(staleStartupCallback, undefined, "Official playing enum must cancel startup timeout immediately")
+  assert.equal([...timers.values()].some(timer => timer.delay === 500), false, "Startup sampling stops once playing")
+  for (let index = 0; index < 8; index++) {
+    enumPlayer.onTimeControlStatusChanged(TimeControlStatus.waitingToPlayAtSpecifiedRate)
+    enumPlayer.onReadyToPlay()
+    enumPlayer.onTimeControlStatusChanged(TimeControlStatus.playing)
+    fire(18_000)
+  }
+  assert.equal(enumPlayer.sourceLoads, 1, "Repeated native resize/status transitions do not reload or replace the source")
+  assert.equal(enumPlayer.disposals, 0)
+  close(); await enumPlayback
+  assert.equal(timers.size, 0)
+
+  suppressStatusCallback = true
+  mode = "waiting"
+  const missedCallback = present(request())
+  await settle()
+  const missedPlayer = players.at(-1)
+  const queuedTimeout = [...timers.values()].find(timer => timer.delay === 18_000).callback
+  missedPlayer.onReadyToPlay()
+  fire(500)
+  assert.equal([...timers.values()].some(timer => timer.delay === 18_000 || timer.delay === 500), false, "Native state detects playback even without callback delivery")
+  missedPlayer.timeControlStatus = TimeControlStatus.waitingToPlayAtSpecifiedRate
+  queuedTimeout()
+  assert.equal(missedPlayer.disposals, 0, "A queued startup timeout cannot close previously playing video during buffering or resizing")
+  close(); await missedCallback
+  assert.equal(timers.size, 0)
+
+  const finalStateCheck = present(request())
+  await settle()
+  players.at(-1).onReadyToPlay()
+  fire(18_000)
+  assert.equal(players.at(-1).disposals, 0, "Timeout rechecks actual playing state before reporting failure")
+  close(); await finalStateCheck
+  assert.equal(timers.size, 0)
+
+  // A resume seek alone is not proof of playback: keep the genuine timeout.
+  const stalledResume = present(request({ resumePositionSeconds: 120, resumeDurationSeconds: 600 }))
+  const stalledResult = assert.rejects(stalledResume, /视频启动超时/)
+  await settle()
+  const stalledPlayer = players.at(-1)
+  stalledPlayer.play = () => { stalledPlayer.timeControlStatus = TimeControlStatus.waitingToPlayAtSpecifiedRate; return true }
+  stalledPlayer.onReadyToPlay()
+  assert.equal(stalledPlayer.currentTime, 120)
+  fire(500); fire(18_000); await stalledResult
+  assert.equal(timers.size, 0)
+  suppressStatusCallback = false
+  mode = "ready"
   let finishData
   const lateData = present(request({ playbackData: new Promise(resolve => { finishData = resolve }), subtitleDataPending: true }))
   await settle()
@@ -120,5 +175,9 @@ try {
   assert.ok(diagnostics.some(entry => entry.phase === "playing"))
   assert.ok(diagnostics.some(entry => entry.phase === "startup-timeout"))
   assert.doesNotMatch(JSON.stringify(diagnostics), /old\.mp4|fresh\.mp4|Late caption/)
-  console.log("PASS: selected asset reuse, one access-error retry, stable player, cancellation, combined startup deadline, audio isolation, late data and resource cleanup")
-} finally { globalThis.setTimeout = oldTimer; globalThis.clearTimeout = oldClear; console.warn = oldWarn }
+  console.log("PASS: official playing enum, missing callbacks, stale deadline/resize guards, real startup timeout, asset reuse, one access-error retry, cancellation, audio isolation, late data and cleanup")
+} finally {
+  globalThis.setTimeout = oldTimer; globalThis.clearTimeout = oldClear; console.warn = oldWarn
+  if (oldTimeControlStatus === undefined) delete globalThis.TimeControlStatus
+  else globalThis.TimeControlStatus = oldTimeControlStatus
+}

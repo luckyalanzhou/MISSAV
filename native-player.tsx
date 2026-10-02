@@ -41,6 +41,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
   let resumeApplied = false, recovering = false, retried = false
   let retryScope: MissAVRequestScope | undefined
   let startupTimer: ReturnType<typeof setTimeout> | undefined
+  let stopStartupPolling: (() => void) | undefined
   let dismissModal: (() => void) | undefined
   let playbackError: Error | undefined
   let reportFailure!: (error: Error) => void
@@ -54,12 +55,30 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     if (request.onProgress) progressWriter.enqueue(positionSeconds, durationSeconds)
   }
   const stopProgress = () => { stopProgressPolling?.(); stopProgressPolling = undefined }
-  const clearStartupTimer = () => { if (startupTimer !== undefined) clearTimeout(startupTimer); startupTimer = undefined }
+  const clearStartupTimer = () => {
+    if (startupTimer !== undefined) clearTimeout(startupTimer)
+    startupTimer = undefined
+    stopStartupPolling?.(); stopStartupPolling = undefined
+  }
+  const isPlaying = (status: TimeControlStatus) => status === (typeof TimeControlStatus !== "undefined" ? TimeControlStatus.playing : "playing")
   const startProgress = () => {
     if (!hasStarted || hasEnded || closing || stopProgressPolling || !request.onProgress) return
     stopProgressPolling = startPlaybackPolling(() => {
       if (!hasEnded && !closing) saveProgress(player.currentTime, player.duration)
     }, 5_000)
+  }
+  const confirmPlaying = () => {
+    if (closing || recovering || playbackError || hasEnded) return
+    if (!hasPlayed) mark("playing")
+    hasPlayed = true
+    clearStartupTimer()
+    startProgress()
+  }
+  const observeStartup = () => {
+    if (closing || recovering || playbackError || hasEnded || hasPlayed) return
+    // Native controls may deliver state callbacks late. Read the documented
+    // player state as well; view resizing never starts a new startup deadline.
+    if (isPlaying(player.timeControlStatus)) confirmPlaying()
   }
   const applyResume = () => {
     if (resumeApplied || closing || hasEnded) return
@@ -125,7 +144,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     }
     player.onTimeControlStatusChanged = status => {
       if (closing || recovering || playbackError) return
-      if (status === "playing") { if (!hasPlayed) mark("playing"); hasPlayed = true; clearStartupTimer(); startProgress() }
+      if (isPlaying(status)) confirmPlaying()
       else if (hasStarted && !hasEnded) { stopProgress(); saveProgress(player.currentTime, player.duration) }
     }
     player.onEnded = () => {
@@ -136,7 +155,14 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     // Each native audio operation and the complete source/retry startup are bounded.
     await withMissAVDeadline(Promise.resolve(SharedAudioSession.setCategory("playback", [])), 3_000, "音频会话配置超时。")
     await withMissAVDeadline(Promise.resolve(SharedAudioSession.setActive(true)), 3_000, "音频会话启动超时。")
-    startupTimer = setTimeout(() => { mark("startup-timeout", true); fail(new Error("视频启动超时，请检查网络后重试。")) }, 18_000)
+    startupTimer = setTimeout(() => {
+      if (closing || playbackError || hasEnded || hasPlayed) return
+      observeStartup()
+      if (hasPlayed) return
+      mark("startup-timeout", true)
+      fail(new Error("视频启动超时，请检查网络后重试。"))
+    }, 18_000)
+    stopStartupPolling = startPlaybackPolling(observeStartup, 500)
     setSource(request.url, request.headers, request.asset)
     const previousOrientations = Device.supportedInterfaceOrientations.slice()
     Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
