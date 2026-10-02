@@ -3,6 +3,7 @@ import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVU
 import { captureCloudflareSession, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
 import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import { readCachedListing, writeCachedListing, LISTING_CACHE_FRESH_MS } from "./listing-cache"
+import { selectMissAVDOMPage } from "./listing-dom"
 import * as SiteHTML from "./html-parser"
 import { isMatchingWebViewURL, loadWebViewPage, type WebViewDocument } from "./webview"
 import { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
@@ -118,8 +119,10 @@ class MissAVClient {
         const result = parsePage(html)
         return result.items.length > 0 || Boolean(result.categories?.length)
       }
+      let compactHTML: string | undefined
       const fetchListing = async (targetURL: string) => {
-        const html = await this.fetchHtml(targetURL, isContentReady, scope)
+        compactHTML = undefined
+        const html = await this.fetchHtml(targetURL, isContentReady, scope, document => { compactHTML = document.compactHTML })
         // An unfiltered first page must not cache a header-only document as
         // "no content". Searches/filtered/later pages can legitimately be empty.
         if (!params.query && !params.filter && page === 1 && !isContentReady(html)) {
@@ -140,7 +143,7 @@ class MissAVClient {
         if (resolvedURL === url) throw error
         html = await fetchListing(resolvedURL)
       }
-      const value = parsePage(html)
+      const value = selectMissAVDOMPage(url, parsePage(html), compactHTML, parsePage)
       parseState = "normal"
       return value
     })()
@@ -321,7 +324,7 @@ class MissAVClient {
     return url.toString()
   }
 
-  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean, scope = new MissAVRequestScope()): Promise<string> {
+  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean, scope = new MissAVRequestScope(), onDocument?: (document: WebViewDocument) => void): Promise<string> {
     // Use the same persistent WebKit session as the verification window.
     // `scripting.fetch` has a separate cookie jar and a manually supplied UA,
     // so Cloudflare can accept the WebView while returning 403 to fetch.
@@ -368,6 +371,7 @@ class MissAVClient {
       // redirect/load callback as incomplete for this route.
       if (SiteHTML.isLikelyMissAVHTML(html)) {
         pageState = "normal"
+        onDocument?.({ url: page.url || url, html, compactHTML: page.compactHTML })
         this.rememberCollectionRoutes(html, url)
         return html
       }

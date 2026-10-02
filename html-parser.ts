@@ -119,7 +119,8 @@ export function isLikelyMissAVListingHTML(html: string | null): html is string {
 export function extractMissAVVideoCode(value: string | undefined | null): string | null {
   if (!value) return null
   const path = value.replace(/^https?:\/\/[^/]+/i, "").split(/[?#]/)[0].replace(/^\/dm\d+/i, "").replace(/^\/(?:ja|en|cn|ko|ms|th|de|fr|vi|id|fil|pt)\//i, "/")
-  const slug = decodeURIComponent(path.replace(/^\/+|\/+$/g, ""))
+  let slug: string
+  try { slug = decodeURIComponent(path.replace(/^\/+|\/+$/g, "")) } catch { return null }
   return slug && !MISSAV_COLLECTION_OPTIONS.some(option => option.value.toLowerCase() === slug.toLowerCase()) && !/^(?:english-subtitle|search)$/i.test(slug) ? slug.toLowerCase() : null
 }
 

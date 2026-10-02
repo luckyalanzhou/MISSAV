@@ -5,7 +5,7 @@ const MAX_EVENTS = 60
 const hosts = MISSAV_DOMAIN_OPTIONS.map(option => new URL(option.value).hostname)
 const routes = MISSAV_COLLECTION_OPTIONS.map(option => option.value as string)
 const events = ["cookie-restore", "cookie-capture", "page", "verification", "data-task", "lifecycle"] as const
-const phases = ["subtitle-parse", "subtitle-serialize", "listing-parse", "detail-parse", "minimize", "resume"] as const
+const phases = ["subtitle-parse", "subtitle-serialize", "listing-parse", "detail-parse", "dom-compare", "minimize", "resume"] as const
 const states = ["live", "restored", "missing", "invalid", "expired", "scope-mismatch", "rejected", "unconfirmed", "store-unavailable", "unsupported", "saved", "normal", "challenge", "blocked", "unavailable", "cancelled", "load-error", "accessible", "incomplete", "started"] as const
 type DiagnosticState = typeof states[number]
 type DiagnosticInput = {
@@ -14,6 +14,7 @@ type DiagnosticInput = {
   challengeObserved?: boolean; cookieState?: DiagnosticState;
   cookieMs?: number; loadMs?: number; captureMs?: number; parseMs?: number; parseCount?: number;
   background?: boolean; phase?: typeof phases[number];
+  domMatched?: boolean; compactChars?: number;
 }
 export type MissAVAccessDiagnostic = DiagnosticInput & { at: number; event: typeof events[number]; host: string; route: string }
 const history: MissAVAccessDiagnostic[] = []
@@ -26,12 +27,12 @@ export function recordMissAVAccessDiagnostic(event: typeof events[number], targe
     at: Date.now(), event: events.includes(event) ? event : "page", ...label,
     state: states.includes(input.state) ? input.state : "unavailable",
   }
-  for (const key of ["elapsedMs", "attempted", "accepted", "confirmed", "expiresInSeconds", "cookieMs", "loadMs", "captureMs", "parseMs", "parseCount"] as const) {
+  for (const key of ["elapsedMs", "attempted", "accepted", "confirmed", "expiresInSeconds", "cookieMs", "loadMs", "captureMs", "parseMs", "parseCount", "compactChars"] as const) {
     const value = input[key]
     if (typeof value === "number" && Number.isFinite(value)) entry[key] = Math.max(0, Math.round(value))
     else if (key === "expiresInSeconds" && value === null) entry.expiresInSeconds = null
   }
-  for (const key of ["clearance", "loaded", "finished", "challengeObserved", "background"] as const) {
+  for (const key of ["clearance", "loaded", "finished", "challengeObserved", "background", "domMatched"] as const) {
     if (typeof input[key] === "boolean") entry[key] = input[key]
   }
   if (input.cookieState && states.includes(input.cookieState)) entry.cookieState = input.cookieState

@@ -1,7 +1,8 @@
 import { classifyCloudflareHTML, hasCloudflareInteractivePrompt } from "./html-parser"
 import type { MissAVRequestScope } from "./request-scope"
+import { isMissAVDOMExtractionTrialEnabled, MISSAV_DOM_DOCUMENT_SCRIPT } from "./listing-dom"
 
-export type WebViewDocument = { url: string; html: string | null }
+export type WebViewDocument = { url: string; html: string | null; compactHTML?: string }
 
 export type WebViewPageLoad = {
   loaded: boolean
@@ -9,6 +10,7 @@ export type WebViewPageLoad = {
   html: string | null
   url?: string
   challengeObserved?: boolean
+  compactHTML?: string
 }
 
 const WEBVIEW_PAGE_LOAD_TIMEOUT_MS = 30_000
@@ -38,11 +40,14 @@ export async function readMatchingWebViewDocument(controller: WebViewController,
     // Read location and markup together so a redirect cannot pair old HTML with a new URL.
     const document = await Promise.race([
       controller.evaluateJavaScript<WebViewDocument>(
-        "return { url: window.location.href, html: document.documentElement ? document.documentElement.outerHTML : null }"),
+        isMissAVDOMExtractionTrialEnabled() ? MISSAV_DOM_DOCUMENT_SCRIPT : "return { url: window.location.href, html: document.documentElement ? document.documentElement.outerHTML : null }"),
       new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), WEBVIEW_DOCUMENT_READ_TIMEOUT_MS) }),
     ])
     return document && typeof document.url === "string" && (document.html === null || typeof document.html === "string")
-      && isMatchingWebViewURL(document.url, expectedURL) ? document : null
+      && isMatchingWebViewURL(document.url, expectedURL) ? {
+        url: document.url, html: document.html,
+        ...(typeof document.compactHTML === "string" && document.compactHTML.length <= 2_000_000 ? { compactHTML: document.compactHTML } : {}),
+      } : null
   } catch { return null }
   finally { if (timer !== undefined) clearTimeout(timer) }
 }
