@@ -17,6 +17,8 @@ function harness(count = 5, storage = new Map()) {
   const requests = []
   const fallbacks = []
   const progress = []
+  const controllers = []
+  const metricsLog = []
   let cancelled = false
   let active = 0
   let peak = 0
@@ -25,18 +27,21 @@ function harness(count = 5, storage = new Map()) {
   let clock = Date.now()
   let searchRequests = 0
   const module = { exports: {} }
-  new Function("require", "module", "exports", "Storage", "Date", compiled)(specifier => {
+  new Function("require", "module", "exports", "Storage", "Date", "console", compiled)(specifier => {
     if (specifier === "scripting") return { fetch: async url => {
       if (url.includes("index.php")) { searchRequests++; return { ok: true, text: async () => searchHTML(count) } }
       active++; peak = Math.max(peak, active)
-      return new Promise(resolve => requests.push({ url, finish(html, ok = true) { active--; resolve({ ok, status: ok ? 200 : 503, text: async () => html }) } }))
+      return new Promise(resolve => requests.push({ url, finish(html, ok = true, status = ok ? 200 : 403) { active--; resolve({ ok, status, text: async () => html }) }, fail(error) { active--; resolve(Promise.reject(error)) } }))
     } }
-    if (specifier === "./webview") return { loadWebViewPage: async (_, url) => new Promise(resolve => fallbacks.push({ url, finish(html) { currentURL = url; currentHTML = html; resolve({ loaded: true, finished: true, html }) } })) }
+    if (specifier === "./subtitlecat-webview") return {
+      loadSubtitleWebViewDocument: async (controller, url, options) => new Promise(resolve => fallbacks.push({ controller, url, options, finish(html) { currentURL = url; currentHTML = html; resolve({ url, html, previousDocument: false }) } })),
+      readSubtitleWebViewDocument: async () => ({ url: currentURL, html: currentHTML, previousDocument: false }),
+    }
     throw new Error(`Unexpected dependency: ${specifier}`)
-  }, module, module.exports, { get: key => storage.get(key), set: (key, value) => storage.set(key, value) }, { now: () => clock })
-  const controller = { getHTML: async () => currentHTML, evaluateJavaScript: async () => currentURL }
-  return { api: module.exports, controller, requests, fallbacks, progress, storage,
-    run(overrides = {}) { return module.exports.searchSubtitleCatFiles(controller, "FNS-258", { onProgress: result => progress.push(result), isCancelled: () => cancelled, ...overrides }) },
+  }, module, module.exports, { get: key => storage.get(key), set: (key, value) => storage.set(key, value) }, { now: () => clock }, { log: (_, data) => metricsLog.push(data) })
+  const createController = () => { const controller = { disposed: false, dispose() { this.disposed = true } }; controllers.push(controller); return controller }
+  return { api: module.exports, requests, fallbacks, progress, storage, controllers, createController,
+    run(overrides = {}) { return module.exports.searchSubtitleCatFiles("FNS-258", { onProgress: result => progress.push(result), isCancelled: () => cancelled, createController, ...overrides }) },
     cancel() { cancelled = true },
     advance(ms) { clock += ms },
     get searchRequests() { return searchRequests },
@@ -64,6 +69,7 @@ assert.equal(result.processedDetailCount, 5)
 assert.equal(result.failedDetailCount, 0)
 assert.equal(result.metrics.httpRequests, 6)
 assert.equal(result.metrics.webViewLoads, 0)
+assert.equal(parallel.controllers.length, 0, "HTTP-only search must not create any native WebView")
 assert.equal(result.files.length, 5)
 assert.deepEqual(result.files.slice(0, 2).map(file => file.language), ["简体中文", "繁体中文"])
 assert.ok(result.metrics.firstResultMs !== null)
@@ -114,6 +120,22 @@ await settle()
 assert.equal(serialFallback.fallbacks.length, 3)
 serialFallback.fallbacks[2].finish(detailHTML(2))
 assert.equal((await fallbackRun).files.length, 3)
+assert.equal(serialFallback.controllers.length, 3)
+assert.ok(serialFallback.controllers.every(controller => controller.disposed))
+assert.notEqual(serialFallback.fallbacks[0].controller, serialFallback.fallbacks[1].controller, "Late navigation callbacks cannot affect another detail's controller")
+
+const cancelledFallback = harness(3)
+const cancelFallbackRun = cancelledFallback.run()
+const cancelFallbackAssertion = assert.rejects(cancelFallbackRun, /搜索已停止/)
+await settle()
+cancelledFallback.requests.forEach(request => request.finish("<title>Just a moment</title>", false))
+await settle()
+assert.equal(cancelledFallback.controllers.length, 1)
+cancelledFallback.cancel()
+cancelledFallback.fallbacks[0].finish(detailHTML(0))
+await cancelFallbackAssertion
+assert.equal(cancelledFallback.controllers.length, 1, "Cancellation suppresses queued native controllers")
+assert.ok(cancelledFallback.controllers[0].disposed)
 
 const stopped = harness(10)
 const stoppedRun = stopped.run()
@@ -137,9 +159,9 @@ const partial = harness(2)
 const partialRun = partial.run()
 await settle()
 partial.requests[0].finish(detailHTML(0, "zh-CN"))
-partial.requests[1].finish("Unavailable", false)
+partial.requests[1].finish("Unavailable", false, 503)
 await settle()
-partial.fallbacks[0].finish("<html>Not a subtitle page</html>")
+assert.equal(partial.fallbacks.length, 0, "Server errors must not duplicate the request through WebKit")
 assert.equal((await partialRun).failedDetailCount, 1)
 const partialRetry = partial.run()
 await settle()
@@ -157,7 +179,7 @@ assert.equal((await harness(0, corruptStorage).run()).metrics.httpRequests, 1, "
 const limited = harness(0)
 for (let index = 0; index < 51; index++) {
   limited.advance(1)
-  await limited.api.searchSubtitleCatFiles(limited.controller, `TEST-${index}`)
+  await limited.api.searchSubtitleCatFiles(`TEST-${index}`, { createController: limited.createController })
 }
 const records = JSON.parse(limited.storage.get("missav_subtitlecat_search_cache_v1")).records
 assert.equal(Object.keys(records).length, 50, "Keep at most 50 video codes")
@@ -171,4 +193,12 @@ const unavailableStorage = new Map()
 unavailableStorage.set = () => { throw new Error("Storage unavailable") }
 assert.equal((await harness(0, unavailableStorage).run()).searchResultCount, 0, "Storage failure must not break valid online search")
 console.log("PASS: persistent two-layer cache; zero-request repeat; explicit refresh; 30-minute expiry; failed-detail-only retry; corrupt cache safety")
+const networkTimeout = harness(1)
+const timedOut = networkTimeout.run()
+const timeoutAssertion = assert.rejects(timedOut, /详情页暂时无法读取/)
+await settle()
+networkTimeout.requests[0].fail(new Error("Request timeout"))
+await timeoutAssertion
+assert.equal(networkTimeout.controllers.length, 0, "Network timeouts must not wait for a second native request")
+assert.equal(networkTimeout.fallbacks.length, 0)
 console.log("PASS: three HTTP workers; progressive Chinese-first results; serialized native fallback; cancellation; empty results; metrics")

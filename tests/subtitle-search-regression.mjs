@@ -26,6 +26,7 @@ function harness() {
   let dismissed = 0
   class Controller {
     constructor() { controllers.push(this); this.disposed = false }
+    dismiss() { this.dismissed = true }
     dispose() { this.disposed = true }
   }
   const scripting = {
@@ -47,7 +48,13 @@ function harness() {
     if (specifier === "scripting") return scripting
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "../subtitlecat") return {
-      searchSubtitleCatFiles: (controller, code, options) => new Promise((resolve, reject) => pending.push({ controller, code, options, resolve, reject })),
+      searchSubtitleCatFiles: (code, options) => new Promise((resolve, reject) => {
+        const request = { code, options, controller: null,
+          resolve(result) { request.controller?.dispose(); options.onControllerChange?.(null); resolve(result) },
+          reject(error) { request.controller?.dispose(); options.onControllerChange?.(null); reject(error) },
+        }
+        pending.push(request)
+      }),
       downloadSubtitleCatFile: async value => { assert.equal(value, file); return "fixture SRT" },
     }
     if (specifier === "../subtitles") return { saveMissAVSubtitle: async (...args) => saved.push(args) }
@@ -70,6 +77,7 @@ function harness() {
   }
   return { render, pending, controllers, saved, associated,
     mount() { render(); mounted = true; return effects.map(effect => effect()) },
+    startWebView() { const request = pending.at(-1); request.controller = new Controller(); request.options.onControllerChange(request.controller); return request.controller },
     get dismissed() { return dismissed },
   }
 }
@@ -86,7 +94,7 @@ assert.ok(page.render().some(node => node.type === "SubtitleFileRow"), "Render p
 assert.doesNotMatch(texts(page.render()), /没有找到这个番号/)
 resolveSearch(page)
 await settle()
-assert.ok(page.controllers[0].disposed)
+assert.equal(page.controllers.length, 0, "Normal searches must not create a WebView")
 let nodes = page.render()
 assert.match(texts(nodes), /共找到 1 个可下载字幕文件/)
 assert.match(texts(nodes), /Subtitle Cat/)
@@ -115,7 +123,7 @@ nodes = failed.render()
 assert.match(texts(nodes), /网络暂时不可用/)
 assert.match(texts(nodes), /不能据此认定没有字幕/)
 assert.ok(nodes.some(node => node.type === "Button" && node.props.title === "重试搜索"))
-assert.ok(failed.controllers[0].disposed)
+assert.equal(failed.controllers.length, 0)
 
 const empty = harness()
 empty.mount()
@@ -125,7 +133,9 @@ assert.match(texts(empty.render()), /没有找到这个番号的字幕文件/)
 
 const closed = harness()
 closed.mount()
+const closedController = closed.startWebView()
 closed.render().find(node => node.type === "Button" && node.props.accessibilityLabel === "关闭字幕搜索").props.action()
+assert.ok(closedController.dismissed, "Closing search immediately dismisses a visible validation window")
 resolveSearch(closed)
 await settle()
 assert.ok(closed.controllers[0].disposed)

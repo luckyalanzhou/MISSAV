@@ -189,20 +189,23 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   const [error, setError] = useState<string | null>(null)
   const [hasSearched, setHasSearched] = useState(false)
   const [searchProgress, setSearchProgress] = useState("")
-  const controllerRef = useRef<WebViewController | null>(null)
+  const searchSession = useRef<{ controller: WebViewController | null; cancelled: boolean } | null>(null)
 
   function stopSearch() {
-    const controller = controllerRef.current
-    controllerRef.current = null
-    controller?.dispose()
+    const session = searchSession.current
+    searchSession.current = null
+    if (session) {
+      session.cancelled = true
+      try { session.controller?.dismiss() } catch { /* The native window may already be closing. */ }
+    }
   }
 
   async function search(value = query, forceRefresh = false) {
     const code = value.trim().toUpperCase().replace(/\s+/g, "-")
     if (!code || loading || downloadingId) return
-    controllerRef.current?.dispose()
-    const controller = new WebViewController()
-    controllerRef.current = controller
+    stopSearch()
+    const session = { controller: null as WebViewController | null, cancelled: false }
+    searchSession.current = session
     setQuery(code)
     setLoading(true)
     setError(null)
@@ -214,7 +217,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
     setHasSearched(false)
     setSearchProgress("正在搜索匹配条目…")
     const updateResults = (result: SubtitleCatSearchResult) => {
-      if (controllerRef.current !== controller) return
+      if (searchSession.current !== session) return
       setTitle(code)
       setFiles(result.files)
       setSourceStatus([`Subtitle Cat：${result.files.length} 个文件，${result.searchResultCount} 个匹配条目${result.failedDetailCount ? `，${result.failedDetailCount} 个详情页未能读取` : ""}`])
@@ -225,24 +228,27 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
       setHasSearched(true)
     }
     try {
-      const result = await searchSubtitleCatFiles(controller, code, {
-        isCancelled: () => controllerRef.current !== controller,
+      const result = await searchSubtitleCatFiles(code, {
+        isCancelled: () => session.cancelled || searchSession.current !== session,
+        onControllerChange: controller => {
+          session.controller = controller
+          if (controller && session.cancelled) controller.dismiss()
+        },
         onProgress: updateResults,
         forceRefresh,
       })
-      if (controllerRef.current !== controller) return
+      if (searchSession.current !== session) return
       updateResults(result)
     } catch (reason) {
-      if (controllerRef.current === controller) {
+      if (searchSession.current === session) {
         setTitle(code)
         setHasSearched(true)
         setHasIncompleteResults(true)
         setError(reason instanceof Error ? reason.message : String(reason))
       }
     } finally {
-      if (controllerRef.current === controller) {
-        controller.dispose()
-        controllerRef.current = null
+      if (searchSession.current === session) {
+        searchSession.current = null
         setLoading(false)
       }
     }
@@ -251,7 +257,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   async function download(file: SubtitleCatSubtitleFile) {
     if (!file.isFree || file.isDemo || downloadingId) return
     const fileKey = `${file.source}:${file.id}`
-    if (controllerRef.current) {
+    if (searchSession.current) {
       stopSearch()
       setLoading(false)
       setHasIncompleteResults(true)
