@@ -4,6 +4,10 @@ import { loadWebViewPage } from "./webview"
 const SUBTITLECAT_ORIGIN = "https://www.subtitlecat.com"
 const SUBTITLECAT_HOME = `${SUBTITLECAT_ORIGIN}/`
 const SUBTITLECAT_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+const SUBTITLECAT_CACHE_KEY = "missav_subtitlecat_search_cache_v1"
+const SUBTITLECAT_CACHE_TTL_MS = 30 * 60 * 1000
+const SUBTITLECAT_CACHE_MAX_CODES = 50
+const SUBTITLECAT_CACHE_MAX_CHARACTERS = 2_000_000
 
 export type SubtitleCatSubtitleFile = {
   id: string
@@ -28,11 +32,14 @@ export type SubtitleCatSearchMetrics = {
   firstResultMs: number | null
   httpRequests: number
   webViewLoads: number
+  searchCacheHits: number
+  detailCacheHits: number
 }
 
 export type SubtitleCatSearchOptions = {
   onProgress?: (result: SubtitleCatSearchResult) => void
   isCancelled?: () => boolean
+  forceRefresh?: boolean
 }
 
 class SubtitleCatSearchCancelledError extends Error {
@@ -41,11 +48,18 @@ class SubtitleCatSearchCancelledError extends Error {
 
 export type SubtitleCatSearchEntry = { url: string; title: string }
 type SubtitleCatRawFile = { url?: unknown; details?: unknown }
+type CachedSubtitleCatDetail = { savedAt: number; files: SubtitleCatSubtitleFile[] }
+type CachedSubtitleCatSearch = {
+  savedAt: number
+  touchedAt: number
+  entries: SubtitleCatSearchEntry[]
+  details: Record<string, CachedSubtitleCatDetail>
+}
 
 export async function searchSubtitleCatFiles(controller: WebViewController, value: string, options: SubtitleCatSearchOptions = {}): Promise<SubtitleCatSearchResult> {
   const videoCode = normalizeSubtitleCatVideoCode(value)
   const startedAt = Date.now()
-  const metrics: SubtitleCatSearchMetrics = { elapsedMs: 0, firstResultMs: null, httpRequests: 0, webViewLoads: 0 }
+  const metrics: SubtitleCatSearchMetrics = { elapsedMs: 0, firstResultMs: null, httpRequests: 0, webViewLoads: 0, searchCacheHits: 0, detailCacheHits: 0 }
   const checkCancelled = () => {
     if (options.isCancelled?.()) throw new SubtitleCatSearchCancelledError()
   }
@@ -67,7 +81,15 @@ export async function searchSubtitleCatFiles(controller: WebViewController, valu
   }
   // The site's public GET search form uses index.php?search=...; show=1000 is its Load More link.
   const searchURL = `${SUBTITLECAT_ORIGIN}/index.php?search=${encodeURIComponent(videoCode)}&show=1000`
-  const entries = parseSubtitleCatSearchHTML(await readPage(searchURL), videoCode)
+  const cached = readSubtitleCatSearchCache(videoCode)
+  const entries = !options.forceRefresh && cached && isFreshSubtitleCatCache(cached.savedAt)
+    ? cached.entries
+    : parseSubtitleCatSearchHTML(await readPage(searchURL), videoCode)
+  if (!options.forceRefresh && cached && entries === cached.entries) metrics.searchCacheHits += 1
+  const cache: CachedSubtitleCatSearch = metrics.searchCacheHits
+    ? cached!
+    : { savedAt: Date.now(), touchedAt: Date.now(), entries, details: options.forceRefresh ? {} : cached?.details || {} }
+  if (!metrics.searchCacheHits) writeSubtitleCatSearchCache(videoCode, cache)
   const files: SubtitleCatSubtitleFile[] = []
   const seen = new Set<string>()
   let failedDetailCount = 0
@@ -81,19 +103,35 @@ export async function searchSubtitleCatFiles(controller: WebViewController, valu
     metrics: { ...metrics, elapsedMs: Date.now() - startedAt },
   })
   const publish = () => { checkCancelled(); options.onProgress?.(snapshot()) }
+  const mergeFiles = (nextFiles: SubtitleCatSubtitleFile[]) => {
+    for (const file of nextFiles) {
+      if (seen.has(file.downloadURL)) continue
+      seen.add(file.downloadURL)
+      files.push(file)
+    }
+    if (files.length && metrics.firstResultMs === null) metrics.firstResultMs = Date.now() - startedAt
+  }
+  // Publish every cached detail together before scheduling any network work.
+  const pendingEntries = entries.filter(entry => {
+    const detail = !options.forceRefresh ? cache.details[entry.url] : undefined
+    if (!detail || !isFreshSubtitleCatCache(detail.savedAt)) return true
+    mergeFiles(detail.files)
+    processedDetailCount += 1
+    metrics.detailCacheHits += 1
+    return false
+  })
   publish()
   const worker = async () => {
-    while (nextEntry < entries.length && !options.isCancelled?.()) {
-      const entry = entries[nextEntry++]
+    while (nextEntry < pendingEntries.length && !options.isCancelled?.()) {
+      const entry = pendingEntries[nextEntry++]
       try {
         const html = await readPage(entry.url)
         checkCancelled()
-        for (const file of parseSubtitleCatFileHTML(html, entry.url)) {
-          if (seen.has(file.downloadURL)) continue
-          seen.add(file.downloadURL)
-          files.push(file)
-        }
-        if (files.length && metrics.firstResultMs === null) metrics.firstResultMs = Date.now() - startedAt
+        const detailFiles = parseSubtitleCatFileHTML(html, entry.url)
+        mergeFiles(detailFiles)
+        cache.details[entry.url] = { savedAt: Date.now(), files: detailFiles }
+        cache.touchedAt = Date.now()
+        writeSubtitleCatSearchCache(videoCode, cache)
       } catch (error) {
         if (error instanceof SubtitleCatSearchCancelledError || options.isCancelled?.()) return
         failedDetailCount += 1
@@ -102,7 +140,7 @@ export async function searchSubtitleCatFiles(controller: WebViewController, valu
       publish()
     }
   }
-  await Promise.all(Array.from({ length: Math.min(3, entries.length) }, worker))
+  await Promise.all(Array.from({ length: Math.min(3, pendingEntries.length) }, worker))
   checkCancelled()
   if (entries.length && failedDetailCount === entries.length) {
     throw new Error(`Subtitle Cat 搜索到 ${entries.length} 个匹配条目，但详情页暂时无法读取，请重试。`)
@@ -110,6 +148,73 @@ export async function searchSubtitleCatFiles(controller: WebViewController, valu
   const result = snapshot()
   console.log("Subtitle Cat search metrics", { videoCode, ...result.metrics, matchedDetails: entries.length, processedDetailCount, failedDetailCount })
   return result
+}
+
+function isFreshSubtitleCatCache(savedAt: number): boolean {
+  const age = Date.now() - savedAt
+  return Number.isFinite(savedAt) && age >= 0 && age < SUBTITLECAT_CACHE_TTL_MS
+}
+
+function loadSubtitleCatCacheRecords(): Record<string, CachedSubtitleCatSearch> {
+  try {
+    const raw = Storage.get<unknown>(SUBTITLECAT_CACHE_KEY)
+    if (typeof raw !== "string" || raw.length > SUBTITLECAT_CACHE_MAX_CHARACTERS) return {}
+    const stored = JSON.parse(raw)
+    if (stored?.version !== 1 || !stored.records || typeof stored.records !== "object" || Array.isArray(stored.records)) return {}
+    const records: Record<string, CachedSubtitleCatSearch> = {}
+    for (const [code, record] of Object.entries(stored.records)) {
+      if (!/^[A-Z0-9]{2,16}(?:-[A-Z0-9]{1,16}){0,2}$/.test(code) || !record || typeof record !== "object") continue
+      const candidate = record as CachedSubtitleCatSearch
+      if (!isFreshSubtitleCatCache(candidate.touchedAt) || !Array.isArray(candidate.entries) || !candidate.details || typeof candidate.details !== "object" || Array.isArray(candidate.details)) continue
+      records[code] = candidate
+    }
+    return records
+  } catch { return {} }
+}
+
+function readSubtitleCatSearchCache(code: string): CachedSubtitleCatSearch | null {
+  const candidate = loadSubtitleCatCacheRecords()[code]
+  if (!candidate) return null
+  try {
+    // Revalidate persisted URLs and exact code matching; corruption must trigger a new request.
+    const links = candidate.entries.map(entry => {
+      if (typeof entry?.url !== "string" || typeof entry?.title !== "string") throw new Error("Invalid cache entry")
+      const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      return `<a href="${escape(entry.url)}">${escape(entry.title)}</a>`
+    }).join("")
+    const entries = parseSubtitleCatSearchHTML(`<h2>${candidate.entries.length} subtitles found</h2>${links}`, code)
+    if (entries.length !== candidate.entries.length) return null
+    const details: Record<string, CachedSubtitleCatDetail> = {}
+    for (const entry of entries) {
+      const detail = candidate.details[entry.url]
+      if (!detail || !isFreshSubtitleCatCache(detail.savedAt) || !Array.isArray(detail.files)) continue
+      const files = parseSubtitleCatFileListing(JSON.stringify(detail.files.map(file => ({ url: file.downloadURL, details: file.details }))))
+      if (files.length !== detail.files.length) continue
+      details[entry.url] = { savedAt: detail.savedAt, files }
+    }
+    return { savedAt: candidate.savedAt, touchedAt: candidate.touchedAt, entries, details }
+  } catch { return null }
+}
+
+function writeSubtitleCatSearchCache(code: string, record: CachedSubtitleCatSearch): void {
+  try {
+    const records = loadSubtitleCatCacheRecords()
+    // Never retain stale/nonmatching details after an updated search result.
+    const details: Record<string, CachedSubtitleCatDetail> = {}
+    for (const entry of record.entries) {
+      const detail = record.details[entry.url]
+      if (detail && isFreshSubtitleCatCache(detail.savedAt)) details[entry.url] = detail
+    }
+    records[code] = { ...record, details }
+    const keys = Object.keys(records).sort((left, right) => records[left].touchedAt - records[right].touchedAt)
+    while (keys.length > SUBTITLECAT_CACHE_MAX_CODES) delete records[keys.shift()!]
+    let serialized = JSON.stringify({ version: 1, records })
+    while (serialized.length > SUBTITLECAT_CACHE_MAX_CHARACTERS && keys.length) {
+      delete records[keys.shift()!]
+      serialized = JSON.stringify({ version: 1, records })
+    }
+    Storage.set(SUBTITLECAT_CACHE_KEY, serialized)
+  } catch { /* Cache failures must not interrupt search or download. */ }
 }
 
 export function parseSubtitleCatSearchHTML(html: string, value: string): SubtitleCatSearchEntry[] {

@@ -197,7 +197,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
     controller?.dispose()
   }
 
-  async function search(value = query) {
+  async function search(value = query, forceRefresh = false) {
     const code = value.trim().toUpperCase().replace(/\s+/g, "-")
     if (!code || loading || downloadingId) return
     controllerRef.current?.dispose()
@@ -220,13 +220,15 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
       setSourceStatus([`Subtitle Cat：${result.files.length} 个文件，${result.searchResultCount} 个匹配条目${result.failedDetailCount ? `，${result.failedDetailCount} 个详情页未能读取` : ""}`])
       setHasSuccessfulSource(result.processedDetailCount > result.failedDetailCount || result.searchResultCount === 0)
       setHasIncompleteResults(result.failedDetailCount > 0 || result.processedDetailCount < result.searchResultCount)
-      setSearchProgress(`已读取 ${result.processedDetailCount}/${result.searchResultCount} 个匹配条目`)
+      const cacheHits = (result.metrics?.searchCacheHits || 0) + (result.metrics?.detailCacheHits || 0)
+      setSearchProgress(`已读取 ${result.processedDetailCount}/${result.searchResultCount} 个匹配条目${cacheHits ? ` · 复用 ${cacheHits} 项缓存` : ""}`)
       setHasSearched(true)
     }
     try {
       const result = await searchSubtitleCatFiles(controller, code, {
         isCancelled: () => controllerRef.current !== controller,
         onProgress: updateResults,
+        forceRefresh,
       })
       if (controllerRef.current !== controller) return
       updateResults(result)
@@ -311,6 +313,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
               <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} />
             </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{loading ? "搜索仍在进行，请稍候…" : !hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载文件，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的字幕文件。可以修改番号后重新搜索。"}</Text>}
             {hasIncompleteResults && hasSuccessfulSource ? <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading || Boolean(downloadingId)} action={() => { void search() }} /> : undefined}
+            <Button title="刷新搜索" systemImage="arrow.clockwise.circle" disabled={loading || Boolean(downloadingId)} action={() => { void search(query, true) }} />
           </VStack> : undefined}
           {!loading && !hasSearched && !error ? <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">将自动搜索当前作品番号；也可以编辑番号后搜索其他字幕。</Text> : undefined}
         </VStack>

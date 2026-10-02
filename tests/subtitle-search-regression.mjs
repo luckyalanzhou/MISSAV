@@ -132,6 +132,16 @@ assert.ok(closed.controllers[0].disposed)
 assert.equal(closed.dismissed, 1)
 assert.ok(!closed.render().some(node => node.type === "SubtitleFileRow"), "Ignore search responses after closing")
 
+const refreshPage = harness()
+refreshPage.mount()
+resolveSearch(refreshPage, { metrics: { searchCacheHits: 1, detailCacheHits: 1 } })
+await settle()
+assert.match(texts(refreshPage.render()), /复用 2 项缓存/)
+refreshPage.render().find(node => node.type === "Button" && node.props.title === "刷新搜索").props.action()
+assert.equal(refreshPage.pending[1].options.forceRefresh, true, "The refresh action must bypass both cache layers")
+resolveSearch(refreshPage)
+await settle()
+
 console.log("PASS: single-provider immediate search; results/errors/partial results; query-independent video association; controller cleanup")
 
 const earlyDownload = harness()
