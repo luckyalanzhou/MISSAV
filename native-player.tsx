@@ -66,7 +66,9 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
       saveProgress(0, player.duration)
     }
     player.onError = message => console.error(`${request.providerLabel} 播放失败:`, message)
-    await SharedAudioSession.setCategory("playback", ["defaultToSpeaker"])
+    // defaultToSpeaker is only valid for input-capable categories such as
+    // playAndRecord; combining it with playback can fail with OSStatus -50.
+    await SharedAudioSession.setCategory("playback", [])
     await SharedAudioSession.setActive(true)
     asset = request.headers && Object.keys(request.headers).length > 0
       ? new AVAsset(request.url, { headers: request.headers })

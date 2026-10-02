@@ -19,6 +19,7 @@ const modules = new Map()
 const progressSaves = []
 const playbackHeaders = { Referer: "https://example.test/watch", Origin: "https://example.test" }
 const assets = []
+const audioSessionCalls = []
 const source = { url: "https://media.example.test/video.mp4", type: "mp4", label: "1080p", qualityHeight: 1080 }
 let timerId = 0
 let player
@@ -194,7 +195,10 @@ try {
     stop() {}
     dispose() { this.disposed = true }
   }
-  globalThis.SharedAudioSession = { setCategory() {}, setActive() {} }
+  globalThis.SharedAudioSession = {
+    setCategory(...args) { audioSessionCalls.push(["category", ...args]) },
+    setActive(...args) { audioSessionCalls.push(["active", ...args]) },
+  }
   globalThis.Dialog = { alert: async value => { throw new Error(value.message) } }
   // Scripting only guarantees setTimeout/clearTimeout. Node's interval APIs must
   // not make an unsupported host API accidentally pass the playback tests.
@@ -237,6 +241,7 @@ try {
 
   const playback = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source)
   await waitForPresentation(playback)
+  assert.deepEqual(audioSessionCalls.slice(0, 2), [["category", "playback", []], ["active", true]], "Playback must not use defaultToSpeaker with the playback category")
   assert.equal(player.source, assets[0], "Authenticated stream must be passed to AVPlayer as an AVAsset")
   assert.equal(player.sourceOptions.length, 0, "AVPlayer.setSource receives one source argument")
   assert.equal(assets[0].source, source.url)
