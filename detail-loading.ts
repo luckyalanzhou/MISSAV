@@ -15,21 +15,18 @@ export function createMissAVDetailTrace(target: string, onProgress?: (progress: 
   const requestId = ++sequence, started = Date.now()
   const entries: MissAVDetailProgress[] = []
   let previous: MissAVDetailStage | undefined
-  let finishedElapsedMs: number | undefined
   return {
     mark(stage: MissAVDetailStage, metrics: { documentChars?: number; sourceCount?: number } = {}) {
       if (previous === stage) return
       previous = stage
       const progress = { stage, elapsedMs: Math.max(0, Date.now() - started), requestId }
-      if (finishedElapsedMs === undefined && ["completed", "timeout", "cancelled", "discarded", "failed", "left"].includes(stage)) finishedElapsedMs = progress.elapsedMs
       entries.push(progress)
       if (entries.length > 24) entries.shift()
       recordMissAVAccessDiagnostic("detail", target, { state: ["timeout", "failed"].includes(stage) ? "load-error" : ["left", "cancelled", "discarded"].includes(stage) ? "cancelled" : "normal", detailStage: stage, ...progress, ...metrics })
       try { onProgress?.(progress) } catch { /* Observers cannot break a request. */ }
     },
     describe() {
-      const elapsed = finishedElapsedMs ?? Math.max(0, Date.now() - started)
-      return `请求 ${requestId} · ${finishedElapsedMs === undefined ? "正在进行，已等待" : "已结束，耗时"} ${(elapsed / 1000).toFixed(1)} 秒\n` + entries.map(entry => `${(entry.elapsedMs / 1000).toFixed(1)} 秒：${MISSAV_DETAIL_STAGE_LABELS[entry.stage]}`).join("\n")
+      return `请求 ${requestId} · 已经过 ${((Date.now() - started) / 1000).toFixed(1)} 秒\n` + entries.map(entry => `${(entry.elapsedMs / 1000).toFixed(1)} 秒：${MISSAV_DETAIL_STAGE_LABELS[entry.stage]}`).join("\n")
     },
   }
 }
