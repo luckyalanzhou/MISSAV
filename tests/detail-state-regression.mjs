@@ -8,6 +8,7 @@ const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
 const deadline = await import(compile("../request-deadline.ts"))
 const requestTypes = await import(compile("../request-scope.ts"))
+const detailLoading = await import(compile("../detail-loading.ts"))
 const timer = globalThis.setTimeout
 globalThis.setTimeout = (callback, delay, ...args) => timer(callback, delay === 6_000 ? 15 : delay, ...args)
 const settle = async () => { for (let i = 0; i < 35; i++) await Promise.resolve() }
@@ -32,6 +33,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "scripting") return scripting
   if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
   if (specifier === "../request-deadline") return deadline
+  if (specifier === "../detail-loading") return detailLoading
   if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo: () => new Promise(resolve => { finishDetail = resolve }) } }
   if (specifier === "../account") return { getMissAVAccountSnapshot: () => ({ state: "signedIn" }), getMissAVWebsiteSavedState: async () => { websiteReads++; return { saved: false } } }
   if (specifier === "../storage") return { isMissAVFavourite: () => new Promise(resolve => { finishFavourite = resolve }), rememberMissAVDetail: never }

@@ -12,11 +12,14 @@ import { VideoRowList } from "./components/video_row"
 import { SubtitleFileRow } from "./components/subtitle_file_row"
 import { MISSAV_SUBTITLE_PREVIEW } from "../subtitles"
 import { withMissAVDeadline } from "../request-deadline"
+import { createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
 
 export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: () => void; onHistoryChanged: () => void }) {
   const [detail, setDetail] = useState<MissAVVideoDetail | null>(null)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadProgress, setLoadProgress] = useState<MissAVDetailProgress | null>(null)
+  const detailTrace = useRef<MissAVDetailTrace | null>(null)
   const [openingSource, setOpeningSource] = useState<string | null>(null)
   const [subtitleAvailable, setSubtitleAvailable] = useState(false)
   const [subtitleEnabled, setSubtitleEnabled] = useState(true)
@@ -38,6 +41,9 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
   async function load() {
     const current = ++generation.current
     requestScope.current?.cancel()
+    const trace = createMissAVDetailTrace(props.video.detailPath, progress => { if (current === generation.current) setLoadProgress(progress) })
+    detailTrace.current = trace
+    trace.mark("entered")
     ++websiteGeneration.current
     websiteScope.current?.cancel()
     setWebsiteSaved(null)
@@ -47,9 +53,11 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
     setLoading(true); setDetailError(null)
     loadLocalFavourite()
     try {
-      const next = await missavClient.getVideo(props.video, { scope })
-      if (current !== generation.current) return
+      const next = await missavClient.getVideo(props.video, { scope, trace })
+      if (current !== generation.current) { trace.mark("discarded"); return }
+      trace.mark("ui-update", { sourceCount: next.sources.length })
       setDetail(next)
+      trace.mark("completed")
       // History persistence is not part of loading playable detail.
       void rememberMissAVDetail(props.video, next).then(() => { if (current === generation.current) props.onHistoryChanged() }).catch(reason => console.error("保存浏览记录失败:", reason))
     } catch (reason) {
@@ -95,7 +103,7 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
       setSubtitleEnabled(isMissAVSubtitleEnabled(props.video.videoCode))
     }).catch(reason => console.error("读取字幕状态失败:", reason))
   }, [props.video.videoCode])
-  useEffect(() => () => { ++generation.current; ++favouriteGeneration.current; ++websiteGeneration.current; ++subtitleGeneration.current; requestScope.current?.cancel(); websiteScope.current?.cancel() }, [props.video.videoCode])
+  useEffect(() => () => { ++generation.current; ++favouriteGeneration.current; ++websiteGeneration.current; ++subtitleGeneration.current; detailTrace.current?.mark("left"); requestScope.current?.cancel(); websiteScope.current?.cancel() }, [props.video.videoCode])
 
   async function play(source: MissAVVideoSource, subtitlePreview = false) {
     if (!detail || openingSource) return
@@ -189,6 +197,8 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
         {!favouriteError && !websiteSavedError ? <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={4} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{websiteSaved === null ? "正在读取收藏状态。" : "网站收藏将同步至当前网站账号；本机收藏仅保存在此设备。"}</Text> : undefined}
       </VStack>
 
+      {loading && loadProgress ? <Text font="caption" foregroundStyle="secondaryLabel">{MISSAV_DETAIL_STAGE_LABELS[loadProgress.stage]}</Text> : undefined}
+      {loading || detailError ? <Button title="加载诊断信息" systemImage="info.circle" buttonStyle="plain" action={() => { void Dialog.alert({ title: "详情加载诊断", message: detailTrace.current?.describe() || "尚未开始详情请求。" }) }} /> : undefined}
       {detailError && !detail ? <StateView title="详情加载失败" description={detailError} kind="error" action={() => { void load() }} /> : undefined}
       {detailError && detail ? <StateView title="刷新失败" description="正在显示上次加载的详情。" kind="error" action={() => { void load() }} presentation="row" /> : undefined}
 

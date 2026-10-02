@@ -52,7 +52,7 @@ export async function readMatchingWebViewDocument(controller: WebViewController,
   finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
-export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean, scope?: MissAVRequestScope): Promise<WebViewPageLoad> {
+export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean, scope?: MissAVRequestScope, onDocumentRead?: () => void): Promise<WebViewPageLoad> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   let timedOut = false
   let stopped = false
@@ -74,6 +74,7 @@ export async function loadWebViewPage(controller: WebViewController, url: string
           scope?.assertActive()
           if (stopped) throw timeoutError
           if (timedOut) throw timeoutError
+          onDocumentRead?.()
           const document = await readMatchingWebViewDocument(controller, url)
           scope?.assertActive()
           if (timedOut) throw timeoutError

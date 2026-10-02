@@ -5,6 +5,7 @@ import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { compileProductionModule as compile } from "./production-module.mjs"
 const deadline = await import(compile("../request-deadline.ts"))
+const detailLoading = await import(compile("../detail-loading.ts"))
 
 const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
@@ -54,6 +55,7 @@ function harness() {
     if (specifier === "scripting") return scripting
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "../request-deadline") return deadline
+    if (specifier === "../detail-loading") return detailLoading
     if (specifier === "../subtitlecat") return {
       searchSubtitleCatFiles: (code, options) => new Promise((resolve, reject) => {
         const request = { code, options, controller: null,

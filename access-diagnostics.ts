@@ -4,7 +4,9 @@ import { MISSAV_COLLECTION_OPTIONS } from "./collections"
 const MAX_EVENTS = 60
 const hosts = MISSAV_DOMAIN_OPTIONS.map(option => new URL(option.value).hostname)
 const routes = MISSAV_COLLECTION_OPTIONS.map(option => option.value as string)
-const events = ["cookie-restore", "cookie-capture", "page", "verification", "data-task", "lifecycle"] as const
+const events = ["cookie-restore", "cookie-capture", "page", "verification", "data-task", "lifecycle", "detail"] as const
+export const MISSAV_DETAIL_STAGES = ["entered", "verification-wait", "cookie-restore", "page-load", "document-read", "source-parse", "cookie-capture", "detail-parse", "ui-update", "completed", "timeout", "cancelled", "discarded", "failed", "left"] as const
+export type MissAVDetailStage = typeof MISSAV_DETAIL_STAGES[number]
 const phases = ["subtitle-parse", "subtitle-serialize", "listing-parse", "detail-parse", "dom-compare", "minimize", "resume"] as const
 const states = ["live", "restored", "missing", "invalid", "expired", "scope-mismatch", "rejected", "unconfirmed", "store-unavailable", "unsupported", "saved", "normal", "challenge", "blocked", "unavailable", "cancelled", "load-error", "accessible", "incomplete", "started"] as const
 type DiagnosticState = typeof states[number]
@@ -15,6 +17,7 @@ type DiagnosticInput = {
   cookieMs?: number; loadMs?: number; captureMs?: number; parseMs?: number; parseCount?: number;
   background?: boolean; phase?: typeof phases[number];
   domMatched?: boolean; compactChars?: number;
+  detailStage?: MissAVDetailStage; requestId?: number; documentChars?: number; sourceCount?: number;
 }
 export type MissAVAccessDiagnostic = DiagnosticInput & { at: number; event: typeof events[number]; host: string; route: string }
 const history: MissAVAccessDiagnostic[] = []
@@ -27,7 +30,7 @@ export function recordMissAVAccessDiagnostic(event: typeof events[number], targe
     at: Date.now(), event: events.includes(event) ? event : "page", ...label,
     state: states.includes(input.state) ? input.state : "unavailable",
   }
-  for (const key of ["elapsedMs", "attempted", "accepted", "confirmed", "expiresInSeconds", "cookieMs", "loadMs", "captureMs", "parseMs", "parseCount", "compactChars"] as const) {
+  for (const key of ["elapsedMs", "attempted", "accepted", "confirmed", "expiresInSeconds", "cookieMs", "loadMs", "captureMs", "parseMs", "parseCount", "compactChars", "requestId", "documentChars", "sourceCount"] as const) {
     const value = input[key]
     if (typeof value === "number" && Number.isFinite(value)) entry[key] = Math.max(0, Math.round(value))
     else if (key === "expiresInSeconds" && value === null) entry.expiresInSeconds = null
@@ -37,12 +40,15 @@ export function recordMissAVAccessDiagnostic(event: typeof events[number], targe
   }
   if (input.cookieState && states.includes(input.cookieState)) entry.cookieState = input.cookieState
   if (input.phase && phases.includes(input.phase)) entry.phase = input.phase
+  if (input.detailStage && MISSAV_DETAIL_STAGES.includes(input.detailStage)) entry.detailStage = input.detailStage
   history.push(entry)
   if (history.length > MAX_EVENTS) history.shift()
   // Normal loads remain quiet. Problems produce a bounded, redacted record in
   // Scripting's console; the in-memory history can be inspected separately.
   if (["challenge", "blocked", "rejected", "unconfirmed", "store-unavailable", "load-error", "unavailable", "incomplete"].includes(entry.state)) {
     try { console.warn("MISSAV access diagnostic", JSON.stringify(entry)) } catch { /* Diagnostics cannot break content loading. */ }
+  } else if (event === "detail") {
+    try { console.info("MISSAV detail diagnostic", JSON.stringify(entry)) } catch { /* Do not expose raw errors or documents. */ }
   }
 }
 

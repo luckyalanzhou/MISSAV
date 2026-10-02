@@ -8,6 +8,7 @@ import * as SiteHTML from "./html-parser"
 import { isMatchingWebViewURL, loadWebViewPage, type WebViewDocument } from "./webview"
 import { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
 import { withMissAVDeadline } from "./request-deadline"
+import { createMissAVDetailTrace, type MissAVDetailTrace } from "./detail-loading"
 export { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
 import { defaultMissAVCollectionSort, isMissAVDirectoryCollection, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, type MissAVCollection, type MissAVFilter, type MissAVSort } from "./collections"
 
@@ -265,12 +266,19 @@ class MissAVClient {
     this.collectionPaths.set(origin, { ...this.collectionPaths.get(origin), ...links })
   }
 
-  async getVideo(item: MissAVVideoItem | string, options: { scope?: MissAVRequestScope } = {}): Promise<MissAVVideoDetail> {
+  async getVideo(item: MissAVVideoItem | string, options: { scope?: MissAVRequestScope; trace?: MissAVDetailTrace } = {}): Promise<MissAVVideoDetail> {
     const scope = options.scope || new MissAVRequestScope()
-    return withMissAVDeadline(this.loadVideo(item, scope), 20_000, "获取播放信息超时，请重试；若栏目也无法加载，请先在设置中验证访问线路。", () => scope.cancel())
+    const trace = options.trace || createMissAVDetailTrace(typeof item === "string" ? this.watchUrl(item) : SiteHTML.normalizeMissAVUrl(item.detailPath))
+    try {
+      return await withMissAVDeadline(this.loadVideo(item, scope, trace), 20_000, "获取播放信息超时，请重试；若栏目也无法加载，请先在设置中验证访问线路。", () => { trace.mark("timeout"); scope.cancel() })
+    } catch (error) {
+      if (!scope.cancelled) trace.mark("failed")
+      else if (isMissAVRequestCancelled(error)) trace.mark("cancelled")
+      throw error
+    }
   }
 
-  private async loadVideo(item: MissAVVideoItem | string, scope: MissAVRequestScope): Promise<MissAVVideoDetail> {
+  private async loadVideo(item: MissAVVideoItem | string, scope: MissAVRequestScope, trace: MissAVDetailTrace): Promise<MissAVVideoDetail> {
     const videoCode = typeof item === "string" ? SiteHTML.extractMissAVVideoCode(item) : item.videoCode
     if (!videoCode) throw new Error("缺少 MISSAV 视频标识符。")
     const watchUrl = typeof item === "string" ? this.watchUrl(videoCode) : SiteHTML.normalizeMissAVUrl(item.detailPath)
@@ -279,6 +287,7 @@ class MissAVClient {
     let parseMs = 0, parseCount = 0
     const parseDetail = (html: string) => {
       if (html !== lastHTML || !lastDetail) {
+        trace.mark("source-parse", { documentChars: html.length })
         const started = Date.now()
         try {
           lastDetail = SiteHTML.parseMissAVVideoDetail(html, videoCode, watchUrl)
@@ -287,10 +296,11 @@ class MissAVClient {
       }
       return lastDetail
     }
-    const html = await this.fetchHtml(watchUrl, html => SiteHTML.isLikelyMissAVHTML(html) && parseDetail(html).sources.length > 0, scope)
+    const html = await this.fetchHtml(watchUrl, html => SiteHTML.isLikelyMissAVHTML(html) && parseDetail(html).sources.length > 0, scope, undefined, trace)
     scope.assertActive()
     let state: "normal" | "load-error" = "load-error"
     try {
+      trace.mark("detail-parse")
       const value = parseDetail(html)
       state = "normal"
       return value
@@ -342,10 +352,11 @@ class MissAVClient {
     return url.toString()
   }
 
-  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean, scope = new MissAVRequestScope(), onDocument?: (document: WebViewDocument) => void): Promise<string> {
+  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean, scope = new MissAVRequestScope(), onDocument?: (document: WebViewDocument) => void, trace?: MissAVDetailTrace): Promise<string> {
     // Use the same persistent WebKit session as the verification window.
     // `scripting.fetch` has a separate cookie jar and a manually supplied UA,
     // so Cloudflare can accept the WebView while returning 403 to fetch.
+    trace?.mark("verification-wait")
     await this.waitForVerification(scope)
     if (new URL(url).origin !== new URL(getMissAVBaseURL()).origin) scope.cancel()
     scope.assertActive()
@@ -361,12 +372,14 @@ class MissAVClient {
     let cookieMs = 0, loadMs = 0, captureMs = 0
     try {
       const cookieStarted = Date.now()
+      trace?.mark("cookie-restore")
       try { cookieResult = await scope.waitFor(restoreCloudflareSessionDetailed(controller, url, scope)) }
       finally { cookieMs = Date.now() - cookieStarted }
       scope.assertActive()
       const loadStarted = Date.now()
+      trace?.mark("page-load")
       let page: Awaited<ReturnType<typeof loadWebViewPage>>
-      try { page = await loadWebViewPage(controller, url, undefined, isContentReady, scope) }
+      try { page = await loadWebViewPage(controller, url, undefined, isContentReady, scope, trace ? () => trace.mark("document-read") : undefined) }
       finally { loadMs = Date.now() - loadStarted }
       loaded = page.loaded; finished = page.finished; challengeObserved = Boolean(page.challengeObserved)
       const html = page.html
@@ -382,6 +395,7 @@ class MissAVClient {
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }
       const captureStarted = Date.now()
+      trace?.mark("cookie-capture")
       try { await scope.waitFor(captureCloudflareSession(controller, new URL(url).hostname, scope)) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
       finally { captureMs = Date.now() - captureStarted }
       scope.assertActive()
