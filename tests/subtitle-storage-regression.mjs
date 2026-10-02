@@ -27,6 +27,7 @@ function harness(background = false) {
   const warnings = []
   const script = { directory: `${scriptDirectory}///` }
   let writeHook = async () => {}
+  let renameHook = async () => {}
   let backgroundTasks = 0, inBackground = false
   let computeHook = async compute => compute()
   const thread = background ? { async runInBackground(compute) {
@@ -39,7 +40,8 @@ function harness(background = false) {
     createDirectory: async (path, recursive) => { assert.equal(recursive, true); directories.push(path) },
     readAsString: async path => { assert.ok(files.has(path)); return files.get(path) },
     writeAsString: async (path, content) => { assert.equal(inBackground, false); await writeHook(path, content); files.set(path, content); writes.push(path) },
-    remove: () => { throw new Error("Downloaded subtitles must never be evicted") },
+    rename: async (path, target) => { await renameHook(path, target); assert.ok(files.has(path)); assert.ok(!files.has(target)); files.set(target, files.get(path)); files.delete(path) },
+    remove: async path => { assert.match(path, /\.srt\.(pending|previous)$/); files.delete(path) },
   }
   const nativeStorage = { get: key => preferences.get(key), set: (key, value) => { assert.equal(inBackground, false); preferences.set(key, value) } }
   const modules = new Map()
@@ -56,6 +58,7 @@ function harness(background = false) {
     get backgroundTasks() { return backgroundTasks },
     setComputeHook(hook) { computeHook = hook },
     setWriteHook(hook) { writeHook = hook },
+    setRenameHook(hook) { renameHook = hook },
   }
 }
 
@@ -119,7 +122,7 @@ assert.equal(missingDirectory.files.size, 0)
 const threaded = harness(true)
 assert.equal(await threaded.api.saveMissAVSubtitle("THREAD-1", cue("后台解析对白")), 1)
 assert.equal((await threaded.api.loadMissAVSubtitle("THREAD-1")).cues[0].text, "后台解析对白")
-assert.equal(threaded.backgroundTasks, 3, "Parse/save serialization/load parsing use background computation; native writes stay on the caller thread")
+assert.equal(threaded.backgroundTasks, 2, "Save parsing and serialization run in background; load reuses parsed content, native writes stay on the caller thread")
 const slowParse = harness(true)
 let releaseParse
 slowParse.setComputeHook(async compute => {
@@ -136,3 +139,47 @@ releaseParse()
 await Promise.all([olderDownload, newerDownload])
 assert.equal((await slowParse.api.loadMissAVSubtitle("ORDER-1")).cues[0].text, "较新的下载", "A slower earlier parse cannot overwrite a newer download")
 console.log("PASS: script-local subtitles folder; 121 retained downloads; legacy migration/fallback; unchanged preferences; safe concurrent migration/save; actual background compute integration")
+
+const failedWrite = harness()
+await failedWrite.api.saveMissAVSubtitle("SAFE-1", cue("原字幕"))
+failedWrite.api.setMissAVSubtitleEnabled("SAFE-1", false)
+failedWrite.setWriteHook(async path => { failedWrite.files.set(path, "partial"); throw new Error("disk full") })
+await assert.rejects(failedWrite.api.saveMissAVSubtitle("SAFE-1", cue("新字幕")), /disk full/)
+assert.equal((await failedWrite.api.loadMissAVSubtitle("SAFE-1")).cues[0].text, "原字幕")
+assert.equal(failedWrite.api.isMissAVSubtitleEnabled("SAFE-1"), false)
+assert.equal(failedWrite.files.size, 1, "Failed staging cleanup cannot remove the original SRT")
+
+const failedRename = harness()
+await failedRename.api.saveMissAVSubtitle("SAFE-2", cue("可恢复字幕"))
+failedRename.setRenameHook(async path => { if (path.endsWith(".pending")) throw new Error("rename failed") })
+await assert.rejects(failedRename.api.saveMissAVSubtitle("SAFE-2", cue("替换字幕")), /rename failed/)
+assert.equal((await failedRename.api.loadMissAVSubtitle("SAFE-2")).cues[0].text, "可恢复字幕")
+assert.equal(failedRename.files.size, 1, "Commit failure restores the previous file")
+
+const failedRestore = harness()
+await failedRestore.api.saveMissAVSubtitle("SAFE-3", cue("恢复后仍可用"))
+failedRestore.setRenameHook(async path => { if (/\.(pending|previous)$/.test(path)) throw new Error("filesystem unavailable") })
+await assert.rejects(failedRestore.api.saveMissAVSubtitle("SAFE-3", cue("保存失败")), /原字幕保留/)
+assert.equal(failedRestore.files.size, 1)
+assert.ok(failedRestore.files.has(`${newPath("SAFE-3")}.previous`))
+failedRestore.setRenameHook(async () => {})
+assert.equal((await failedRestore.api.loadMissAVSubtitle("SAFE-3")).cues[0].text, "恢复后仍可用")
+assert.ok(failedRestore.files.has(newPath("SAFE-3")))
+
+const crash = harness()
+crash.files.set(`${newPath("CRASH-1")}.previous`, cue("中断前字幕"))
+crash.files.set(`${newPath("CRASH-1")}.pending`, "incomplete")
+assert.equal((await crash.api.loadMissAVSubtitle("CRASH-1")).cues[0].text, "中断前字幕")
+await crash.api.saveMissAVSubtitle("CRASH-1", cue("中断后重新下载"))
+assert.equal(crash.files.size, 1)
+
+const edited = harness(true)
+await edited.api.saveMissAVSubtitle("EDIT-1", cue("缓存字幕"))
+await edited.api.loadMissAVSubtitle("EDIT-1")
+await edited.api.loadMissAVSubtitle("EDIT-1")
+assert.equal(edited.backgroundTasks, 2)
+edited.files.set(newPath("EDIT-1"), cue("用户编辑的字幕"))
+assert.equal((await edited.api.loadMissAVSubtitle("EDIT-1")).cues[0].text, "用户编辑的字幕")
+assert.equal(edited.backgroundTasks, 3, "Changed file contents invalidate the parsed cache")
+assert.equal(edited.api.parseSubtitleTrack("1\n00:99:01,000 --> 00:99:02,000\n错误时间").cues.length, 0)
+console.log("PASS: failed staging/rename/restore, interrupted-write recovery, preserved enabled preferences and manual-edit cache invalidation")

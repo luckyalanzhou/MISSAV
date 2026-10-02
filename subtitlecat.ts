@@ -1,5 +1,6 @@
 import { fetch } from "scripting"
 import { loadSubtitleWebViewDocument, readSubtitleWebViewDocument } from "./subtitlecat-webview"
+import { parseMissAVSubtitle } from "./subtitles"
 
 const SUBTITLECAT_ORIGIN = "https://www.subtitlecat.com"
 const SUBTITLECAT_HOME = `${SUBTITLECAT_ORIGIN}/`
@@ -8,6 +9,8 @@ const SUBTITLECAT_CACHE_KEY = "missav_subtitlecat_search_cache_v1"
 const SUBTITLECAT_CACHE_TTL_MS = 30 * 60 * 1000
 const SUBTITLECAT_CACHE_MAX_CODES = 50
 const SUBTITLECAT_CACHE_MAX_CHARACTERS = 2_000_000
+const subtitleDownloads = new Map<string, Promise<string>>()
+const downloadedContents = new Map<string, { savedAt: number; content: string }>()
 
 export type SubtitleCatSubtitleFile = {
   id: string
@@ -310,25 +313,56 @@ export function parseSubtitleCatFileListing(payload: string): SubtitleCatSubtitl
 }
 
 export async function downloadSubtitleCatFile(file: SubtitleCatSubtitleFile): Promise<string> {
+  if (!file.isFree || file.isDemo) throw new Error("只有完整免费字幕可以下载。")
   const url = canonicalSubtitleCatURL(file.downloadURL)
   if (!url || !/^\/subs\/\d+\/[^/]+\.srt$/i.test(url.pathname)) {
     throw new Error("Subtitle Cat 字幕下载地址不安全，已取消下载。")
   }
 
-  const response = await fetch(url.toString(), {
+  const key = url.toString()
+  const cached = downloadedContents.get(key)
+  const age = cached ? Date.now() - cached.savedAt : -1
+  if (cached && age >= 0 && age < 5 * 60 * 1000) return cached.content
+  downloadedContents.delete(key)
+  const existing = subtitleDownloads.get(key)
+  if (existing) return existing
+  const task = fetchSubtitleFile(key).then(content => {
+    // Short-lived RAM cache for preview -> import, unrelated to retained files.
+    if (content.length <= 2_000_000) {
+      downloadedContents.set(key, { savedAt: Date.now(), content })
+      let size = 0
+      for (const value of downloadedContents.values()) size += value.content.length
+      while (downloadedContents.size > 4 || size > 2_000_000) {
+        const first = downloadedContents.keys().next().value as string
+        size -= downloadedContents.get(first)!.content.length
+        downloadedContents.delete(first)
+      }
+    }
+    return content
+  })
+  subtitleDownloads.set(key, task)
+  try { return await task } finally { if (subtitleDownloads.get(key) === task) subtitleDownloads.delete(key) }
+}
+
+async function fetchSubtitleFile(url: string): Promise<string> {
+  const response = await fetch(url, {
     headers: { Accept: "text/plain, application/x-subrip, */*", "User-Agent": SUBTITLECAT_USER_AGENT },
     timeout: 45,
     debugLabel: "Download Subtitle Cat SRT",
     handleRedirect: async request => {
       try {
         const target = new URL(request.url)
-        return canonicalSubtitleCatURL(target.toString()) ? request : null
+        const safe = canonicalSubtitleCatURL(target.toString())
+        return safe && /^\/subs\/\d+\/[^/]+\.srt$/i.test(safe.pathname) ? request : null
       } catch { return null }
     },
   })
   if (!response.ok) throw new Error(`Subtitle Cat 字幕下载失败（HTTP ${response.status}）。`)
+  const declaredSize = Number(response.headers?.get("Content-Length"))
+  if (Number.isFinite(declaredSize) && declaredSize > 24_000_000) throw new Error("单个字幕文件过大，已取消下载。")
   const content = await response.text()
-  if (isSubtitleCatChallenge(content) || /^\s*<!doctype\s+html/i.test(content)) throw new Error("Subtitle Cat 暂时没有返回字幕文件，请稍后重试或完成网站验证。")
+  if (isSubtitleCatChallenge(content) || /<(?:!doctype\s+html|html|head|body)\b/i.test(content)) throw new Error("Subtitle Cat 暂时没有返回字幕文件，请稍后重试或完成网站验证。")
+  if (!(await parseMissAVSubtitle(content)).cues.length) throw new Error("没有识别到有效对白字幕，下载内容可能只有字幕生成器署名。")
   return content
 }
 

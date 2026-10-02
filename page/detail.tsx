@@ -1,4 +1,4 @@
-import { Button, Divider, EnvironmentValuesReader, HStack, Image, LazyVStack, Navigation, NavigationStack, ProgressView, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type DynamicTypeSize, type ScrollViewProxy } from "scripting"
+import { Button, Divider, EnvironmentValuesReader, HStack, Image, LazyVStack, Navigation, NavigationStack, ProgressView, QuickLook, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type DynamicTypeSize, type ScrollViewProxy } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../client"
 import { ACCENT, Badge, MEDIA_HERO_RADIUS, PAGE_BOTTOM_PADDING, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, PageBackground, SECONDARY_ACTION_HEIGHT, SECTION_SPACING, SectionHeading } from "../design"
 import { chooseAndPresentMissAVPlayer } from "../player"
@@ -195,6 +195,10 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   const [hasSearched, setHasSearched] = useState(false)
   const [searchProgress, setSearchProgress] = useState("")
   const searchSession = useRef<{ controller: WebViewController | null; cancelled: boolean } | null>(null)
+  const subtitleOperation = useRef(false)
+  const active = useRef(true)
+
+  function closeSearch() { active.current = false; stopSearch(); dismiss() }
 
   function stopSearch() {
     const session = searchSession.current
@@ -207,7 +211,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
 
   async function search(value = query, forceRefresh = false) {
     const code = value.trim().toUpperCase().replace(/\s+/g, "-")
-    if (!code || loading || downloadingId) return
+    if (!code || loading || downloadingId || subtitleOperation.current || !active.current) return
     stopSearch()
     const session = { controller: null as WebViewController | null, cancelled: false }
     searchSession.current = session
@@ -260,33 +264,54 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   }
 
   async function download(file: SubtitleCatSubtitleFile) {
-    if (!file.isFree || file.isDemo || downloadingId) return
+    if (!file.isFree || file.isDemo || subtitleOperation.current || !active.current) return
+    subtitleOperation.current = true
     const fileKey = `${file.source}:${file.id}`
-    if (searchSession.current) {
-      stopSearch()
-      setLoading(false)
-      setHasIncompleteResults(true)
-      setSearchProgress("已停止剩余搜索，可下载已载入的字幕")
-    }
+    pauseSearchForSubtitle()
     setDownloadingId(fileKey)
     setError(null)
     try {
       const content = await downloadSubtitleCatFile(file)
+      if (!active.current) return
       // Search text is editable and may differ from this detail page's work.
       // Always save under the displayed video's identity so its playback path
       // and the subtitle folder use the same association key.
       const associatedCode = props.videoCode
       await saveMissAVSubtitle(associatedCode, content)
+      if (!active.current) return
       props.onDownloaded(associatedCode)
-      dismiss()
+      closeSearch()
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { setDownloadingId(null) }
+      if (active.current) setError(reason instanceof Error ? reason.message : String(reason))
+    } finally { subtitleOperation.current = false; if (active.current) setDownloadingId(null) }
+  }
+
+  async function preview(file: SubtitleCatSubtitleFile) {
+    if (!file.isFree || file.isDemo || subtitleOperation.current || !active.current) return
+    subtitleOperation.current = true
+    pauseSearchForSubtitle()
+    setDownloadingId(`${file.source}:${file.id}`)
+    setError(null)
+    try {
+      const content = await downloadSubtitleCatFile(file)
+      if (active.current) await QuickLook.previewText(content)
+    } catch (reason) {
+      if (active.current) setError(reason instanceof Error ? reason.message : String(reason))
+    } finally { subtitleOperation.current = false; if (active.current) setDownloadingId(null) }
+  }
+
+  function pauseSearchForSubtitle() {
+    if (!searchSession.current) return
+    stopSearch()
+    setLoading(false)
+    setHasIncompleteResults(true)
+    setSearchProgress("已停止剩余搜索，可预览或下载已载入的字幕")
   }
 
   useEffect(() => {
     void search(props.videoCode)
     return () => {
+      active.current = false
       stopSearch()
     }
   }, [])
@@ -298,7 +323,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
           <Text font="headline" fontWeight="bold">按番号搜索字幕</Text>
           <Text font="caption" foregroundStyle="secondaryLabel">简体中文、繁体中文优先</Text>
         </VStack>
-        <Button action={() => { stopSearch(); dismiss() }} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭字幕搜索"><Image systemName="xmark" foregroundStyle="secondaryLabel" /></Button>
+        <Button action={closeSearch} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭字幕搜索"><Image systemName="xmark" foregroundStyle="secondaryLabel" /></Button>
       </HStack>
       <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
@@ -308,7 +333,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
               {loading ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="magnifyingglass" />}
             </Button>
           </HStack>
-          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。下载的完整 SRT 保存在脚本目录的 subtitles 文件夹中，保存数量不限，并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。点击语言名称可预览文本，预览不会关联字幕。下载的完整 SRT 保存在脚本目录的 subtitles 文件夹中，保存数量不限，并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
           {error ? <VStack spacing={8} alignment="leading" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
             <Text font="subheadline" foregroundStyle="systemRed" multilineTextAlignment="leading">{error}</Text>
             <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} action={() => { void search() }} />
@@ -321,7 +346,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
             {sourceStatus.map((status, index) => <Text key={`subtitle-source-${index}`} font="caption" foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"} multilineTextAlignment="leading">{status}</Text>)}
             {files.length ? <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>{files.map((file, index) => <VStack key={`${file.source}-${file.id}`} spacing={0} frame={{ maxWidth: "infinity" }}>
               {index ? <Divider /> : undefined}
-              <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} />
+              <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} onPreview={file => { void preview(file) }} />
             </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{loading ? "搜索仍在进行，请稍候…" : !hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载文件，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的字幕文件。可以修改番号后重新搜索。"}</Text>}
             {hasIncompleteResults && hasSuccessfulSource ? <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading || Boolean(downloadingId)} action={() => { void search() }} /> : undefined}
             <Button title="刷新搜索" systemImage="arrow.clockwise.circle" disabled={loading || Boolean(downloadingId)} action={() => { void search(query, true) }} />

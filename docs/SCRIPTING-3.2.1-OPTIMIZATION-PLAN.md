@@ -14,14 +14,16 @@
 
 ## 阶段与验收
 
-当前进度：第一阶段代码与本地验收已完成（18 组 mjs 回归、7 组 TS 回归、47 个 TS/TSX 文件语法转换检查）；真实 iPhone 的耗时与恢复体验另行验收。
-第二至第五阶段按顺序独立推进，不在第一阶段混入缓存迁移或播放器界面改动。
+当前进度：五阶段代码与本地验收均已完成，各阶段独立提交与推送。真实 iPhone 的耗时、恢复体验、文件权限和原生显示另行验收；DOM 试验保持默认关闭。
+第一阶段完成时：18 组 mjs 回归、7 组 TS 回归、47 个 TS/TSX 文件语法转换检查通过。
 
 第二阶段：已实施播放状态回调、暂停/最小化保存、限量合并写入、结束/关闭清理；原生控件和字幕布局不变。19 组 mjs 与 7 组 TS 回归、48 个 TS/TSX 语法转换检查通过；手机原生行为待验收。
 
 第三阶段：增加 favourites 排序索引和 listing_cache 表/索引，浏览与播放记录相关写入、清空播放历史及缓存更新使用官方声明式事务。页面缓存最多保留 48 个快照，45 秒内复用，最多 7 天的旧快照仅在首页/浏览/搜索请求失败时回退并显示缓存时间及错误；验证与推荐不接受过期快照。缓存失败不阻断在线内容，下载字幕数量不受影响。20 组 mjs 与 7 组 TS 回归、50 个 TS/TSX 语法检查通过，包含真实 SQLite 回滚与缓存隔离验证。
 
 第四阶段：在同一个持久 WebView 内原子读取完整文档、精简 DOM 与当前地址，加入完整结果一致性检查和 HTML 回退。生产环境默认关闭试验（setMissAVDOMExtractionTrialEnabled），不额外发起导航，不启用新的 Cookie 会话；须以 iPhone WebKit 验收后再启用。修复损坏编码的单个链接导致整页解析失败的问题。21 组 mjs 与 7 组 TS 回归、51 个 TS/TSX 语法检查通过，包含真实无头浏览器的七种番号格式、目录、分页一致性和完整文档验证页判定；目前不宣称 DOM 试验减少传输耗时。
+
+第五阶段：同一字幕地址的并发下载合并，预览后 5 分钟内复用有效文本；拒绝网页、验证页、无对白署名、非法时间和过大文件，失败不缓存。最多 4 项、合计 200 万字符的内存下载/解析缓存不涉及磁盘字幕数量。每次读取检查实际内容，手动改动不会被旧解析缓存掩盖。写入先写 .pending 并读回比对，旧文件改名 .previous，提交失败尝试恢复；中断后下次读取恢复原文件。仅清理这两个临时文件，不淘汰下载的 .srt。点击语言名称调用 QuickLook 文本预览，不保存或关联；仍保留语言在左、下载在右的紧凑布局。防止双击与关闭后的迟到结果。22 组 mjs 与 7 组 TS 回归、51 个 TS/TSX 语法检查通过；包含故障注入、下载去重/重试、预览/关联及取消验证。
 
 ### 第一阶段：耗时诊断、恢复事件与主线程降负载
 
@@ -74,5 +76,7 @@
 - [Script 最小化与恢复](https://scriptingapp.github.io/zh/guide/Changelog/2.4.9/Script%20Minimization%20and%20Resume)：onResume 是存活实例的恢复/再触发，不是任意 iOS 前后台通知。
 - [AVPlayer](https://scriptingapp.github.io/zh/guide/Changelog/3.1.0/AVPlayer)：按已公开状态回调实施，保留必要的时间采样。
 - [WebScraper](https://scriptingapp.github.io/zh/guide/Utilities/WebScraper)：独立会话只能试验，不替换已验证的持久 WebView 链路。
+- [FileManager](https://scriptingapp.github.io/guide/Utilities/FileManager)：使用异步读写和 rename/remove，不依赖重命名覆盖已有目标；不能保证跨进程的事务，跨脚本实例同时写同一作品仍须避免。
+- [QuickLook](https://scriptingapp.github.io/zh/guide/Device%20Capabilities/QuickLook)：按需调用 previewText，关闭预览后回到字幕搜索，不增加播放器设置。
 
 这些是 3.2.1 中可利用的宿主能力，不意味着它们全部新增于 3.2.1，也不意味着升级本身解决 Cloudflare。

@@ -19,6 +19,11 @@ const MAX_SUBTITLE_CHARACTERS = 8_000_000
 const MAX_SUBTITLE_CUES = 25_000
 // Serialize operations on one work only; there is no retained-file count limit.
 const subtitleFileOperations = new Map<string, Promise<unknown>>()
+// This bounds RAM only, never the number of downloaded files. Read the file on
+// every load so a manually edited/imported subtitle cannot remain stale.
+const parsedTracks = new Map<string, SubtitleTrack>()
+const pendingParses = new Map<string, Promise<SubtitleTrack>>()
+const MAX_PARSE_CACHE_CHARACTERS = 2_000_000
 
 const parseTimestamp = (value: string): number | null => {
   const long = value.trim().match(/^(\d+):(\d{2}):(\d{2})[,.](\d{1,3})$/)
@@ -27,7 +32,9 @@ const parseTimestamp = (value: string): number | null => {
     const minutes = Number(long[2])
     const seconds = Number(long[3])
     const milliseconds = Number(long[4].padEnd(3, "0"))
-    return hours * 3600 + minutes * 60 + seconds + milliseconds / 1000
+    if (!Number.isFinite(hours) || minutes >= 60 || seconds >= 60) return null
+    const total = hours * 3600 + minutes * 60 + seconds + milliseconds / 1000
+    return Number.isFinite(total) ? total : null
   }
 
   const short = value.trim().match(/^(\d{2}):(\d{2})\.(\d{1,3})$/)
@@ -35,6 +42,7 @@ const parseTimestamp = (value: string): number | null => {
   const minutes = Number(short[1])
   const seconds = Number(short[2])
   const milliseconds = Number(short[3].padEnd(3, "0"))
+  if (seconds >= 60) return null
   return minutes * 60 + seconds + milliseconds / 1000
 }
 
@@ -93,19 +101,19 @@ export function setMissAVSubtitleEnabled(videoCode: string, enabled: boolean): v
 export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTrack | null> {
   const path = subtitleFilePath(videoCode)
   return withSubtitleFileOperation(path, async () => {
+    await recoverSubtitleWrite(path)
     if (await FileManager.exists(path)) {
       const content = await FileManager.readAsString(path)
-      const track = await runMissAVDataTask("subtitle-parse", () => parseSubtitleTrack(content))
+      const track = await parseMissAVSubtitle(content)
       return track.cues.length ? track : null
     }
     const legacyPath = `${FileManager.documentsDirectory.replace(/[\\/]+$/, "")}/${LEGACY_SUBTITLE_DIRECTORY_NAME}/${normalizeVideoCode(videoCode)}.srt`
     if (!await FileManager.exists(legacyPath)) return null
     const content = await FileManager.readAsString(legacyPath)
-    const track = await runMissAVDataTask("subtitle-parse", () => parseSubtitleTrack(content))
+    const track = await parseMissAVSubtitle(content)
     if (!track.cues.length) return null
     try {
-      await FileManager.createDirectory(subtitleDirectoryPath(), true)
-      await FileManager.writeAsString(path, content)
+      await writeSubtitleSafely(path, content)
     } catch (error) {
       // Continue playing the old file if migration cannot write. Do not delete
       // the original or change this video's enabled/disabled preference.
@@ -120,14 +128,84 @@ export async function saveMissAVSubtitle(videoCode: string, source: string): Pro
   // Queue before dispatching background work. Otherwise a slow earlier parse
   // could finish last and overwrite a newer download for the same video.
   return withSubtitleFileOperation(path, async () => {
-    const track = await runMissAVDataTask("subtitle-parse", () => parseSubtitleTrack(source))
+    const track = await parseMissAVSubtitle(source)
     if (!track.cues.length) throw new Error("没有识别到有效对白字幕，下载内容可能只有字幕生成器署名。")
     const content = await runMissAVDataTask("subtitle-serialize", () => serializeSubtitleTrack(track))
-    await FileManager.createDirectory(subtitleDirectoryPath(), true)
-    await FileManager.writeAsString(path, content)
+    await writeSubtitleSafely(path, content)
+    rememberParsedTrack(content, track)
     setMissAVSubtitleEnabled(videoCode, true)
     return track.cues.length
   })
+}
+
+export async function parseMissAVSubtitle(source: string): Promise<SubtitleTrack> {
+  const cached = parsedTracks.get(source)
+  if (cached) { parsedTracks.delete(source); parsedTracks.set(source, cached); return cached }
+  const pending = pendingParses.get(source)
+  if (pending) return pending
+  const task = runMissAVDataTask("subtitle-parse", () => parseSubtitleTrack(source))
+  pendingParses.set(source, task)
+  try {
+    const track = await task
+    if (track.cues.length) rememberParsedTrack(source, track)
+    return track
+  } finally { if (pendingParses.get(source) === task) pendingParses.delete(source) }
+}
+
+function rememberParsedTrack(content: string, track: SubtitleTrack): void {
+  if (content.length > MAX_PARSE_CACHE_CHARACTERS) return
+  parsedTracks.delete(content)
+  parsedTracks.set(content, track)
+  let characters = 0
+  for (const key of parsedTracks.keys()) characters += key.length
+  while (parsedTracks.size > 4 || characters > MAX_PARSE_CACHE_CHARACTERS) {
+    const first = parsedTracks.keys().next().value as string
+    characters -= first.length
+    parsedTracks.delete(first)
+  }
+}
+
+// rename never depends on overwriting an existing destination. A crash between
+// the two renames leaves the old file recoverable as .previous on the next read.
+async function recoverSubtitleWrite(path: string): Promise<void> {
+  const previous = `${path}.previous`
+  if (!await FileManager.exists(previous)) return
+  if (!await FileManager.exists(path)) { await FileManager.rename(previous, path); return }
+  const track = await parseMissAVSubtitle(await FileManager.readAsString(path))
+  if (!track.cues.length) throw new Error("字幕写入恢复需要处理，原字幕仍保存在 .previous 文件中。")
+  await removeSubtitleTemporary(previous)
+}
+
+async function removeSubtitleTemporary(path: string): Promise<void> {
+  // Only these exact per-work staging/backup names may be removed, never .srt.
+  if (!/\.srt\.(pending|previous)$/.test(path)) throw new Error("字幕临时文件路径无效。")
+  try { if (await FileManager.exists(path)) await FileManager.remove(path) }
+  catch { /* Keep a recoverable temporary copy if cleanup is unavailable. */ }
+}
+
+async function writeSubtitleSafely(path: string, content: string): Promise<void> {
+  await FileManager.createDirectory(subtitleDirectoryPath(), true)
+  await recoverSubtitleWrite(path)
+  const pending = `${path}.pending`, previous = `${path}.previous`
+  let backedUp = false
+  try {
+    await FileManager.writeAsString(pending, content)
+    if (await FileManager.readAsString(pending) !== content) throw new Error("字幕文件写入不完整，已保留原字幕。")
+    if (await FileManager.exists(path)) {
+      // Unremoved backup must not be silently overwritten by a host rename.
+      if (await FileManager.exists(previous)) throw new Error("旧字幕备份尚未清理，请稍后重试。")
+      await FileManager.rename(path, previous)
+      backedUp = true
+    }
+    await FileManager.rename(pending, path)
+    await removeSubtitleTemporary(previous)
+  } catch (error) {
+    if (backedUp && !await FileManager.exists(path)) {
+      try { await FileManager.rename(previous, path) }
+      catch { throw new Error("保存字幕失败；原字幕保留在 .previous 文件，下次读取将尝试恢复。") }
+    }
+    throw error
+  } finally { await removeSubtitleTemporary(pending) }
 }
 
 function withSubtitleFileOperation<T>(path: string, operation: () => Promise<T>): Promise<T> {

@@ -69,3 +69,17 @@ for (const unavailable of [{ ...file, isFree: false }, { ...file, isDemo: true }
 }
 
 console.log("PASS: compact language-left/action-right rows; 44pt touch target; simplified/traditional Chinese; busy-state and preview guards")
+
+const previews = []
+const previewRow = busy => SubtitleFileRow({ file, downloadingId: busy, onDownload: value => downloads.push(value), onPreview: value => previews.push(value) })
+const languageButton = children(children(previewRow(null))[0])[0]
+assert.equal(languageButton.type, "Button")
+assert.equal(languageButton.props.buttonStyle, "plain")
+assert.equal(children(languageButton)[0].props.children, "简体中文")
+assert.equal(languageButton.props.accessibilityLabel, "预览简体中文字幕")
+languageButton.props.action()
+assert.deepEqual(previews, [file])
+children(children(previewRow("SubtitleCat:zh-cn"))[0])[0].props.action()
+assert.equal(previews.length, 1, "Do not preview during another operation")
+assert.equal(children(previewRow(null)).at(-1).props.frame.minHeight, 44)
+console.log("PASS: language-name preview preserves compact row layout and download target")

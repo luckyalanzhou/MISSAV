@@ -21,6 +21,9 @@ function harness() {
   const controllers = []
   const saved = []
   const associated = []
+  const previews = []
+  const heldDownloads = []
+  let holdDownloads = false
   let hook = 0
   let mounted = false
   let dismissed = 0
@@ -32,6 +35,7 @@ function harness() {
   const scripting = {
     ...Object.fromEntries(["Button", "Divider", "HStack", "Image", "LazyVStack", "NavigationStack", "ProgressView", "ScrollView", "Text", "TextField", "VStack", "ZStack"].map(name => [name, name])),
     Navigation: { useDismiss: () => () => { dismissed++ } },
+    QuickLook: { previewText: async content => previews.push(content) },
     useState: initial => {
       const index = hook++
       if (!(index in states)) states[index] = initial
@@ -55,7 +59,7 @@ function harness() {
         }
         pending.push(request)
       }),
-      downloadSubtitleCatFile: async value => { assert.equal(value, file); return "fixture SRT" },
+      downloadSubtitleCatFile: async value => { assert.equal(value, file); return holdDownloads ? new Promise(resolve => heldDownloads.push(resolve)) : "fixture SRT" },
     }
     if (specifier === "../subtitles") return { saveMissAVSubtitle: async (...args) => saved.push(args) }
     if (specifier === "./components/subtitle_file_row") return { SubtitleFileRow: "SubtitleFileRow" }
@@ -75,7 +79,9 @@ function harness() {
     visit(tree)
     return nodes
   }
-  return { render, pending, controllers, saved, associated,
+  return { render, pending, controllers, saved, associated, previews,
+    holdDownloads() { holdDownloads = true },
+    finishDownload() { heldDownloads.shift()("fixture SRT") },
     mount() { render(); mounted = true; return effects.map(effect => effect()) },
     startWebView() { const request = pending.at(-1); request.controller = new Controller(); request.options.onControllerChange(request.controller); return request.controller },
     get dismissed() { return dismissed },
@@ -166,3 +172,29 @@ early.options.onProgress({ files: [], searchResultCount: 3, processedDetailCount
 assert.ok(earlyDownload.render().some(node => node.type === "SubtitleFileRow"), "Late progress must not clear downloaded results")
 resolveSearch(earlyDownload, { files: [] })
 await settle()
+
+const previewPage = harness()
+previewPage.mount(); resolveSearch(previewPage); await settle()
+previewPage.render().find(node => node.type === "SubtitleFileRow").props.onPreview(file)
+await settle()
+assert.deepEqual(previewPage.previews, ["fixture SRT"])
+assert.deepEqual(previewPage.saved, [], "Text preview does not save or associate a subtitle")
+assert.equal(previewPage.dismissed, 0, "Closing QuickLook leaves the search page open")
+const downloadTwice = previewPage.render().find(node => node.type === "SubtitleFileRow").props.onDownload
+downloadTwice(file); downloadTwice(file)
+await settle()
+assert.equal(previewPage.saved.length, 1, "Guard repeated taps before the next native render")
+assert.deepEqual(previewPage.associated, ["FNS-258"])
+console.log("PASS: native text preview without saving, query-independent import, double-tap guard")
+
+for (const action of ["onDownload", "onPreview"]) {
+  const late = harness()
+  late.mount(); resolveSearch(late); await settle(); late.holdDownloads()
+  late.render().find(node => node.type === "SubtitleFileRow").props[action](file)
+  late.render().find(node => node.type === "Button" && node.props.accessibilityLabel === "关闭字幕搜索").props.action()
+  late.finishDownload(); await settle()
+  assert.deepEqual(late.saved, [], "A dismissed search page must not associate late download results")
+  assert.deepEqual(late.previews, [], "A late result must not open QuickLook after dismissal")
+  assert.equal(late.dismissed, 1)
+}
+console.log("PASS: late download/preview results are ignored after the search page closes")

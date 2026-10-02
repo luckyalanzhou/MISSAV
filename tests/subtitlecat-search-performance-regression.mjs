@@ -37,6 +37,7 @@ function harness(count = 5, storage = new Map()) {
       loadSubtitleWebViewDocument: async (controller, url, options) => new Promise(resolve => fallbacks.push({ controller, url, options, finish(html) { currentURL = url; currentHTML = html; resolve({ url, html, previousDocument: false }) } })),
       readSubtitleWebViewDocument: async () => ({ url: currentURL, html: currentHTML, previousDocument: false }),
     }
+    if (specifier === "./subtitles") return { parseMissAVSubtitle() { throw new Error("Search must not download/parse subtitle text") } }
     throw new Error(`Unexpected dependency: ${specifier}`)
   }, module, module.exports, { get: key => storage.get(key), set: (key, value) => storage.set(key, value) }, { now: () => clock }, { log: (_, data) => metricsLog.push(data) })
   const createController = () => { const controller = { disposed: false, dispose() { this.disposed = true } }; controllers.push(controller); return controller }

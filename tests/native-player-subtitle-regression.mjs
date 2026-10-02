@@ -175,7 +175,7 @@ async function waitForPresentation(playback) {
 
 const oldGlobals = Object.fromEntries(["FileManager", "Storage", "AVPlayer", "SharedAudioSession", "Dialog", "setInterval", "clearInterval", "setTimeout", "clearTimeout"].map(name => [name, globalThis[name]]))
 try {
-  globalThis.FileManager = { documentsDirectory: "/mock/documents/", exists: async path => files.has(path), createDirectory: async () => {}, writeAsString: async (path, content) => files.set(path, content), readAsString: async path => files.get(path) }
+  globalThis.FileManager = { documentsDirectory: "/mock/documents/", exists: async path => files.has(path), createDirectory: async () => {}, writeAsString: async (path, content) => files.set(path, content), readAsString: async path => files.get(path), rename: async (path, target) => { assert.ok(files.has(path)); assert.ok(!files.has(target)); files.set(target, files.get(path)); files.delete(path) }, remove: async path => { assert.match(path, /\.srt\.(pending|previous)$/); files.delete(path) } }
   globalThis.Storage = { get: key => preferences.get(key), set: (key, value) => preferences.set(key, value) }
   globalThis.AVPlayer = class {
     currentTime = 0
