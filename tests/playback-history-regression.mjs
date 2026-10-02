@@ -42,6 +42,7 @@ const named = (nodes, name) => nodes.find(node => (typeof node.type === "functio
 const settle = async () => { for (let i = 0; i < 30; i++) await Promise.resolve() }
 function pageHarness(relative, exported) {
   const states = []
+  const detailNavigation = { selected: null, pending: null, isPresented: { value: false, setValue(value) { this.value = value } }, cancel() {}, open(video) { this.selected = { video, detail: { ...video, watchUrl: video.detailPath, sources: [source("1080p")] }, navigationID: 1 }; this.isPresented.setValue(true) } }
   const effects = new Map()
   let hook = 0
   let queued = []
@@ -80,6 +81,7 @@ function pageHarness(relative, exported) {
     if (specifier === "./components/state_view") return { StateView: "StateView" }
     if (specifier === "./recommendations") return { RecommendationsPage: "RecommendationsPage" }
     if (specifier === "./detail") return { DetailPage: "DetailPage" }
+    if (specifier === "./detail-navigation") return { DetailPreparationStatus: "DetailPreparationStatus", useDetailNavigation: () => detailNavigation }
     throw new Error(`Unexpected module: ${specifier}`)
   }, module, module.exports)
   return props => {

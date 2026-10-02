@@ -4,9 +4,10 @@ import { loadMissAVPlaybackProgress, recordMissAVPlayback, saveMissAVPlaybackPro
 import { isMissAVSubtitleEnabled, loadMissAVSubtitle, type SubtitleTrack } from "./subtitles"
 import { withMissAVDeadline } from "./request-deadline"
 import type { MissAVPlaybackPreparation } from "./playback-preparation"
+import { matchFreshMissAVPlaybackSource } from "./playback-source"
 export type MissAVPlaybackResult = { opened: true } | { opened: false }
 
-export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selected: MissAVVideoSource, options: { detail: MissAVVideoDetail; preparation?: MissAVPlaybackPreparation; subtitles?: SubtitleTrack; preview?: boolean }): Promise<MissAVPlaybackResult> {
+export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selected: MissAVVideoSource, options: { detail: MissAVVideoDetail; preparation?: MissAVPlaybackPreparation; subtitles?: SubtitleTrack; preview?: boolean; onDetailRefreshed?: (detail: MissAVVideoDetail) => void }): Promise<MissAVPlaybackResult> {
   const freshDetail = options.detail
   const freshSource = freshDetail.sources.find(source => source.url === selected.url && source.type === selected.type)
   if (!freshSource) throw new Error("所选清晰度已不可用，请刷新详情后重试。")
@@ -15,7 +16,7 @@ export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selec
     const preview = options?.preview === true
     // Optional native file/SQLite operations run together and cannot keep a
     // ready stream from opening indefinitely. Keep resume/subtitles when they
-    // arrive on time; late results do not change an already opened player.
+    // arrive on time; late local data joins the opened player without blocking it.
     const [storedSubtitles, progress] = options.preparation && !preview ? [options.preparation.data.subtitles, options.preparation.data.progress] : await Promise.all([
       !preview && isMissAVSubtitleEnabled(video.videoCode) ? optionalPlaybackData(() => loadMissAVSubtitle(video.videoCode), "字幕读取") : Promise.resolve(null),
       !preview ? optionalPlaybackData(() => loadMissAVPlaybackProgress(video.videoCode), "播放进度读取") : Promise.resolve(null),
@@ -27,12 +28,27 @@ export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selec
       asset: options.preparation?.takeAsset(freshDetail, freshSource),
       headers: missavClient.playbackHeaders(freshDetail.watchUrl, freshSource.url),
       title: freshDetail.title,
+      diagnosticTarget: freshDetail.watchUrl,
       providerLabel: "MISSAV",
       qualityLabel: freshSource.label,
       resumePositionSeconds: preview ? 0 : progress?.positionSeconds,
       resumeDurationSeconds: progress?.durationSeconds,
       subtitles,
-      onProgress: preview ? undefined : (positionSeconds, durationSeconds) => saveMissAVPlaybackProgress(video.videoCode, positionSeconds, durationSeconds),
+      subtitleDataPending: !preview && Boolean(options.preparation?.subtitlePending),
+      playbackData: !preview ? options.preparation?.waitForData() : undefined,
+      refreshSource: preview ? undefined : async scope => {
+        // Called only for a confirmed startup access/signature failure.
+        const nextDetail = await missavClient.getVideo(video, { scope })
+        scope.assertActive()
+        const nextSource = matchFreshMissAVPlaybackSource(freshSource, nextDetail.sources)
+        if (!nextSource) throw new Error("所选清晰度已不可用，请刷新详情后重试。")
+        options.onDetailRefreshed?.(nextDetail)
+        return { url: nextSource.url, headers: missavClient.playbackHeaders(nextDetail.watchUrl, nextSource.url) }
+      },
+      onProgress: preview ? undefined : (positionSeconds, durationSeconds) => {
+        if (options.preparation) options.preparation.data.progress = { videoCode: video.videoCode, positionSeconds, durationSeconds, updatedAt: Date.now() }
+        return saveMissAVPlaybackProgress(video.videoCode, positionSeconds, durationSeconds)
+      },
     })
     return { opened: true }
   } catch (reason) {

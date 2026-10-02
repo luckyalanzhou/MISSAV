@@ -37,6 +37,7 @@ const scripting = {
   Device: { supportedInterfaceOrientations: ["portrait"] },
   Navigation: {
     present: request => { presented = request.element; return new Promise(resolve => { dismiss = resolve }) },
+    useDismiss: () => () => dismiss(),
   },
   useObservable: initial => {
     const index = hookContext.index++

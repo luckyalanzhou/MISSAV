@@ -68,7 +68,7 @@ function harness() {
     }
     if (specifier === "../subtitles") return { saveMissAVSubtitle: async (...args) => saved.push(args) }
     if (specifier === "./components/subtitle_file_row") return { SubtitleFileRow: "SubtitleFileRow" }
-    if (["../client", "../design", "../player", "../account", "../storage", "./components/media_cards", "./components/state_view", "./components/video_row"].includes(specifier)) return {}
+    if (["../client", "../design", "../player", "../account", "../storage", "./detail-navigation", "./components/media_cards", "./components/state_view", "./components/video_row"].includes(specifier)) return {}
     throw new Error(`Unexpected subtitle-search dependency: ${specifier}`)
   }, module, module.exports, Controller)
   function render() {

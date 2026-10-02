@@ -13,6 +13,8 @@ export class MissAVPlaybackPreparation {
   private resourceKey = ""
   private closed = false
   private subtitleGeneration = 0
+  private subtitleRead: Promise<void> = Promise.resolve()
+  subtitlePending = false
 
   constructor(private video: MissAVVideoItem) {
     this.ready = Promise.all([
@@ -21,12 +23,25 @@ export class MissAVPlaybackPreparation {
     ]).then(() => {}, () => {})
   }
 
-  async refreshSubtitles(): Promise<void> {
+  refreshSubtitles(): Promise<void> {
     const current = ++this.subtitleGeneration
     this.data.subtitles = null
-    if (this.closed || !isMissAVSubtitleEnabled(this.video.videoCode)) return
-    const track = await this.optional(() => loadMissAVSubtitle(this.video.videoCode))
-    if (!this.closed && current === this.subtitleGeneration) this.data.subtitles = track
+    this.subtitlePending = true
+    const read = (async () => {
+      try {
+        if (this.closed || !isMissAVSubtitleEnabled(this.video.videoCode)) return
+        const track = await this.optional(() => loadMissAVSubtitle(this.video.videoCode))
+        if (!this.closed && current === this.subtitleGeneration) this.data.subtitles = track
+      } catch { /* Optional data must not break playback preparation. */ }
+      finally { if (current === this.subtitleGeneration) this.subtitlePending = false }
+    })()
+    this.subtitleRead = read
+    return read
+  }
+
+  async waitForData(): Promise<PreparedPlaybackData> {
+    await Promise.all([this.ready, this.subtitleRead])
+    return { ...this.data }
   }
 
   prepareSource(detail: MissAVVideoDetail, source = detail.sources[0]): void {

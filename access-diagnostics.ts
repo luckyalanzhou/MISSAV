@@ -4,10 +4,10 @@ import { MISSAV_COLLECTION_OPTIONS } from "./collections"
 const MAX_EVENTS = 60
 const hosts = MISSAV_DOMAIN_OPTIONS.map(option => new URL(option.value).hostname)
 const routes = MISSAV_COLLECTION_OPTIONS.map(option => option.value as string)
-const events = ["cookie-restore", "cookie-capture", "page", "verification", "data-task", "lifecycle", "detail"] as const
+const events = ["cookie-restore", "cookie-capture", "page", "verification", "data-task", "lifecycle", "detail", "playback"] as const
 export const MISSAV_DETAIL_STAGES = ["entered", "verification-wait", "cookie-restore", "page-load", "document-read", "source-parse", "cookie-capture", "detail-parse", "ui-update", "completed", "timeout", "cancelled", "discarded", "failed", "left"] as const
 export type MissAVDetailStage = typeof MISSAV_DETAIL_STAGES[number]
-const phases = ["subtitle-parse", "subtitle-serialize", "listing-parse", "detail-parse", "dom-compare", "minimize", "resume"] as const
+const phases = ["subtitle-parse", "subtitle-serialize", "listing-parse", "detail-parse", "dom-compare", "minimize", "resume", "player-open", "media-ready", "playing", "source-refresh", "startup-timeout", "player-failed", "player-closed"] as const
 const states = ["live", "restored", "missing", "invalid", "expired", "scope-mismatch", "rejected", "unconfirmed", "store-unavailable", "unsupported", "saved", "normal", "challenge", "blocked", "unavailable", "cancelled", "load-error", "accessible", "incomplete", "started"] as const
 type DiagnosticState = typeof states[number]
 type DiagnosticInput = {

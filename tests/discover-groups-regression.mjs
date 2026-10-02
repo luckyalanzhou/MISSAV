@@ -35,6 +35,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "../client") return mockClient
   if (specifier === "../design") return { ACCENT: "pink", PAGE_BOTTOM_PADDING: 24, PAGE_PADDING: 16, SECTION_SPACING: 20, PageBackground: "PageBackground" }
   if (specifier === "./detail") return { DetailPage: "DetailPage" }
+  if (specifier === "./detail-navigation") return { DetailPreparationStatus: "DetailPreparationStatus", useDetailNavigation: () => ({ selected: null, pending: null, isPresented: { value: false, setValue() {} }, cancel() {}, open() {} }) }
   if (specifier === "./components/media_cards") return { MediaGridCard: "MediaGridCard" }
   if (specifier === "./components/state_view") return { StateView: "StateView" }
   throw new Error(`Unexpected module ${specifier}`)

@@ -6,7 +6,7 @@ import { MissAVPlaybackPreparation } from "../playback-preparation"
 // Every list waits for playable detail before changing native navigation state.
 // Repeated taps share the visible preparation; another selection cancels its owner.
 export function useDetailNavigation() {
-  const [selected, setSelected] = useState<{ video: MissAVVideoItem; detail: MissAVVideoDetail; preparation: MissAVPlaybackPreparation } | null>(null)
+  const [selected, setSelected] = useState<{ video: MissAVVideoItem; detail: MissAVVideoDetail; preparation: MissAVPlaybackPreparation; navigationID: number } | null>(null)
   const [pending, setPending] = useState<MissAVVideoItem | null>(null)
   const isPresented = useObservable(false)
   const generation = useRef(0)
@@ -34,7 +34,7 @@ export function useDetailNavigation() {
       preparation.prepareSource(detail)
       selectedOwner.current?.dispose()
       selectedOwner.current = preparation
-      setSelected({ video, detail, preparation })
+      setSelected({ video, detail, preparation, navigationID: current })
       request.current = null
       setPending(null)
       isPresented.setValue(true)
