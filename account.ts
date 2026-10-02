@@ -4,6 +4,8 @@ import { classifyCloudflareHTML } from "./html-parser"
 import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import { captureCloudflareSession, isCloudflareSessionCookie, restoreCloudflareSession } from "./cloudflare-session"
 import { loadWebViewPage, readMatchingWebViewDocument, type WebViewPageLoad, type WebViewDocument } from "./webview"
+import { MissAVRequestScope } from "./request-scope"
+import { withMissAVDeadline } from "./request-deadline"
 
 export type MissAVAccountState = "signedOut" | "signedIn" | "expired" | "blocked"
 export type MissAVAccountSnapshot = { state: MissAVAccountState; domain: string; accountLabel?: string; accountEmail?: string; updatedAt?: number }
@@ -251,8 +253,8 @@ export async function verifyMissAVAccount(): Promise<MissAVAccountSnapshot> {
   return merged
 }
 
-export async function getMissAVWebsiteSavedState(detailPath: string): Promise<MissAVWebsiteSavedState> {
-  return websiteSavedTransaction(detailPath)
+export async function getMissAVWebsiteSavedState(detailPath: string, scope = new MissAVRequestScope()): Promise<MissAVWebsiteSavedState> {
+  return withMissAVDeadline(websiteSavedTransaction(detailPath, undefined, scope), 12_000, "读取网站收藏超时，不影响视频播放。请下拉刷新后重试。", () => scope.cancel())
 }
 
 export async function setMissAVWebsiteSaved(detailPath: string, saved: boolean): Promise<MissAVWebsiteSavedState> {
@@ -274,18 +276,25 @@ export async function loadMissAVSavedVideos(page = 1): Promise<MissAVSavedVideos
   } finally { controller.dispose() }
 }
 
-async function websiteSavedTransaction(detailPath: string, targetSaved?: boolean): Promise<MissAVWebsiteSavedState> {
+async function websiteSavedTransaction(detailPath: string, targetSaved?: boolean, scope?: MissAVRequestScope): Promise<MissAVWebsiteSavedState> {
   const cookies = readStoredCookies()
   if (!cookies.length) throw new Error("请先在设置中登录站点账号。")
   const controller = new WebViewController()
+  let disposed = false
+  const dispose = () => { if (!disposed) { disposed = true; controller.dispose() } }
+  const removeCancellation = scope?.onCancel(dispose)
   try {
-    await restoreCookies(controller, cookies)
-    const loadedPage = await loadWebViewPage(controller, resolveMissAVURL(detailPath))
+    scope?.assertActive()
+    const restoring = restoreCookies(controller, cookies, scope)
+    await (scope ? scope.waitFor(restoring) : restoring)
+    scope?.assertActive()
+    const loadedPage = await loadWebViewPage(controller, resolveMissAVURL(detailPath), undefined, undefined, scope)
     const html = loadedPage.html
     if (isCloudflareHTML(html)) throw new Error("当前线路暂时无法读取站点收藏，请切换访问线路后重试。")
     if (!loadedPage.loaded || !loadedPage.finished || !html) throw new Error("网站详情页尚未加载完成，请稍后重试。")
     const target = targetSaved === undefined ? "null" : JSON.stringify(targetSaved)
-    const result = await controller.evaluateJavaScript<{ ok: boolean; saved?: boolean; authenticated?: boolean; status?: number; error?: string }>(`
+    scope?.assertActive()
+    const evaluating = controller.evaluateJavaScript<{ ok: boolean; saved?: boolean; authenticated?: boolean; status?: number; error?: string }>(`
       return (async () => {
         const targetSaved = ${target}
         const root = [...document.querySelectorAll("[x-data]")].find(element => (element.getAttribute("x-data") || "").includes("toggleSave"))
@@ -317,17 +326,23 @@ async function websiteSavedTransaction(detailPath: string, targetSaved?: boolean
         }
       })()
     `)
+    const result = await (scope ? scope.waitFor(evaluating) : evaluating)
+    scope?.assertActive()
     if (!result?.ok || typeof result.saved !== "boolean") {
       if (result?.status === 401 || result?.authenticated === false) throw new Error("站点账号已失效，请重新登录。")
       if (result?.error === "save_component_not_found" || result?.error === "save_endpoint_not_found") throw new Error("站点收藏接口已发生变化，请稍后更新脚本。")
       if (result?.error === "server_state_not_changed") throw new Error("网站没有确认本次收藏更改，请重试。")
       throw new Error(result?.error || "站点收藏操作失败。")
     }
-    const finalURL = await controller.evaluateJavaScript<string>("return window.location.href")
-    const refreshedCookies = await controller.getCookies(finalURL || resolveMissAVURL(detailPath))
+    const readingURL = controller.evaluateJavaScript<string>("return window.location.href")
+    const finalURL = await (scope ? scope.waitFor(readingURL) : readingURL)
+    scope?.assertActive()
+    const readingCookies = controller.getCookies(finalURL || resolveMissAVURL(detailPath))
+    const refreshedCookies = await (scope ? scope.waitFor(readingCookies) : readingCookies)
+    scope?.assertActive()
     if (refreshedCookies.length) Keychain.set(cookieKey(), JSON.stringify(accountCookiesOnly(refreshedCookies)), { accessibility: "first_unlock_this_device" })
     return { saved: result.saved, authenticated: true }
-  } finally { controller.dispose() }
+  } finally { removeCancellation?.(); dispose() }
 }
 
 async function verifyStoredSession(): Promise<MissAVAccountSnapshot> {
@@ -384,10 +399,17 @@ async function setStoredCookie(controller: WebViewController, stored: StoredMiss
   const cookie = { ...stored, expiresDate } as Parameters<WebViewController["setCookie"]>[0]
   await controller.setCookie(cookie)
 }
-async function restoreCookies(controller: WebViewController, cookies: readonly unknown[]): Promise<void> {
-  await clearNonValidationMissAVCookies(controller)
-  await restoreCloudflareSession(controller, savedURL())
-  for (const stored of accountCookiesOnly(cookies)) await setStoredCookie(controller, stored)
+async function restoreCookies(controller: WebViewController, cookies: readonly unknown[], scope?: MissAVRequestScope): Promise<void> {
+  scope?.assertActive()
+  const live = accountCookiesOnly(await controller.getAllCookies())
+  scope?.assertActive()
+  await restoreCloudflareSession(controller, savedURL(), scope)
+  for (const stored of accountCookiesOnly(cookies)) {
+    scope?.assertActive()
+    // Read-only account checks must not delete shared site cookies while
+    // another page is loading. Keep live tokens; restore only missing ones.
+    if (!live.some(cookie => cookie.name === stored.name && cookie.domain === stored.domain && (cookie.path || "/") === (stored.path || "/"))) await setStoredCookie(controller, stored)
+  }
 }
 function isCookieRecord(value: unknown): value is CookieRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value)

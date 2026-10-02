@@ -30,10 +30,16 @@ class MockWebView {
   }
   async evaluateJavaScript() {
     assert.equal(this.disposed, false)
+    assert.equal(this.loading, false, "Never evaluate JS concurrently with a pending native load")
     this.reads++
     return { url: this.url, html: htmlForRead(this.reads) }
   }
   dispose() { this.disposed = true }
+}
+const nativeLoad = MockWebView.prototype.loadURL
+MockWebView.prototype.loadURL = async function(url) {
+  this.loading = true
+  try { return await nativeLoad.call(this, url) } finally { this.loading = false }
 }
 globalThis.WebViewController = MockWebView
 const tick = () => new Promise(resolve => setImmediate(resolve))
@@ -45,11 +51,14 @@ async function promptly(request) {
 }
 
 try {
-  const pendingLoad = await promptly(missavClient.getVideo("abc-123"))
-  assert.equal(pendingLoad.sources[0].url, mediaURL)
+  const pending = missavClient.getVideo("abc-123")
+  await tick()
   const early = controllers.at(-1)
-  assert.equal(early.disposed, true)
+  assert.equal(early.reads, 0)
   early.finishLoad(true)
+  const pendingLoad = await promptly(pending)
+  assert.equal(pendingLoad.sources[0].url, mediaURL)
+  assert.equal(early.disposed, true)
   await tick()
   assert.equal(early.waits, 0, "A late load callback cannot use a disposed controller")
   assert.equal(early.reads, 1)
@@ -58,28 +67,26 @@ try {
   mode = "wait"
   assert.equal((await promptly(missavClient.getVideo("abc-124"))).sources[0].url, mediaURL)
   const pendingWait = controllers.at(-1)
-  assert.equal(pendingWait.waits, 1)
-  pendingWait.finishWait(true)
+  assert.equal(pendingWait.waits, 0, "loadURL completion must not register a second waitForLoad")
   await tick()
   assert.equal(pendingWait.reads, 1)
 
-  mode = "load"
+  mode = "wait"
   htmlForRead = reads => reads < 3 ? header : detail
   assert.equal((await promptly(missavClient.getVideo("abc-125"))).sources[0].url, mediaURL)
   assert.equal(controllers.at(-1).reads, 3, "A matching header alone is not playable detail content")
-  controllers.at(-1).finishLoad(true)
   await tick()
 
   htmlForRead = () => challenge
   await assert.rejects(promptly(missavClient.getVideo("abc-126")), /当前线路需要 Cloudflare 验证/)
   assert.equal(controllers.at(-1).disposed, true, "A prompt routes to Settings, never auto opens a modal")
-  controllers.at(-1).finishLoad(true)
   await tick()
 
   // No content still has a deadline, even if navigation never settles.
   htmlForRead = () => null
+  mode = "load"
   const stalled = new MockWebView()
-  await assert.rejects(loadWebViewPage(stalled, "https://missav.ws/cn/abc-127", 25, () => false, undefined, { readWhileLoading: true }), /网页加载超时/)
+  await assert.rejects(loadWebViewPage(stalled, "https://missav.ws/cn/abc-127", 25, () => false), /网页加载超时/)
   stalled.dispose()
   const readsAtTimeout = stalled.reads
   stalled.finishLoad(true)
@@ -100,7 +107,16 @@ try {
   await new Promise(resolve => timers(resolve, 5))
   assert.equal(cancelledView.reads, readsAtCancel)
   assert.equal(cancelledView.waits, 0)
-  console.log("PASS: detail returns before native load/wait; strict source readiness; parse reuse; challenge/deadline/cancellation and late-controller guards")
+  // The overall deadline also covers the verification gate, before native
+  // loading has even begun. Accelerate only that deadline for this fixture.
+  globalThis.setTimeout = (callback, delay, ...args) => timers(callback, delay === 20_000 ? 15 : delay, ...args)
+  const finishVerification = missavClient.beginSiteVerification()
+  const countBefore = controllers.length
+  await assert.rejects(missavClient.getVideo("abc-129"), /获取播放信息超时/)
+  finishVerification()
+  await tick()
+  assert.equal(controllers.length, countBefore, "An expired gate wait cannot start a late request")
+  console.log("PASS: serial native loading; no duplicate load wait; strict source readiness; parse reuse; whole-request/gate deadline; cancellation and late-controller guards")
 } finally {
   globalThis.setTimeout = timers
 }

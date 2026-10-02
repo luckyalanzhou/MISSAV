@@ -11,6 +11,7 @@ import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
 import { SubtitleFileRow } from "./components/subtitle_file_row"
 import { MISSAV_SUBTITLE_PREVIEW } from "../subtitles"
+import { withMissAVDeadline } from "../request-deadline"
 
 export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: () => void; onHistoryChanged: () => void }) {
   const [detail, setDetail] = useState<MissAVVideoDetail | null>(null)
@@ -29,24 +30,58 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
   const tagSearchPresented = useObservable(false)
   const generation = useRef(0)
   const requestScope = useRef<MissAVRequestScope | null>(null)
+  const websiteScope = useRef<MissAVRequestScope | null>(null)
   const favouriteGeneration = useRef(0)
+  const websiteGeneration = useRef(0)
   const subtitleGeneration = useRef(0)
 
   async function load() {
     const current = ++generation.current
     requestScope.current?.cancel()
+    ++websiteGeneration.current
+    websiteScope.current?.cancel()
+    setWebsiteSaved(null)
+    setWebsiteSavedError("播放信息加载后再读取网站收藏，不影响播放。")
     const scope = new MissAVRequestScope()
     requestScope.current = scope
     setLoading(true); setDetailError(null)
+    loadLocalFavourite()
     try {
       const next = await missavClient.getVideo(props.video, { scope })
       if (current !== generation.current) return
       setDetail(next)
-      try { await rememberMissAVDetail(props.video, next); if (current === generation.current) props.onHistoryChanged() }
-      catch (reason) { console.error("保存浏览记录失败:", reason) }
+      // History persistence is not part of loading playable detail.
+      void rememberMissAVDetail(props.video, next).then(() => { if (current === generation.current) props.onHistoryChanged() }).catch(reason => console.error("保存浏览记录失败:", reason))
     } catch (reason) {
       if (current === generation.current && !isMissAVRequestCancelled(reason)) setDetailError(reason instanceof Error ? reason.message : String(reason))
-    } finally { if (current === generation.current) { setLoading(false); requestScope.current = null } }
+    } finally { if (current === generation.current) { setLoading(false); requestScope.current = null; void loadWebsiteSaved() } }
+  }
+
+  async function loadWebsiteSaved() {
+    const current = ++websiteGeneration.current
+    websiteScope.current?.cancel()
+    setWebsiteSaved(null)
+    const account = getMissAVAccountSnapshot()
+    if (account.state !== "signedIn") {
+      setWebsiteSavedError(account.state === "expired" ? "网站账号已失效，请在设置中重新登录。" : "登录网站账号后，即可使用网站收藏。")
+      return
+    }
+    const scope = new MissAVRequestScope()
+    websiteScope.current = scope
+    setWebsiteSavedError(null)
+    try {
+      const value = await getMissAVWebsiteSavedState(props.video.detailPath, scope)
+      if (current === websiteGeneration.current) setWebsiteSaved(value.saved)
+    } catch (reason) {
+      if (current === websiteGeneration.current && !isMissAVRequestCancelled(reason)) setWebsiteSavedError(reason instanceof Error ? reason.message : "网站收藏状态读取失败。")
+    } finally { if (websiteScope.current === scope) websiteScope.current = null }
+  }
+
+  function loadLocalFavourite() {
+    const current = ++favouriteGeneration.current
+    setFavourite(null)
+    setFavouriteError(null)
+    void withMissAVDeadline(isMissAVFavourite(props.video.videoCode), 6_000, "本机收藏读取超时。").then(value => { if (current === favouriteGeneration.current) setFavourite(value) }).catch(() => { if (current === favouriteGeneration.current) setFavouriteError("本机收藏状态读取失败或超时，不影响视频播放。") })
   }
 
   useEffect(() => {
@@ -59,20 +94,8 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
       setSubtitleAvailable(available)
       setSubtitleEnabled(isMissAVSubtitleEnabled(props.video.videoCode))
     }).catch(reason => console.error("读取字幕状态失败:", reason))
-    const current = ++favouriteGeneration.current
-    setFavourite(null)
-    setFavouriteError(null)
-    void isMissAVFavourite(props.video.videoCode).then(value => { if (current === favouriteGeneration.current) setFavourite(value) }).catch(() => { if (current === favouriteGeneration.current) setFavouriteError("本机收藏状态读取失败。") })
-    setWebsiteSaved(null)
-    const account = getMissAVAccountSnapshot()
-    if (account.state !== "signedIn") {
-      setWebsiteSavedError(account.state === "expired" ? "网站账号已失效，请在设置中重新登录。" : "登录网站账号后，即可使用网站收藏。")
-    } else {
-      setWebsiteSavedError(null)
-      void getMissAVWebsiteSavedState(props.video.detailPath).then(value => { if (current === favouriteGeneration.current) setWebsiteSaved(value.saved) }).catch(reason => { if (current === favouriteGeneration.current) setWebsiteSavedError(reason instanceof Error ? reason.message : "网站收藏状态读取失败。") })
-    }
   }, [props.video.videoCode])
-  useEffect(() => () => { ++generation.current; ++favouriteGeneration.current; ++subtitleGeneration.current; requestScope.current?.cancel() }, [props.video.videoCode])
+  useEffect(() => () => { ++generation.current; ++favouriteGeneration.current; ++websiteGeneration.current; ++subtitleGeneration.current; requestScope.current?.cancel(); websiteScope.current?.cancel() }, [props.video.videoCode])
 
   async function play(source: MissAVVideoSource, subtitlePreview = false) {
     if (!detail || openingSource) return

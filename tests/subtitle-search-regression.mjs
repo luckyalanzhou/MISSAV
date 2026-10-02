@@ -3,6 +3,8 @@ import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
+import { compileProductionModule as compile } from "./production-module.mjs"
+const deadline = await import(compile("../request-deadline.ts"))
 
 const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
@@ -51,6 +53,7 @@ function harness() {
   new Function("require", "module", "exports", "WebViewController", `${compiled}\nmodule.exports.SearchPage = SubtitleSearchPage;`)(specifier => {
     if (specifier === "scripting") return scripting
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
+    if (specifier === "../request-deadline") return deadline
     if (specifier === "../subtitlecat") return {
       searchSubtitleCatFiles: (code, options) => new Promise((resolve, reject) => {
         const request = { code, options, controller: null,

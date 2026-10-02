@@ -7,6 +7,7 @@ import { selectMissAVDOMPage } from "./listing-dom"
 import * as SiteHTML from "./html-parser"
 import { isMatchingWebViewURL, loadWebViewPage, type WebViewDocument } from "./webview"
 import { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
+import { withMissAVDeadline } from "./request-deadline"
 export { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
 import { defaultMissAVCollectionSort, isMissAVDirectoryCollection, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, type MissAVCollection, type MissAVFilter, type MissAVSort } from "./collections"
 
@@ -265,6 +266,11 @@ class MissAVClient {
   }
 
   async getVideo(item: MissAVVideoItem | string, options: { scope?: MissAVRequestScope } = {}): Promise<MissAVVideoDetail> {
+    const scope = options.scope || new MissAVRequestScope()
+    return withMissAVDeadline(this.loadVideo(item, scope), 20_000, "获取播放信息超时，请重试；若栏目也无法加载，请先在设置中验证访问线路。", () => scope.cancel())
+  }
+
+  private async loadVideo(item: MissAVVideoItem | string, scope: MissAVRequestScope): Promise<MissAVVideoDetail> {
     const videoCode = typeof item === "string" ? SiteHTML.extractMissAVVideoCode(item) : item.videoCode
     if (!videoCode) throw new Error("缺少 MISSAV 视频标识符。")
     const watchUrl = typeof item === "string" ? this.watchUrl(videoCode) : SiteHTML.normalizeMissAVUrl(item.detailPath)
@@ -281,10 +287,8 @@ class MissAVClient {
       }
       return lastDetail
     }
-    // A stream address in the matching document is sufficient. Do not wait
-    // for unrelated images/advertising to finish, or accept a header alone.
-    const html = await this.fetchHtml(watchUrl, html => SiteHTML.isLikelyMissAVHTML(html) && parseDetail(html).sources.length > 0, options.scope, undefined, true)
-    options.scope?.assertActive()
+    const html = await this.fetchHtml(watchUrl, html => SiteHTML.isLikelyMissAVHTML(html) && parseDetail(html).sources.length > 0, scope)
+    scope.assertActive()
     let state: "normal" | "load-error" = "load-error"
     try {
       const value = parseDetail(html)
@@ -338,7 +342,7 @@ class MissAVClient {
     return url.toString()
   }
 
-  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean, scope = new MissAVRequestScope(), onDocument?: (document: WebViewDocument) => void, readWhileLoading = false): Promise<string> {
+  private async fetchHtml(url: string, isContentReady?: (html: string) => boolean, scope = new MissAVRequestScope(), onDocument?: (document: WebViewDocument) => void): Promise<string> {
     // Use the same persistent WebKit session as the verification window.
     // `scripting.fetch` has a separate cookie jar and a manually supplied UA,
     // so Cloudflare can accept the WebView while returning 403 to fetch.
@@ -362,7 +366,7 @@ class MissAVClient {
       scope.assertActive()
       const loadStarted = Date.now()
       let page: Awaited<ReturnType<typeof loadWebViewPage>>
-      try { page = await loadWebViewPage(controller, url, undefined, isContentReady, scope, { readWhileLoading }) }
+      try { page = await loadWebViewPage(controller, url, undefined, isContentReady, scope) }
       finally { loadMs = Date.now() - loadStarted }
       loaded = page.loaded; finished = page.finished; challengeObserved = Boolean(page.challengeObserved)
       const html = page.html

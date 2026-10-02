@@ -52,7 +52,7 @@ export async function readMatchingWebViewDocument(controller: WebViewController,
   finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
-export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean, scope?: MissAVRequestScope, options: { readWhileLoading?: boolean } = {}): Promise<WebViewPageLoad> {
+export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean, scope?: MissAVRequestScope): Promise<WebViewPageLoad> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   let timedOut = false
   let stopped = false
@@ -66,24 +66,11 @@ export async function loadWebViewPage(controller: WebViewController, url: string
         let loadError: unknown
         let challengeObserved = false
         let lastDocument: WebViewDocument | null = null
-        let navigationSettled = false
-        const navigation = (async () => {
-          try {
-            scope?.assertActive()
-            loaded = await controller.loadURL(url)
-            // An early content result or cancellation may already dispose this
-            // controller. Never call another native API from a late callback.
-            if (stopped || timedOut || scope?.cancelled) return
-            if (loaded) {
-              try { finished = await controller.waitForLoad() } catch { /* Redirects can cancel load callbacks. */ }
-            }
-          } catch (error) { loadError = error }
-          finally { navigationSettled = true }
-        })()
-        // Account transactions keep full-load semantics. Detail requests opt
-        // into DOM polling while navigation/subresource callbacks are pending.
-        if (!options.readWhileLoading) await navigation
-        for (let attempt = 0; attempt < WEBVIEW_HTML_READ_ATTEMPTS;) {
+        scope?.assertActive()
+        // loadURL resolves with the native load result. Do not start another
+        // waitForLoad after that event, or evaluate JS concurrently with it.
+        try { loaded = await controller.loadURL(url); finished = loaded } catch (error) { loadError = error }
+        for (let attempt = 0; attempt < WEBVIEW_HTML_READ_ATTEMPTS; attempt += 1) {
           scope?.assertActive()
           if (stopped) throw timeoutError
           if (timedOut) throw timeoutError
@@ -103,8 +90,7 @@ export async function loadWebViewPage(controller: WebViewController, url: string
               return { loaded, finished, ...lastDocument, challengeObserved }
             }
           }
-          if (navigationSettled) attempt += 1
-          if (attempt < WEBVIEW_HTML_READ_ATTEMPTS) await new Promise<void>(resolve => setTimeout(resolve, WEBVIEW_HTML_READ_INTERVAL_MS))
+          if (attempt + 1 < WEBVIEW_HTML_READ_ATTEMPTS) await new Promise<void>(resolve => setTimeout(resolve, WEBVIEW_HTML_READ_INTERVAL_MS))
         }
         if (lastDocument) return { loaded, finished, ...lastDocument, challengeObserved }
         if (loadError) throw loadError

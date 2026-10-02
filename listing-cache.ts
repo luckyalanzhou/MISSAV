@@ -1,4 +1,5 @@
 import { MISSAV_DOMAIN_OPTIONS } from "./domain"
+import { withMissAVDeadline } from "./request-deadline"
 import type { MissAVSearchPage, MissAVVideoItem, MissAVCategoryItem } from "./client"
 
 export const LISTING_CACHE_FRESH_MS = 45_000
@@ -53,7 +54,7 @@ export async function readCachedListing(target: string): Promise<CachedListing |
   if (!backend) return null
   try {
     const key = listingCacheKey(target)
-    const raw: any = await backend.read(key)
+    const raw: any = await withMissAVDeadline(backend.read(key), 1_000, "读取栏目缓存超时。")
     if (!raw || !Number.isFinite(raw.savedAt) || raw.savedAt <= 0 || raw.savedAt > Date.now() + 5000 || Date.now() - raw.savedAt > LISTING_CACHE_MAX_AGE_MS) return null
     const value = validPage(raw.value, key)
     return value ? { savedAt: raw.savedAt, value } : null
@@ -64,6 +65,6 @@ export async function writeCachedListing(target: string, value: MissAVSearchPage
   if (!backend || value.stale) return
   try {
     const key = listingCacheKey(target), clean = validPage(value, key)
-    if (clean) await backend.write(key, { savedAt, value: clean })
+    if (clean) await withMissAVDeadline(backend.write(key, { savedAt, value: clean }), 1_000, "保存栏目缓存超时。")
   } catch { /* Persistence is optional and must not replace a successful page with an error. */ }
 }
