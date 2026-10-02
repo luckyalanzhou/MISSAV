@@ -1,4 +1,4 @@
-import { Button, HStack, Image, Menu, Picker, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
+import { Picker, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import type { MissAVVideoItem } from "../client"
 import { formatMissAVContinueWatching } from "../playback-progress"
 import { PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
@@ -6,10 +6,8 @@ import {
   clearMissAVBrowseHistory,
   clearMissAVHistory,
   loadMissAVBrowseHistory,
-  loadMissAVFavourites,
   loadMissAVHistory,
   type MissAVBrowseRecord,
-  type MissAVFavouriteRecord,
   type MissAVPlaybackRecord,
 } from "../storage"
 import { DetailPage } from "./detail"
@@ -18,24 +16,15 @@ import { DestructiveMenu } from "./components/destructive_menu"
 import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
 
-type LibraryGroup = "saved" | "history"
-type LibrarySegment = "favourites" | "playback" | "browse"
+type LibrarySegment = "playback" | "browse"
 type LibraryData = {
-  favourites: MissAVFavouriteRecord[]
   playback: MissAVPlaybackRecord[]
   browse: MissAVBrowseRecord[]
 }
 
-const emptyData: LibraryData = { favourites: [], playback: [], browse: [] }
+const emptyData: LibraryData = { playback: [], browse: [] }
 
 const segmentMetadata: Record<LibrarySegment, { title: string; subtitle: string; emptyTitle: string; emptyDescription: string; emptyIcon: string }> = {
-  favourites: {
-    title: "本机收藏",
-    subtitle: "保存在本机的收藏，可随时打开查看。",
-    emptyTitle: "还没有收藏",
-    emptyDescription: "在详情页加入收藏后，会直接出现在这里。",
-    emptyIcon: "heart.slash",
-  },
   playback: {
     title: "播放记录",
     subtitle: "最近播放过的内容，可随时继续观看。",
@@ -52,9 +41,8 @@ const segmentMetadata: Record<LibrarySegment, { title: string; subtitle: string;
   },
 }
 
-export function LibraryPage(props: { favouritesRevision: number; historyRevision: number; onFavouriteChanged: () => void; onHistoryChanged: () => void; onDiscover: () => void; toolbar?: any }) {
-  const [group, setGroup] = useState<LibraryGroup>("saved")
-  const [segment, setSegment] = useState<LibrarySegment>("favourites")
+export function LibraryPage(props: { historyRevision: number; onHistoryChanged: () => void; onDiscover: () => void; toolbar?: any }) {
+  const [segment, setSegment] = useState<LibrarySegment>("playback")
   const [data, setData] = useState<LibraryData>(emptyData)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -70,8 +58,8 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
     setLoading(true)
     setError(null)
     try {
-      const [favourites, playback, browse] = await Promise.all([loadMissAVFavourites(), loadMissAVHistory(), loadMissAVBrowseHistory()])
-      if (current === generation.current) setData(previous => ({ ...previous, favourites, playback, browse }))
+      const [playback, browse] = await Promise.all([loadMissAVHistory(), loadMissAVBrowseHistory()])
+      if (current === generation.current) setData(previous => ({ ...previous, playback, browse }))
     } catch (reason) {
       if (current === generation.current) setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -81,12 +69,7 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
 
   async function refresh() { await load() }
 
-  useEffect(() => { void load() }, [props.favouritesRevision, props.historyRevision])
-  function changeGroup(value: string | number) {
-    const next: LibraryGroup = value === "history" ? "history" : "saved"
-    setGroup(next)
-    setSegment(next === "history" ? "playback" : "favourites")
-  }
+  useEffect(() => { void load() }, [props.historyRevision])
 
   function open(video: MissAVVideoItem) {
     void detailNavigation.open(video)
@@ -117,7 +100,7 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
   }
 
   const metadata = segmentMetadata[segment]
-  const items = segment === "favourites" ? data.favourites.map(item => item.video) : segment === "playback" ? data.playback.map(item => item.video) : data.browse.map(item => item.video)
+  const items = segment === "playback" ? data.playback.map(item => item.video) : data.browse.map(item => item.video)
   const statuses = segment === "playback"
     ? new Map(data.playback.map(item => [item.videoCode, formatMissAVContinueWatching(item.positionSeconds)]))
     : segment === "browse"
@@ -134,17 +117,14 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
       refreshable={refresh}
       navigationDestination={{
         isPresented: detailPresented,
-        content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack />,
+        content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack />,
       }}
     >
       <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          <Picker title="资料库内容" pickerStyle="segmented" value={group} onChanged={changeGroup} frame={{ maxWidth: "infinity" }}>
-            <Text tag="saved">收藏</Text>
-            <Text tag="history">历史</Text>
-          </Picker>
-          {group === "history" ? <Menu label={<HStack spacing={10} alignment="center" padding={{ horizontal: 12, vertical: 8 }} frame={{ maxWidth: "infinity", minHeight: 44 }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}><Image systemName="clock" foregroundStyle="secondaryLabel" /><Text font="subheadline" foregroundStyle="secondaryLabel">历史类型</Text><Text font="subheadline" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "trailing" }}>{segmentMetadata[segment].title}</Text><Image systemName="chevron.up.chevron.down" font="caption2" foregroundStyle="tertiaryLabel" /></HStack>}><Button title="播放记录" systemImage={segment === "playback" ? "checkmark" : "play.circle"} action={() => setSegment("playback")} /><Button title="浏览记录" systemImage={segment === "browse" ? "checkmark" : "eye"} action={() => setSegment("browse")} /></Menu> : undefined}
-        </VStack>
+        <Picker title="历史类型" pickerStyle="segmented" value={segment} onChanged={value => setSegment(value === "browse" ? "browse" : "playback")} frame={{ maxWidth: "infinity" }}>
+          <Text tag="playback">播放记录</Text>
+          <Text tag="browse">浏览记录</Text>
+        </Picker>
 
         <VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <Text font="title3" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{metadata.title}</Text>
@@ -160,11 +140,11 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
                 ? <VideoRowList items={items} status={video => statuses?.get(video.videoCode)} statusSystemImage={statusSystemImage} onOpen={open} />
                 : <StateView title={metadata.emptyTitle} description={metadata.emptyDescription} systemImage={metadata.emptyIcon} action={props.onDiscover} actionTitle="浏览视频" />}
 
-        {segment === "playback" && data.playback.length ? <DestructiveMenu title="清空播放记录" confirmationTitle="确认清空播放记录" description="删除全部本机播放记录，不会影响收藏。" action={clearPlayback} busy={clearing === "playback"} /> : undefined}
-        {segment === "browse" && data.browse.length ? <DestructiveMenu title="清空浏览记录" confirmationTitle="确认清空浏览记录" description="删除全部本机浏览记录，不会影响收藏和播放记录。" action={clearBrowse} busy={clearing === "browse"} /> : undefined}
+        {segment === "playback" && data.playback.length ? <DestructiveMenu title="清空播放记录" confirmationTitle="确认清空播放记录" description="删除全部本机播放记录，不会影响浏览记录。" action={clearPlayback} busy={clearing === "playback"} /> : undefined}
+        {segment === "browse" && data.browse.length ? <DestructiveMenu title="清空浏览记录" confirmationTitle="确认清空浏览记录" description="删除全部本机浏览记录，不会影响播放记录。" action={clearBrowse} busy={clearing === "browse"} /> : undefined}
 
         {clearError ? <StateView title="清除失败" description={clearError} kind="error" presentation="row" /> : undefined}
-        <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">本机收藏、浏览记录和播放记录不会上传。</Text>
+        <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">浏览记录和播放记录不会上传。</Text>
       </VStack>
     </ScrollView>
   </ZStack>

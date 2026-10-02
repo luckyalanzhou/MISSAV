@@ -15,8 +15,6 @@ for (const file of ["page/settings.tsx", "page/detail.tsx", "page/library.tsx", 
 }
 assert.match(source("page/settings.tsx"), /site-verification/)
 assert.match(source("page/settings.tsx"), /验证访问线路/)
-assert.match(source("page/detail.tsx"), /toggleMissAVFavourite/)
-assert.match(source("page/library.tsx"), /loadMissAVFavourites/)
 assert.match(source("page/library.tsx"), /formatMissAVContinueWatching/)
 assert.match(source("index.tsx"), /removeLegacyMissAVAccountData\(\)/)
 assert.match(source("home_screen_default_ui.tsx"), /removeLegacyMissAVAccountData\(\)/)
@@ -45,4 +43,4 @@ assert.equal(secrets.get("unrelated_script_key"), "untouched")
 const count = removed.length
 removeLegacyMissAVAccountData()
 assert.equal(removed.length, count, "Migration is idempotent")
-console.log("PASS: account feature removed, local library and verification retained; scoped nonblocking legacy backup cleanup")
+console.log("PASS: account feature removed, local history and verification retained; scoped nonblocking legacy backup cleanup")

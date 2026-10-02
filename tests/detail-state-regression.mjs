@@ -14,7 +14,7 @@ globalThis.setTimeout = (callback, delay, ...args) => timer(callback, delay === 
 const settle = async () => { for (let i = 0; i < 35; i++) await Promise.resolve() }
 const never = () => new Promise(() => {})
 const states = [], refs = [], effects = []
-let hook = 0, mounted = false, finishDetail, finishFavourite, finishToggle, favouriteChanges = 0, changed = 0, detailReads = 0, detailScope
+let hook = 0, mounted = false, finishDetail, changed = 0, detailReads = 0, detailScope
 let initialDetail
 const video = { videoCode: "fixture-001", title: "Fixture", detailPath: "/cn/fixture-001", coverUrl: "" }
 const detail = { ...video, genres: [], sources: [{ label: "1080p", url: "https://media.example/1080p.mp4" }] }
@@ -40,7 +40,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
     detailReads++; detailScope = options.scope
     return options.scope.waitFor(new Promise(resolve => { finishDetail = resolve }))
   } } }
-  if (specifier === "../storage") return { isMissAVFavourite: () => new Promise(resolve => { finishFavourite = resolve }), rememberMissAVDetail: never, toggleMissAVFavourite: () => new Promise(resolve => { finishToggle = resolve }) }
+  if (specifier === "../storage") return { rememberMissAVDetail: never }
   if (specifier === "../subtitles") return { hasMissAVSubtitle: async () => false, isMissAVSubtitleEnabled: () => true }
   if (specifier === "./components/state_view") return { StateView: "StateView" }
   if (specifier === "../design") return { PageBackground: "PageBackground", SectionHeading: "SectionHeading" }
@@ -49,7 +49,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
 }, module, module.exports)
 function render() {
   hook = 0
-  const node = module.exports.DetailPage({ video, initialDetail, onFavouriteChanged() { favouriteChanges++ }, onHistoryChanged() { changed++ } })
+  const node = module.exports.DetailPage({ video, initialDetail, onHistoryChanged() { changed++ } })
   if (!mounted) { mounted = true; effects.forEach(effect => effect()) }
   const nodes = []
   function visit(node) { if (Array.isArray(node)) { node.forEach(visit); return }; if (!node?.props) return; nodes.push(node); visit(node.props.children) }
@@ -68,31 +68,12 @@ try {
   assert.ok(nodes.some(node => node.props.accessibilityLabel === "播放 1080p"), "Play must appear even when history persistence never settles")
   assert.equal(nodes.some(node => node.props.title === "正在获取播放信息"), false)
   assert.equal(changed, 0)
-  await new Promise(resolve => timer(resolve, 25))
-  nodes = render()
-  assert.ok(nodes.some(node => String(node.props.children).includes("本机收藏状态读取失败或超时")), "Local timeout remains nonblocking")
-  finishFavourite(true)
-  await settle()
-  assert.ok(render().some(node => String(node.props.children).includes("本机收藏状态读取失败或超时")), "A late native read cannot overwrite timeout state")
-  // Refresh starts new independent reads and allows recovery.
-  const scroll = nodes.find(node => node.type === "ScrollView")
-  const refresh = scroll.props.refreshable()
-  finishFavourite(false); finishDetail(detail)
+  assert.equal(nodes.some(node => typeof node.type === "function" && node.type.name === "FavouriteButton"), false)
+  assert.equal(nodes.some(node => String(node.props.children).includes("收藏")), false)
+  // Refresh still loads detail, without requesting any local favourites.
+  const refresh = nodes.find(node => node.type === "ScrollView").props.refreshable()
+  finishDetail(detail)
   await refresh; await settle()
-  assert.equal(render().some(node => String(node.props.children).includes("本机收藏状态读取失败或超时")), false)
-  const favouriteNode = () => render().find(node => typeof node.type === "function" && node.type.name === "FavouriteButton")
-  let local = favouriteNode()
-  assert.equal(local.type(local.props).props.accessibilityLabel, "未加入本机收藏，轻点加入")
-  local.props.action()
-  local = favouriteNode()
-  assert.equal(local.type(local.props).props.disabled, true, "Local mutation remains protected from duplicate taps")
-  finishToggle(true); await settle()
-  local = favouriteNode()
-  assert.equal(local.type(local.props).props.accessibilityLabel, "已加入本机收藏，轻点取消")
-  assert.equal(local.type(local.props).props.disabled, false)
-  local.props.action(); finishToggle(false); await settle()
-  assert.equal(favouriteNode().props.value, false)
-  assert.equal(favouriteChanges, 2, "Local add/remove refreshes the library without any website request")
   // An actual disappearance cancels only the visible page request; appearance
   // always restarts it. A late cancelled response cannot replace the new one.
   const page = render().find(node => node.type === "ScrollView")

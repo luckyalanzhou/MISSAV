@@ -46,7 +46,7 @@ const fresh = () => new missavClient.constructor()
 try {
   await db.getMissAVDatabase()
   assert.equal(await db.getMissAVDatabase(), bridge)
-  assert.ok(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_favourites_added'").get())
+  assert.ok(sqlite.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_listing_saved'").get())
   const key = cache.listingCacheKey("https://missav.ws/dm23/cn/release?sort=views&page=2&filters=multiple")
   assert.equal(key, cache.listingCacheKey("https://missav.ws/cn/release?filters=multiple&page=2&sort=views"))
   assert.notEqual(key, cache.listingCacheKey("https://missav.ai/cn/release?sort=views&page=2&filters=multiple"))

@@ -10,7 +10,7 @@ const collections = MISSAV_COLLECTION_OPTIONS.map(item => ({ ...item }))
 const filters = MISSAV_FILTER_OPTIONS.map(item => ({ ...item }))
 const sorts = MISSAV_SORT_OPTIONS.map(item => ({ ...item }))
 
-export function DiscoverPage(props: { accessRevision?: number; onFavouriteChanged: () => void; onHistoryChanged: () => void; toolbar?: any }) {
+export function DiscoverPage(props: { accessRevision?: number; onHistoryChanged: () => void; toolbar?: any }) {
   const [group, setGroup] = useState<MissAVCollectionGroup>("subtitles")
   const [collection, setCollection] = useState<MissAVCollection>("chinese-subtitle")
   const [categoryPath, setCategoryPath] = useState("")
@@ -80,7 +80,7 @@ export function DiscoverPage(props: { accessRevision?: number; onFavouriteChange
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
-    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="discover-results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>

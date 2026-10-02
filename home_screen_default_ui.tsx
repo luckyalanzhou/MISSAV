@@ -3,7 +3,7 @@ import { isMissAVAccessReady } from "./access"
 import { removeLegacyMissAVAccountData } from "./removed-account-migration"
 import { missavClient, type MissAVVideoItem } from "./client"
 import { ACCESSORY_ALIGNMENT_WIDTH, ACCENT, ICON_ALIGNMENT_WIDTH, MEDIA_RADIUS, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, ROW_MIN_HEIGHT, SECTION_SPACING } from "./design"
-import { loadMissAVFavourites, loadMissAVHistory } from "./storage"
+import { loadMissAVHistory } from "./storage"
 import { MediaArtwork } from "./page/components/media_cards"
 import { StateView } from "./page/components/state_view"
 import { DetailPage } from "./page/detail"
@@ -14,8 +14,8 @@ import { SearchPage } from "./page/search"
 import { SettingsPage } from "./page/settings"
 import { AccessGate } from "./page/access_gate"
 
-type HomeScreenData = { recent: MissAVVideoItem[]; favourites: MissAVVideoItem[]; trending: MissAVVideoItem[] }
-const emptyData: HomeScreenData = { recent: [], favourites: [], trending: [] }
+type HomeScreenData = { recent: MissAVVideoItem[]; trending: MissAVVideoItem[] }
+const emptyData: HomeScreenData = { recent: [], trending: [] }
 const HOME_REMOTE_TTL = 90_000
 
 export default function MISSAVHomeScreenView() {
@@ -23,12 +23,10 @@ export default function MISSAVHomeScreenView() {
   const [data, setData] = useState<HomeScreenData>(emptyData)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [favouritesRevision, setFavouritesRevision] = useState(0)
   const [historyRevision, setHistoryRevision] = useState(0)
   const [domainRevision, setDomainRevision] = useState(0)
   const loadGeneration = useRef(0)
   const lastRemoteLoad = useRef(0)
-  const bumpFavourites = () => setFavouritesRevision(value => value + 1)
   const bumpHistory = () => setHistoryRevision(value => value + 1)
   const bumpDomain = () => setDomainRevision(value => value + 1)
   const refreshAfterDomainOrAccessChange = () => { lastRemoteLoad.current = 0; bumpDomain() }
@@ -39,22 +37,19 @@ export default function MISSAVHomeScreenView() {
     const shouldLoadRemote = forceRemote || Date.now() - lastRemoteLoad.current >= HOME_REMOTE_TTL
     const results = await Promise.allSettled([
       loadMissAVHistory(6),
-      loadMissAVFavourites(),
       shouldLoadRemote ? missavClient.searchVideoPage({ collection: "today-hot", page: 1, sort: "today_views", filter: "" }) : Promise.resolve(null),
     ])
     if (current !== loadGeneration.current) return
-    if (shouldLoadRemote && results[2].status === "fulfilled") lastRemoteLoad.current = Date.now()
+    if (shouldLoadRemote && results[1].status === "fulfilled") lastRemoteLoad.current = Date.now()
     setData(previous => ({
       recent: results[0].status === "fulfilled" ? results[0].value.map(item => item.video) : previous.recent,
-      favourites: results[1].status === "fulfilled" ? results[1].value.map(item => item.video) : previous.favourites,
-      trending: results[2].status === "fulfilled" && results[2].value ? results[2].value.items.slice(0, 6) : previous.trending,
+      trending: results[1].status === "fulfilled" && results[1].value ? results[1].value.items.slice(0, 6) : previous.trending,
     }))
     if (results.some(result => result.status === "rejected")) {
       const failedParts: string[] = []
       if (results[0].status === "rejected") failedParts.push("观看记录")
-      if (results[1].status === "rejected") failedParts.push("本机收藏")
-      if (shouldLoadRemote && results[2].status === "rejected") {
-        const reason = results[2].reason
+      if (shouldLoadRemote && results[1].status === "rejected") {
+        const reason = results[1].reason
         failedParts.push(`首页今日热门：${reason instanceof Error ? reason.message : String(reason)}`)
       }
       setError(`部分内容暂时无法更新${failedParts.length ? `（${failedParts.join("；")}）` : ""}，当前已显示可用内容。`)
@@ -71,10 +66,10 @@ export default function MISSAVHomeScreenView() {
     if (!accessReady) return
     void load()
     return Script.onHomeTabEvent(event => { if (event === "selected") void load() })
-  }, [accessReady, favouritesRevision, historyRevision, domainRevision])
+  }, [accessReady, historyRevision, domainRevision])
 
   if (!accessReady) return <AccessGate onReady={() => setAccessReady(true)} />
-  const common = { onFavouriteChanged: bumpFavourites, onHistoryChanged: bumpHistory }
+  const common = { onHistoryChanged: bumpHistory }
   return <NavigationStack><ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}><PageBackground /><ScrollView navigationTitle="MISSAV" navigationBarTitleDisplayMode="inline" scrollEdgeEffectHidden={{ edges: "top", hidden: true }} refreshable={() => load(true)}>
     <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 12, bottom: PAGE_BOTTOM_PADDING }}>
       <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">快速浏览</Text><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">继续观看最近内容，或使用下方入口查找作品。</Text></VStack>
@@ -87,9 +82,9 @@ export default function MISSAVHomeScreenView() {
         <Divider />
         <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle="plain"><HomeAction title="搜索" subtitle="按番号、女优或作品标题搜索" systemImage="magnifyingglass" /></NavigationLink>
         <Divider />
-        <NavigationLink destination={<LibraryPage favouritesRevision={favouritesRevision} historyRevision={historyRevision} {...common} onDiscover={() => {}} />} buttonStyle="plain"><HomeAction title="资料库" subtitle={`${data.favourites.length} 部本机收藏作品`} systemImage="play.square.stack" /></NavigationLink>
+        <NavigationLink destination={<LibraryPage historyRevision={historyRevision} {...common} onDiscover={() => {}} />} buttonStyle="plain"><HomeAction title="资料库" subtitle="播放记录与浏览记录，仅保存在本机" systemImage="play.square.stack" /></NavigationLink>
         <Divider />
-        <NavigationLink destination={<RecommendationsPage revision={favouritesRevision + historyRevision} {...common} onDiscover={() => {}} />} buttonStyle="plain"><HomeAction title="为你推荐" subtitle="根据本机收藏和观看记录生成" systemImage="sparkles" /></NavigationLink>
+        <NavigationLink destination={<RecommendationsPage revision={historyRevision} {...common} onDiscover={() => {}} />} buttonStyle="plain"><HomeAction title="为你推荐" subtitle="根据浏览记录和播放记录生成" systemImage="sparkles" /></NavigationLink>
       </VStack>
 
       {data.trending.length ? <VideoSection title="今日热门" subtitle="今日观看较多的作品" items={data.trending} {...common} /> : undefined}
@@ -108,8 +103,8 @@ function HomeAction(props: { title: string; subtitle: string; systemImage: strin
   </HStack>
 }
 
-function VideoSection(props: { title: string; subtitle: string; items: MissAVVideoItem[]; onFavouriteChanged: () => void; onHistoryChanged: () => void }) {
-  return <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><VStack spacing={3} alignment="leading"><Text font="title2" fontWeight="bold">{props.title}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{props.subtitle}</Text></VStack><LazyVGrid columns={[{ size: { type: "adaptive", min: 150, max: 230 }, spacing: 14 }]} spacing={18}>{props.items.map(video => <NavigationLink key={video.videoCode} destination={<DetailPage video={video} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} />} buttonStyle="plain"><HomeVideo video={video} /></NavigationLink>)}</LazyVGrid></VStack>
+function VideoSection(props: { title: string; subtitle: string; items: MissAVVideoItem[]; onHistoryChanged: () => void }) {
+  return <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><VStack spacing={3} alignment="leading"><Text font="title2" fontWeight="bold">{props.title}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{props.subtitle}</Text></VStack><LazyVGrid columns={[{ size: { type: "adaptive", min: 150, max: 230 }, spacing: 14 }]} spacing={18}>{props.items.map(video => <NavigationLink key={video.videoCode} destination={<DetailPage video={video} onHistoryChanged={props.onHistoryChanged} />} buttonStyle="plain"><HomeVideo video={video} /></NavigationLink>)}</LazyVGrid></VStack>
 }
 
 function HomeVideo(props: { video: MissAVVideoItem }) {

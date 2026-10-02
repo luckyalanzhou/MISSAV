@@ -69,7 +69,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     </Section>
 
     <Section header={<Text>数据与隐私</Text>} footer={<Text>如需清除播放或浏览记录，请前往资料库中的对应分类。</Text>}>
-      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="iphone" foregroundStyle="secondaryLabel" frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">仅保存在本机</Text><Text font="subheadline" foregroundStyle="secondaryLabel">本机收藏、浏览记录和播放记录不会上传</Text></VStack></HStack>
+      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="iphone" foregroundStyle="secondaryLabel" frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">仅保存在本机</Text><Text font="subheadline" foregroundStyle="secondaryLabel">浏览记录和播放记录不会上传</Text></VStack></HStack>
       <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="arrow.triangle.2.circlepath" foregroundStyle="secondaryLabel" frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">播放信息实时更新</Text><Text font="subheadline" foregroundStyle="secondaryLabel">打开播放器前会获取当前可用画质</Text></VStack></HStack>
     </Section>
 

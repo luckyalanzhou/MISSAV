@@ -10,12 +10,10 @@ import { AccessGate } from "./access_gate"
 export function HomePage(props: { onClose: () => void }) {
   const [accessReady, setAccessReady] = useState(() => isMissAVAccessReady())
   const selection = useObservable<number>(0)
-  const favouritesRevision = useObservable(0)
   const historyRevision = useObservable(0)
   const domainRevision = useObservable(0)
   const accessRevision = useObservable(0)
   const settingsPresented = useObservable(false)
-  const bumpFavourites = () => favouritesRevision.setValue(favouritesRevision.value + 1)
   const bumpHistory = () => historyRevision.setValue(historyRevision.value + 1)
   const bumpDomain = () => domainRevision.setValue(domainRevision.value + 1)
   const bumpAccess = () => accessRevision.setValue(accessRevision.value + 1)
@@ -32,14 +30,14 @@ export function HomePage(props: { onClose: () => void }) {
       <Button action={() => { if (!Script.isMinimized()) Script.minimize().catch(() => {}) }} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="最小化浏览器"><Image systemName="arrow.down.right.and.arrow.up.left" font="headline" foregroundStyle="label" /></Button>
     </ToolbarItem> : null}
   </Toolbar>
-  const localRevision = favouritesRevision.value + historyRevision.value
+  const localRevision = historyRevision.value
   if (!accessReady) return <AccessGate onReady={() => setAccessReady(true)} onClose={props.onClose} />
   return <NavigationStack>
     <TabView selection={selection} tint="systemPink" tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="onScrollDown" toolbar={toolbar}>
-      <Tab title="首页" systemImage="house" value={0}><MediaHomePage key={`home-${domainRevision.value}`} accessRevision={accessRevision.value} revision={localRevision} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} onLibrary={() => selection.setValue(2)} /></Tab>
-      <Tab title="浏览" systemImage="square.grid.2x2" value={1}><DiscoverPage key={`discover-${domainRevision.value}`} accessRevision={accessRevision.value} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} /></Tab>
-      <Tab title="资料库" systemImage="play.square.stack" value={2}><LibraryPage favouritesRevision={favouritesRevision.value} historyRevision={historyRevision.value} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
-      <Tab title="搜索" systemImage="magnifyingglass" role="search" value={3}><SearchPage key={`search-${domainRevision.value}`} onFavouriteChanged={bumpFavourites} onHistoryChanged={bumpHistory} /></Tab>
+      <Tab title="首页" systemImage="house" value={0}><MediaHomePage key={`home-${domainRevision.value}`} accessRevision={accessRevision.value} revision={localRevision} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
+      <Tab title="浏览" systemImage="square.grid.2x2" value={1}><DiscoverPage key={`discover-${domainRevision.value}`} accessRevision={accessRevision.value} onHistoryChanged={bumpHistory} /></Tab>
+      <Tab title="资料库" systemImage="play.square.stack" value={2}><LibraryPage historyRevision={historyRevision.value} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
+      <Tab title="搜索" systemImage="magnifyingglass" role="search" value={3}><SearchPage key={`search-${domainRevision.value}`} onHistoryChanged={bumpHistory} /></Tab>
     </TabView>
   </NavigationStack>
 }

@@ -23,7 +23,7 @@ const discoveryCollections: ReadonlyArray<{ collection: MissAVCollection; title:
   { collection: "madou", title: "亚洲 AV", subtitle: "浏览麻豆传媒，更多子栏目见浏览页", systemImage: "globe.asia.australia" },
 ]
 
-export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryChanged: () => void; toolbar?: any }) {
+export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any }) {
   const [keyword, setKeyword] = useState("")
   const [inputEpoch, setInputEpoch] = useState(0)
   const [inputFocused, setInputFocused] = useState(false)
@@ -105,7 +105,7 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
-    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="搜索" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} scrollDismissesKeyboard="interactively" onAppear={() => { void loadDiscoveryOnce() }} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="搜索" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} scrollDismissesKeyboard="interactively" onAppear={() => { void loadDiscoveryOnce() }} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <HStack spacing={10} padding={{ horizontal: 14 }} frame={{ maxWidth: "infinity", minHeight: 48 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 14, style: "continuous" }}>
           <Image systemName="magnifyingglass" foregroundStyle="secondaryLabel" />

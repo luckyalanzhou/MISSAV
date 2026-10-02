@@ -43,7 +43,7 @@ export function resolveMissAVURL(value: string): string {
       const selected = new URL(baseURL)
       url.protocol = selected.protocol
       url.host = selected.host
-      // Local favourites and history can still contain older language URLs.
+      // Local history can still contain older language URLs.
       // Preserve dynamic prefixes, queries and media paths without a locale.
       url.pathname = url.pathname.replace(/^((?:\/dm\d+)?\/)(?:ja|en|cn|ko|ms|th|de|fr|vi|id|fil|pt)(?=\/|$)/i, `$1${MISSAV_LOCALE}`)
     }

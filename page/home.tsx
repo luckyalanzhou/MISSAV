@@ -1,7 +1,7 @@
-import { Divider, HStack, Image, LazyHStack, ScrollView, Text, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
+import { HStack, Image, LazyHStack, ScrollView, Text, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoItem } from "../client"
 import { ActionRow, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SECTION_SPACING, SectionHeading } from "../design"
-import { loadMissAVFavourites, loadMissAVHistory, type MissAVPlaybackRecord } from "../storage"
+import { loadMissAVHistory, type MissAVPlaybackRecord } from "../storage"
 import { formatMissAVContinueWatching } from "../playback-progress"
 import { MediaHero, MediaTile } from "./components/media_cards"
 import { StateView } from "./components/state_view"
@@ -10,11 +10,11 @@ import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigatio
 import { RecommendationsPage } from "./recommendations"
 
 type HomeRemote = { latest: MissAVVideoItem[]; trending: MissAVVideoItem[] }
-type HomeLocal = { recent: MissAVPlaybackRecord[]; favourites: MissAVVideoItem[] }
+type HomeLocal = { recent: MissAVPlaybackRecord[] }
 
-export function MediaHomePage(props: { revision: number; accessRevision?: number; onFavouriteChanged: () => void; onHistoryChanged: () => void; onDiscover: () => void; onLibrary: () => void; toolbar?: any }) {
+export function MediaHomePage(props: { revision: number; accessRevision?: number; onHistoryChanged: () => void; onDiscover: () => void; toolbar?: any }) {
   const [remote, setRemote] = useState<HomeRemote>({ latest: [], trending: [] })
-  const [local, setLocal] = useState<HomeLocal>({ recent: [], favourites: [] })
+  const [local, setLocal] = useState<HomeLocal>({ recent: [] })
   const [remoteLoading, setRemoteLoading] = useState(true)
   const [localLoading, setLocalLoading] = useState(true)
   const [remoteError, setRemoteError] = useState<string | null>(null)
@@ -57,11 +57,10 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
   async function loadLocal() {
     const current = ++localGeneration.current
     setLocalLoading(true)
-    const results = await Promise.allSettled([loadMissAVHistory(8), loadMissAVFavourites(8)])
+    const results = await Promise.allSettled([loadMissAVHistory(8)])
     if (current !== localGeneration.current) return
     setLocal(previous => ({
       recent: results[0].status === "fulfilled" ? results[0].value : previous.recent,
-      favourites: results[1].status === "fulfilled" ? results[1].value.map(item => item.video) : previous.favourites,
     }))
     setLocalLoading(false)
   }
@@ -78,7 +77,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
-    <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
         <VStack spacing={12} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <SectionHeading title="继续观看" subtitle={continueWatching ? "从最近播放的作品继续。" : "播放记录将显示在这里。"} level="primary" />
@@ -90,9 +89,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
         </VStack>
 
         <VStack spacing={0} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          <ActionRow title="为你推荐" subtitle="根据保存在本机的收藏和观看记录生成。" systemImage="sparkles" action={() => recommendationsPresented.setValue(true)} navigationDestination={{ isPresented: recommendationsPresented, content: <RecommendationsPage revision={props.revision} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} onDiscover={props.onDiscover} /> }} />
-          <Divider />
-          <ActionRow title="本机收藏" subtitle={`${local.favourites.length} 部作品，仅保存在本机。`} systemImage="heart" action={props.onLibrary} />
+          <ActionRow title="为你推荐" subtitle="根据保存在本机的浏览记录和播放记录生成。" systemImage="sparkles" action={() => recommendationsPresented.setValue(true)} navigationDestination={{ isPresented: recommendationsPresented, content: <RecommendationsPage revision={props.revision} onHistoryChanged={props.onHistoryChanged} onDiscover={props.onDiscover} /> }} />
         </VStack>
 
         {recommended.length

@@ -50,7 +50,7 @@ function render() {
     if (value.type === "ScrollViewReader") visit(value.props.children({ scrollTo: () => {} }))
     else visit(value.props.children)
   }
-  visit(module.exports.DiscoverPage({ onFavouriteChanged() {}, onHistoryChanged() {} }))
+  visit(module.exports.DiscoverPage({ onHistoryChanged() {} }))
   return nodes
 }
 const named = (nodes, name) => nodes.filter(node => (typeof node.type === "function" ? node.type.name : node.type) === name)
