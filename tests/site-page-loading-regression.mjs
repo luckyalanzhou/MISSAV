@@ -194,7 +194,7 @@ try {
   const probeMenu = menu + '<a href="/dm333/cn/fc2">FC2</a>'
   sharedCookies = [cookie("verified-live")]
   responseFor = url => listing("verified-005", probeMenu)
-  assert.equal((await openMissAVSiteVerification()).status, "accessible")
+  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
   assert.equal(requests.length, 5)
   assert.ok(requests.every(value => /^\/(?:dm\d+\/)?cn\//.test(new URL(value).pathname)), "Every Settings verification probe uses cn")
   assert.deepEqual(requests.map(value => new URL(value).pathname), ["/cn/chinese-subtitle", "/cn/new", "/cn/siro", "/dm817/cn/uncensored-leak", "/cn/madou"])
@@ -214,10 +214,48 @@ try {
   responseFor = url => url.pathname.endsWith("/release") && needsChallenge ? challenge : listing("verified-006", probeMenu)
   modalContent = listing("verified-006", probeMenu)
   requests.length = 0
-  assert.equal((await openMissAVSiteVerification()).status, "accessible")
+  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: true })
   assert.equal(modalCount, 1, "A Settings challenge presents the exact route, then auto dismisses on real listing content")
   assert.equal(requests.length, 7, "Check five group entries and the recently challenged subcategory, with one visible reload")
   assert.equal(missavClient.accessProbeRoutes().length, 5, "Successful verification clears remembered challenge routes")
+
+  // A window opened for a blank document isn't proof of a Cloudflare challenge.
+  let blankDocument = true
+  modalCount = 0
+  requests.length = 0
+  responseFor = () => blankDocument ? null : listing("recovered-007", probeMenu)
+  modalContent = listing("recovered-007", probeMenu)
+  MockWebView.prototype.present = function() {
+    blankDocument = false
+    return nativePresent.call(this)
+  }
+  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
+  assert.equal(modalCount, 1)
+  assert.equal(requests.length, 6)
+
+  // Also record challenges that appear only after the window becomes visible.
+  blankDocument = true
+  modalCount = 0
+  let visibleReads = 0
+  const nativeGetHTML = MockWebView.prototype.getHTML
+  MockWebView.prototype.getHTML = async function() {
+    if (this.close) this.html = ++visibleReads === 1 ? challenge : listing("foreground-008", probeMenu)
+    return nativeGetHTML.call(this)
+  }
+  responseFor = () => blankDocument ? null : listing("foreground-008", probeMenu)
+  modalContent = challenge
+  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: true })
+  assert.equal(modalCount, 1)
+  assert.ok(visibleReads >= 2)
+  MockWebView.prototype.getHTML = nativeGetHTML
+
+  // Closing while a challenge is still present must never report completion.
+  responseFor = () => challenge
+  modalContent = challenge
+  MockWebView.prototype.present = function() { modalCount++; this.html = modalContent; return Promise.resolve() }
+  const incomplete = await openMissAVSiteVerification()
+  assert.equal(incomplete.status, "incomplete")
+  assert.equal(incomplete.challengeCompleted, undefined)
 
   // A failed later probe must not read the preceding controller's listing.
   modalCount = 0
@@ -279,7 +317,7 @@ try {
   await assert.rejects(missavClient.searchVideoPage({ collection: "genres", categoryPath: "/dm22/cn/genres/example", page: 2, filter: "multiple", sort: "views" }, { forceRefresh: true }), /Cloudflare/)
   requests.length = 0
   responseFor = () => listing("verified-leaf-001", siteMenu)
-  assert.equal((await openMissAVSiteVerification()).status, "accessible")
+  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
   assert.equal(requests.length, 6)
   const verifiedLeafURL = new URL(requests.at(-1))
   assert.equal(verifiedLeafURL.pathname, "/dm22/cn/genres/example")

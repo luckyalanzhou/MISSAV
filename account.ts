@@ -85,11 +85,12 @@ export async function loginMissAV(email: string, password: string): Promise<Miss
 }
 
 export type MissAVSiteVerificationResult =
-  | { status: "accessible" }
+  | { status: "accessible"; challengeCompleted: boolean }
   | { status: "incomplete" | "unavailable"; probe: MissAVAccessProbe }
 const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
 
 export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificationResult> {
+  let challengeCompleted = false
   // Check real group entries and recently challenged subcategories.
   // Group headings are never treated as page URLs.
   for (const probe of missavClient.accessProbeRoutes()) {
@@ -108,14 +109,15 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
 
       // The HTML is the source of truth; WebKit can report a redirect callback
       // as incomplete even though a usable list is already on screen.
-      const needsVisibleCheck = isCloudflareHTML(initialPage.html || "")
-        || !isProbePageHTML(initialPage.html, probe)
+      const initialChallenge = isCloudflareHTML(initialPage.html || "")
+      const needsVisibleCheck = initialChallenge || !isProbePageHTML(initialPage.html, probe)
       if (needsVisibleCheck) {
         // Reload the exact route only after its window is visible. Cloudflare's
         // challenge scripts may stall when first loaded in a hidden WebView.
-        const visibleListingConfirmed = await presentVerificationPage(controller, probe)
+        const { listingConfirmed: visibleListingConfirmed, challengeObserved } = await presentVerificationPage(controller, probe)
         try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
         if (visibleListingConfirmed) {
+          if (initialChallenge || challengeObserved) challengeCompleted = true
           missavClient.rememberCollectionRoutes(await controller.getHTML().catch(() => null), probeURL)
           continue
         }
@@ -133,7 +135,7 @@ export async function openMissAVSiteVerification(): Promise<MissAVSiteVerificati
   }
   missavClient.clearSearchPageCache()
   missavClient.clearVerificationCollections()
-  return { status: "accessible" }
+  return { status: "accessible", challengeCompleted }
 }
 
 function isProbePageHTML(html: string | null, probe: MissAVAccessProbe): boolean {
@@ -143,10 +145,11 @@ function isProbePageHTML(html: string | null, probe: MissAVAccessProbe): boolean
     : isLikelyMissAVListingHTML(html)
 }
 
-async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe): Promise<boolean> {
+async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe): Promise<{ listingConfirmed: boolean; challengeObserved: boolean }> {
   const probeURL = probe.url
   let presentationClosed = false
   let listingConfirmed = false
+  let challengeObserved = false
   const presentation = controller.present({ fullscreen: true, navigationTitle: "验证访问线路" }).finally(() => { presentationClosed = true })
 
   // Let the modal become visible before navigating so Cloudflare's interactive
@@ -164,6 +167,7 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
     try { html = await controller.getHTML() } catch { /* Keep waiting for the page to update. */ }
     if (presentationClosed) break
 
+    if (isCloudflareHTML(html || "")) challengeObserved = true
     if (isProbePageHTML(html, probe)) {
       listingConfirmed = true
       if (!presentationClosed) controller.dismiss()
@@ -176,10 +180,14 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
   // If the user dismissed manually just after the challenge completed, inspect
   // the page already in the WebView before deciding to perform another request.
   if (!listingConfirmed) {
-    try { listingConfirmed = isProbePageHTML(await controller.getHTML(), probe) }
+    try {
+      const html = await controller.getHTML()
+      if (isCloudflareHTML(html || "")) challengeObserved = true
+      listingConfirmed = isProbePageHTML(html, probe)
+    }
     catch { /* The WebView may already have released its document on dismissal. */ }
   }
-  return listingConfirmed
+  return { listingConfirmed, challengeObserved }
 }
 
 export function signOutMissAV(): void {

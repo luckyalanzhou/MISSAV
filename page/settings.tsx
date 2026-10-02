@@ -57,7 +57,9 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     try {
       const result = await openMissAVSiteVerification()
       setAccessMessage(result.status === "accessible"
-        ? "验证通过：常用栏目访问检查通过，正在刷新首页和浏览内容。"
+        ? result.challengeCompleted
+          ? "Cloudflare 验证完成，常用栏目访问检查通过。已发起首页和浏览页刷新。"
+          : "常用栏目访问正常，本次无需 Cloudflare 验证。已发起首页和浏览页刷新。"
         : result.status === "incomplete"
           ? `${result.probe.title}栏目仍显示 Cloudflare 验证。请在弹出的页面完成验证，页面确认载入作品后会自动关闭。`
           : `${result.probe.title}栏目未返回有效作品列表。请检查网络或切换访问域名后重试。`)
@@ -74,7 +76,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     try {
       const next = await verifyMissAVAccount()
       setAccount(next)
-      setAccountMessage(next.state === "signedIn" ? "网站账号会话有效；栏目访问仍可能需要 Cloudflare 线路验证。" : next.state === "blocked" ? "当前网络暂时无法验证网站账号，请先验证访问线路后重试。" : "登录已失效，请重新登录。")
+      setAccountMessage(next.state === "signedIn" ? "网站账号会话有效。" : next.state === "blocked" ? "暂时无法确认网站账号会话，请稍后重试。" : "登录已失效，请重新登录。")
     } catch (reason) {
       setAccountMessage(reason instanceof Error ? reason.message : "网站账号暂时无法验证。")
     } finally { setAccountBusy(false) }
@@ -119,7 +121,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     </Section>
 
     <Section header={<Text>网站账号</Text>} footer={<Text>邮箱和密码只用于本次登录请求，不会保存；登录成功后仅将网站会话保存在系统钥匙串中。网站收藏与本机收藏分开显示。</Text>}>
-      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName={account.state === "signedIn" ? "person.crop.circle.badge.checkmark" : account.state === "expired" ? "person.crop.circle.badge.exclamationmark" : account.state === "blocked" ? "person.crop.circle.badge.questionmark" : "person.crop.circle"} foregroundStyle={account.state === "signedIn" ? "systemGreen" : account.state === "signedOut" ? "secondaryLabel" : "systemOrange"} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">{account.state === "signedIn" ? "已登录网站账号" : account.state === "expired" ? "登录已失效" : account.state === "blocked" ? "需要完成网站验证" : "未登录网站账号"}</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{account.accountLabel || "用于读取网站收藏"}</Text></VStack></HStack>
+      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName={account.state === "signedIn" ? "person.crop.circle.badge.checkmark" : account.state === "expired" ? "person.crop.circle.badge.exclamationmark" : account.state === "blocked" ? "person.crop.circle.badge.questionmark" : "person.crop.circle"} foregroundStyle={account.state === "signedIn" ? "systemGreen" : account.state === "signedOut" ? "secondaryLabel" : "systemOrange"} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">{account.state === "signedIn" ? "已登录网站账号" : account.state === "expired" ? "登录已失效" : account.state === "blocked" ? "网站账号暂时无法验证" : "未登录网站账号"}</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{account.accountLabel || "用于读取网站收藏"}</Text></VStack></HStack>
       {account.state !== "signedIn" ? <TextField title="注册邮箱" value={loginEmail} onChanged={setLoginEmail} textContentType="username" keyboardType="emailAddress" autocorrectionDisabled submitLabel="next" /> : undefined}
       {account.state !== "signedIn" ? <SecureField title="密码" value={loginPassword} onChanged={setLoginPassword} textContentType="password" submitLabel="go" onSubmit={() => { void loginAccount() }} /> : undefined}
       {account.state !== "signedIn" ? <Button title={accountBusy ? "正在登录" : "登录 MISSAV"} systemImage="person.badge.key" disabled={operationBusy || !loginEmail.trim() || !loginPassword} tint={ACCENT} action={() => { void loginAccount() }} /> : undefined}
