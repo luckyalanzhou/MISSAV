@@ -2,6 +2,7 @@ import { Button, HStack, Image, LazyVGrid, Menu, ProgressView, ScrollView, Scrol
 import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../client"
 import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
+import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 
@@ -22,8 +23,9 @@ export function DiscoverPage(props: { accessRevision?: number; onFavouriteChange
   const [hasNext, setHasNext] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<MissAVVideoItem | null>(null)
-  const detailPresented = useObservable(false)
+  const detailNavigation = useDetailNavigation()
+  const selected = detailNavigation.selected
+  const detailPresented = detailNavigation.isPresented
   const firstLoad = useRef(false)
   const generation = useRef(0)
   const requestScope = useRef<MissAVRequestScope | null>(null)
@@ -64,7 +66,7 @@ export function DiscoverPage(props: { accessRevision?: number; onFavouriteChange
     setCategoryTitle("")
     void load({ page: 1, collection: value, categoryPath: "", filter: "", sort: defaultCollectionSort(value) })
   }
-  function open(video: MissAVVideoItem) { setSelected(video); detailPresented.setValue(true) }
+  function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
   useEffect(() => () => { ++generation.current; requestScope.current?.cancel() }, [])
   useEffect(() => { if (props.accessRevision && firstLoad.current) void load() }, [props.accessRevision])
   useEffect(() => { if (items.length || categories.length) scrollProxy.current?.scrollTo("discover-results-top", "top") }, [page, collection, filter, sort, categoryPath])
@@ -76,9 +78,9 @@ export function DiscoverPage(props: { accessRevision?: number; onFavouriteChange
   const hero = page === 1 ? items[0] : undefined
   const recommendations = hero ? items.slice(1) : items
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
-    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage video={selected} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={selected.detail.watchUrl} video={selected.video} initialDetail={selected.detail} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="discover-results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>

@@ -21,6 +21,7 @@ const playbackHeaders = { Referer: "https://example.test/watch", Origin: "https:
 const assets = []
 const audioSessionCalls = []
 const source = { url: "https://media.example.test/video.mp4", type: "mp4", label: "1080p", qualityHeight: 1080 }
+const readyDetail = { sources: [source], title: "测试作品", watchUrl: "https://example.test/watch" }
 let timerId = 0
 let player
 let presented
@@ -239,7 +240,7 @@ try {
   assert.equal(subtitles.isMissAVSubtitleEnabled("FNS-258"), true, "Saving a subtitle must associate and enable it automatically")
   assert.equal((await subtitles.loadMissAVSubtitle(" fns-258 ")).cues.length, 3, "Import and playback must use the same normalized file path")
 
-  const playback = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source)
+  const playback = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source, { detail: readyDetail })
   await waitForPresentation(playback)
   assert.deepEqual(audioSessionCalls.slice(0, 2), [["category", "playback", []], ["active", true]], "Playback must not use defaultToSpeaker with the playback category")
   assert.equal(player.source, assets[0], "Authenticated stream must be passed to AVPlayer as an AVAsset")
@@ -342,7 +343,7 @@ try {
 
   presented = undefined
   subtitles.setMissAVSubtitleEnabled("FNS-258", false)
-  const withoutSubtitles = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source)
+  const withoutSubtitles = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source, { detail: readyDetail })
   await waitForPresentation(withoutSubtitles)
   assert.equal(presented.props.subtitles, undefined)
   const plainModal = renderOverlay(presented)
@@ -363,7 +364,7 @@ try {
   assert.equal(timers.size, 0)
 
   presented = undefined
-  const preview = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source, { subtitles: subtitles.MISSAV_SUBTITLE_PREVIEW, preview: true })
+  const preview = chooseAndPresentMissAVPlayer({ videoCode: "FNS-258" }, source, { detail: readyDetail, subtitles: subtitles.MISSAV_SUBTITLE_PREVIEW, preview: true })
   await waitForPresentation(preview)
   mountedModal = renderOverlay(presented)
   assert.equal(find(mountedModal, "AVPlayerView").props.videoGravity, undefined, "Native aspect handling must be used for every playback session")

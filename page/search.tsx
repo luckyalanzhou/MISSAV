@@ -2,6 +2,7 @@ import { Button, Divider, HStack, Image, LazyHStack, LazyVGrid, LazyVStack, Pick
 import { defaultMissAVCollectionSort, missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVCollection, type MissAVVideoItem } from "../client"
 import { ACCESSORY_ALIGNMENT_WIDTH, ACCENT, MEDIA_ROW_HEIGHT, MEDIA_ROW_RADIUS, MEDIA_ROW_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
+import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaArtwork, MediaTile } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 
@@ -36,8 +37,9 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
   const [resultsRevision, setResultsRevision] = useState(0)
   const [popular, setPopular] = useState<MissAVVideoItem[]>([])
   const [popularLoading, setPopularLoading] = useState(true)
-  const [selected, setSelected] = useState<MissAVVideoItem | null>(null)
-  const detailPresented = useObservable(false)
+  const detailNavigation = useDetailNavigation()
+  const selected = detailNavigation.selected
+  const detailPresented = detailNavigation.isPresented
   const generation = useRef(0)
   const loadedDiscovery = useRef(false)
   const requestScope = useRef<MissAVRequestScope | null>(null)
@@ -89,7 +91,7 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
     if (!query) { ++generation.current; requestScope.current?.cancel(); setLoading(false); setError("请输入番号、女优或作品标题。"); setSource({ kind: "query", query: "" }); setItems([]); setPage(1); setHasNext(false); return }
     void loadResults({ kind: "query", query }, 1, true)
   }
-  function open(video: MissAVVideoItem) { setSelected(video); detailPresented.setValue(true) }
+  function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
   function changeResultLayout(value: string | number) {
     const next: SearchResultLayout = value === "cover" ? "cover" : "list"
     setResultLayout(next)
@@ -101,9 +103,9 @@ export function SearchPage(props: { onFavouriteChanged: () => void; onHistoryCha
 
   const resultTitle = source?.kind === "query" ? `“${source.query}”` : source?.title
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
-    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="搜索" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} scrollDismissesKeyboard="interactively" onAppear={() => { void loadDiscoveryOnce() }} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage video={selected} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="搜索" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} scrollDismissesKeyboard="interactively" onAppear={() => { void loadDiscoveryOnce() }} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={selected.detail.watchUrl} video={selected.video} initialDetail={selected.detail} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <HStack spacing={10} padding={{ horizontal: 14 }} frame={{ maxWidth: "infinity", minHeight: 48 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 14, style: "continuous" }}>
           <Image systemName="magnifyingglass" foregroundStyle="secondaryLabel" />

@@ -14,6 +14,7 @@ import {
   type MissAVPlaybackRecord,
 } from "../storage"
 import { DetailPage } from "./detail"
+import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { DestructiveMenu } from "./components/destructive_menu"
 import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
@@ -72,8 +73,9 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
   const [accountPage, setAccountPage] = useState(1)
   const [accountHasNext, setAccountHasNext] = useState(false)
   const [clearing, setClearing] = useState<"playback" | "browse" | null>(null)
-  const [selected, setSelected] = useState<MissAVVideoItem | null>(null)
-  const detailPresented = useObservable(false)
+  const detailNavigation = useDetailNavigation()
+  const selected = detailNavigation.selected
+  const detailPresented = detailNavigation.isPresented
   const generation = useRef(0)
 
   async function load() {
@@ -136,8 +138,7 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
   }
 
   function open(video: MissAVVideoItem) {
-    setSelected(video)
-    detailPresented.setValue(true)
+    void detailNavigation.open(video)
   }
 
   async function clearPlayback() {
@@ -173,7 +174,7 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
       : undefined
   const statusSystemImage = segment === "playback" ? "play.circle" : segment === "browse" ? "eye" : segment === "account" ? "person.crop.circle.badge.checkmark" : undefined
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
     <ScrollView
       navigationTitle="资料库"
@@ -182,7 +183,7 @@ export function LibraryPage(props: { favouritesRevision: number; historyRevision
       refreshable={refresh}
       navigationDestination={{
         isPresented: detailPresented,
-        content: selected ? <DetailPage video={selected} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack />,
+        content: selected ? <DetailPage key={selected.detail.watchUrl} video={selected.video} initialDetail={selected.detail} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack />,
       }}
     >
       <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>

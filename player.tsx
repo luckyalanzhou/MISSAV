@@ -1,14 +1,13 @@
 import { presentNativeOnlinePlayer } from "./native-player"
-import { missavClient, type MissAVVideoItem, type MissAVVideoSource } from "./client"
+import { missavClient, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "./client"
 import { loadMissAVPlaybackProgress, recordMissAVPlayback, saveMissAVPlaybackProgress } from "./storage"
-import { matchFreshMissAVPlaybackSource } from "./playback-source"
 import { isMissAVSubtitleEnabled, loadMissAVSubtitle, type SubtitleTrack } from "./subtitles"
 import { withMissAVDeadline } from "./request-deadline"
 export type MissAVPlaybackResult = { opened: true } | { opened: false }
 
-export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selected: MissAVVideoSource, options?: { subtitles?: SubtitleTrack; preview?: boolean }): Promise<MissAVPlaybackResult> {
-  const freshDetail = await missavClient.getVideo(video, { preferRecent: true })
-  const freshSource = matchFreshMissAVPlaybackSource(selected, freshDetail.sources)
+export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selected: MissAVVideoSource, options: { detail: MissAVVideoDetail; subtitles?: SubtitleTrack; preview?: boolean }): Promise<MissAVPlaybackResult> {
+  const freshDetail = options.detail
+  const freshSource = freshDetail.sources.find(source => source.url === selected.url && source.type === selected.type)
   if (!freshSource) throw new Error("所选清晰度已不可用，请刷新详情后重试。")
   if (!/^https?:\/\//i.test(freshSource.url)) throw new Error("当前清晰度没有可用的播放地址。")
   try {

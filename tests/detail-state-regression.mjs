@@ -15,6 +15,7 @@ const settle = async () => { for (let i = 0; i < 35; i++) await Promise.resolve(
 const never = () => new Promise(() => {})
 const states = [], refs = [], effects = []
 let hook = 0, mounted = false, finishDetail, finishFavourite, websiteReads = 0, changed = 0, detailReads = 0, detailScope
+let initialDetail
 const video = { videoCode: "fixture-001", title: "Fixture", detailPath: "/cn/fixture-001", coverUrl: "" }
 const detail = { ...video, genres: [], sources: [{ label: "1080p", url: "https://media.example/1080p.mp4" }] }
 const jsx = (type, props) => ({ type, props: props || {} })
@@ -34,6 +35,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
   if (specifier === "../request-deadline") return deadline
   if (specifier === "../detail-loading") return detailLoading
+  if (specifier === "./detail-navigation") return {}
   if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo: (_, options) => {
     detailReads++; detailScope = options.scope
     return options.scope.waitFor(new Promise(resolve => { finishDetail = resolve }))
@@ -48,7 +50,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
 }, module, module.exports)
 function render() {
   hook = 0
-  const node = module.exports.DetailPage({ video, onFavouriteChanged() {}, onHistoryChanged() { changed++ } })
+  const node = module.exports.DetailPage({ video, initialDetail, onFavouriteChanged() {}, onHistoryChanged() { changed++ } })
   if (!mounted) { mounted = true; effects.forEach(effect => effect()) }
   const nodes = []
   function visit(node) { if (Array.isArray(node)) { node.forEach(visit); return }; if (!node?.props) return; nodes.push(node); visit(node.props.children) }
@@ -113,5 +115,13 @@ try {
   finishDetail(detail)
   await settle()
   assert.equal(render().some(node => node.props.title === "刷新失败"), false)
+  states.length = 0; refs.length = 0; effects.length = 0; mounted = false
+  initialDetail = detail
+  const readsBeforePrepared = detailReads
+  nodes = render()
+  assert.ok(nodes.some(node => node.props.accessibilityLabel === "播放 1080p"), "Prepared detail has resolution on its first render")
+  nodes.find(node => node.type === "ScrollView").props.onAppear()
+  await settle()
+  assert.equal(detailReads, readsBeforePrepared, "Prepared destination never requests detail again on appearance")
   console.log("PASS: native visible-page ownership; duplicate appearance coalescing; late-result guards; return/retry recovery; playback independent of history/SQLite")
 } finally { globalThis.setTimeout = timer }

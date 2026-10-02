@@ -10,6 +10,7 @@ const timer = setTimeout, warn = console.warn
 globalThis.setTimeout = (callback, delay, ...args) => timer(callback, delay === 2_000 ? 15 : delay, ...args)
 console.warn = () => {}
 const source = { url: "https://cdn.example/1080p/video.m3u8", label: "1080p", qualityHeight: 1080, type: "application/vnd.apple.mpegurl" }
+const detail = { sources: [source], title: "Fixture", watchUrl: "https://missav.ws/cn/abc-001" }
 let mode = "normal", presented, historyWrites = 0, optionalReads = 0
 const never = () => new Promise(() => {})
 const module = { exports: {} }
@@ -18,7 +19,7 @@ new Function("require", "module", "exports", babelTransform(readFileSync(path, "
   if (specifier === "./request-deadline") return deadline
   if (specifier === "./native-player") return { presentNativeOnlinePlayer: async options => { presented = options } }
   if (specifier === "./client") return { missavClient: {
-    getVideo: async (_, options) => { assert.equal(options.preferRecent, true); return { sources: [source], title: "Fixture", watchUrl: "https://missav.ws/cn/abc-001" } },
+    getVideo: async () => { throw Error("Playback must use the prepared detail without fetching again") },
     playbackHeaders: () => ({}),
   } }
   if (specifier === "./playback-source") return { matchFreshMissAVPlaybackSource: () => source }
@@ -36,21 +37,21 @@ new Function("require", "module", "exports", babelTransform(readFileSync(path, "
 try {
   const play = module.exports.chooseAndPresentMissAVPlayer
   const video = { videoCode: "abc-001" }
-  assert.equal((await play(video, source)).opened, true)
+  assert.equal((await play(video, source, { detail })).opened, true)
   assert.equal(presented.resumePositionSeconds, 120)
   assert.equal(presented.subtitles.cues[0].text, "Caption")
   assert.equal(historyWrites, 1, "Unsettled history write does not hold the player")
   mode = "stalled"; presented = undefined
   let watchdog
   try {
-    const result = await Promise.race([play(video, source), new Promise((_, reject) => { watchdog = timer(() => reject(Error("Optional native reads held the player")), 500) })])
+    const result = await Promise.race([play(video, source, { detail }), new Promise((_, reject) => { watchdog = timer(() => reject(Error("Optional native reads held the player")), 500) })])
     assert.equal(result.opened, true)
     assert.equal(presented.resumePositionSeconds, undefined)
     assert.equal(presented.subtitles, undefined)
   } finally { clearTimeout(watchdog) }
   const readsBefore = optionalReads, writesBefore = historyWrites
   const preview = { cues: [{ text: "Test" }] }
-  await play(video, source, { preview: true, subtitles: preview })
+  await play(video, source, { detail, preview: true, subtitles: preview })
   assert.equal(presented.subtitles, preview)
   assert.equal(presented.resumePositionSeconds, 0)
   assert.equal(optionalReads, readsBefore)

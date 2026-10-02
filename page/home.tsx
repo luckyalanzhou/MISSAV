@@ -6,6 +6,7 @@ import { formatMissAVContinueWatching } from "../playback-progress"
 import { MediaHero, MediaTile } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { DetailPage } from "./detail"
+import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { RecommendationsPage } from "./recommendations"
 
 type HomeRemote = { latest: MissAVVideoItem[]; trending: MissAVVideoItem[] }
@@ -17,8 +18,9 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
   const [remoteLoading, setRemoteLoading] = useState(true)
   const [localLoading, setLocalLoading] = useState(true)
   const [remoteError, setRemoteError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<MissAVVideoItem | null>(null)
-  const detailPresented = useObservable(false)
+  const detailNavigation = useDetailNavigation()
+  const selected = detailNavigation.selected
+  const detailPresented = detailNavigation.isPresented
   const recommendationsPresented = useObservable(false)
   const remoteGeneration = useRef(0)
   const localGeneration = useRef(0)
@@ -65,7 +67,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
   }
 
   async function refresh() { await Promise.all([loadRemote(true), loadLocal()]) }
-  function open(video: MissAVVideoItem) { setSelected(video); detailPresented.setValue(true) }
+  function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
   useEffect(() => { void loadRemote(false, true) }, [props.accessRevision])
   useEffect(() => () => { ++remoteGeneration.current; ++localGeneration.current; requestScope.current?.cancel() }, [])
   useEffect(() => { void loadLocal() }, [props.revision])
@@ -74,9 +76,9 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
   const recommended = remote.trending
   const latest = remote.latest
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
-    <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage video={selected} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={selected.detail.watchUrl} video={selected.video} initialDetail={selected.detail} onFavouriteChanged={props.onFavouriteChanged} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
         <VStack spacing={12} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <SectionHeading title="继续观看" subtitle={continueWatching ? "从最近播放的作品继续。" : "播放记录将显示在这里。"} level="primary" />
