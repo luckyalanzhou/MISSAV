@@ -136,7 +136,12 @@ try {
     async waitForLoad() { return Boolean(this.html) }
     async getHTML() { return this.html }
     async evaluateJavaScript() { return { url: this.url, html: await this.getHTML() } }
-    present() { modalCount++; this.html = modalContent; return new Promise(resolve => { this.close = resolve }) }
+    present() {
+      assert.equal(this.url, undefined, "The interactive window must be a fresh controller, never the hidden challenge document")
+      assert.equal(controllers.at(-2)?.disposed, true, "Release the hidden controller before opening the interactive one")
+      modalCount++; this.html = modalContent
+      return new Promise(resolve => { this.close = resolve })
+    }
     dismiss() { this.close?.() }
     dispose() { this.disposed = true }
   }
@@ -258,7 +263,11 @@ try {
   // Closing while a challenge is still present must never report completion.
   responseFor = () => challenge
   modalContent = challenge
-  MockWebView.prototype.present = function() { modalCount++; this.html = modalContent; return Promise.resolve() }
+  MockWebView.prototype.present = function() {
+    modalCount++; this.html = modalContent
+    // Manual close after the foreground navigation, not before it starts.
+    return new Promise(resolve => { this.close = resolve; nativeTimeout(resolve, 15) })
+  }
   const incomplete = await openMissAVSiteVerification()
   assert.equal(incomplete.status, "incomplete")
   assert.equal(incomplete.challengeCompleted, undefined)

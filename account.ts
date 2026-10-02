@@ -125,7 +125,7 @@ async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
     if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
     // Share cookies, not the preceding probe's document. A cancelled load
     // must never validate the next route using the previous listing's HTML.
-    const controller = new WebViewController()
+    let controller = new WebViewController()
     try {
       // The preceding listing can reveal updated routes for the next probes.
       probe.url = missavClient.accessProbeURL(probe)
@@ -147,8 +147,12 @@ async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
       if (initialPage.challengeObserved && !initialChallenge) challengeCompleted = true
       const needsVisibleCheck = initialChallenge || !isProbePageHTML(initialPage.html, probe)
       if (needsVisibleCheck) {
-        // Reload the exact route only after its window is visible. Cloudflare's
-        // challenge scripts may stall when first loaded in a hidden WebView.
+        // Discard the hidden document, not its shared cookies. A challenge
+        // initialized off-screen can retain a stalled widget when reused.
+        // Start the exact route once in a fresh foreground WebView instead.
+        controller.dispose()
+        controller = new WebViewController()
+        await restoreCloudflareSession(controller, probeURL)
         const { listingConfirmed: visibleListingConfirmed, challengeObserved, blocked, document } = await presentVerificationPage(controller, probe)
         if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
         if (blocked) return { status: "blocked", probe }
@@ -192,7 +196,7 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
 
   // Let the modal become visible before navigating so Cloudflare's interactive
   // challenge starts in the foreground on the first tap.
-  await new Promise<void>(resolve => setTimeout(resolve, 250))
+  await new Promise<void>(resolve => setTimeout(resolve, 500))
   if (!presentationClosed) void controller.loadURL(probeURL).catch(() => undefined)
 
   while (!presentationClosed) {

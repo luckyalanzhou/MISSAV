@@ -52,9 +52,10 @@ export async function readMatchingWebViewDocument(controller: WebViewController,
   finally { if (timer !== undefined) clearTimeout(timer) }
 }
 
-export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean, scope?: MissAVRequestScope): Promise<WebViewPageLoad> {
+export async function loadWebViewPage(controller: WebViewController, url: string, timeoutMs = WEBVIEW_PAGE_LOAD_TIMEOUT_MS, isContentReady?: (html: string) => boolean, scope?: MissAVRequestScope, options: { readWhileLoading?: boolean } = {}): Promise<WebViewPageLoad> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined
   let timedOut = false
+  let stopped = false
   const timeoutError = new Error("网页加载超时，请检查网络后重试。")
   try {
     scope?.assertActive()
@@ -65,16 +66,26 @@ export async function loadWebViewPage(controller: WebViewController, url: string
         let loadError: unknown
         let challengeObserved = false
         let lastDocument: WebViewDocument | null = null
-        scope?.assertActive()
-        try { loaded = await controller.loadURL(url) } catch (error) { loadError = error }
-        scope?.assertActive()
-        if (timedOut) throw timeoutError
-        if (loaded) {
-          try { finished = await controller.waitForLoad() } catch { /* A redirect can cancel a load callback. */ }
+        let navigationSettled = false
+        const navigation = (async () => {
+          try {
+            scope?.assertActive()
+            loaded = await controller.loadURL(url)
+            // An early content result or cancellation may already dispose this
+            // controller. Never call another native API from a late callback.
+            if (stopped || timedOut || scope?.cancelled) return
+            if (loaded) {
+              try { finished = await controller.waitForLoad() } catch { /* Redirects can cancel load callbacks. */ }
+            }
+          } catch (error) { loadError = error }
+          finally { navigationSettled = true }
+        })()
+        // Account transactions keep full-load semantics. Detail requests opt
+        // into DOM polling while navigation/subresource callbacks are pending.
+        if (!options.readWhileLoading) await navigation
+        for (let attempt = 0; attempt < WEBVIEW_HTML_READ_ATTEMPTS;) {
           scope?.assertActive()
-        }
-        for (let attempt = 0; attempt < WEBVIEW_HTML_READ_ATTEMPTS; attempt += 1) {
-          scope?.assertActive()
+          if (stopped) throw timeoutError
           if (timedOut) throw timeoutError
           const document = await readMatchingWebViewDocument(controller, url)
           scope?.assertActive()
@@ -92,7 +103,8 @@ export async function loadWebViewPage(controller: WebViewController, url: string
               return { loaded, finished, ...lastDocument, challengeObserved }
             }
           }
-          if (attempt + 1 < WEBVIEW_HTML_READ_ATTEMPTS) await new Promise<void>(resolve => setTimeout(resolve, WEBVIEW_HTML_READ_INTERVAL_MS))
+          if (navigationSettled) attempt += 1
+          if (attempt < WEBVIEW_HTML_READ_ATTEMPTS) await new Promise<void>(resolve => setTimeout(resolve, WEBVIEW_HTML_READ_INTERVAL_MS))
         }
         if (lastDocument) return { loaded, finished, ...lastDocument, challengeObserved }
         if (loadError) throw loadError
@@ -104,6 +116,7 @@ export async function loadWebViewPage(controller: WebViewController, url: string
     ])
     return await (scope ? scope.waitFor(request) : request)
   } finally {
+    stopped = true
     if (timeoutId !== undefined) clearTimeout(timeoutId)
   }
 }
