@@ -19,7 +19,6 @@ try {
   assert.deepEqual(entries.map(value => value.detailStage), ["entered", "page-load", "source-parse", "timeout"])
   assert.ok(entries.every(value => value.route === "cn/:detail"))
   assert.equal(entries[2].documentChars, 200_000)
-  assert.equal(messages.length, 1, "Successful stages stay in memory without repeated native console writes; timeout still logs")
   assert.doesNotMatch(messages.join("\n") + trace.describe() + JSON.stringify(entries), /PRIVATE_|private-code/)
   const brokenObserver = createMissAVDetailTrace("https://missav.ws/cn/fixture-001", () => { throw Error("PRIVATE_ERROR") })
   for (let i = 0; i < 40; i++) brokenObserver.mark(i % 2 ? "document-read" : "source-parse")

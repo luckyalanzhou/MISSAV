@@ -6,11 +6,9 @@ const CLOUDFLARE_COOKIE_KEY_PREFIX = "missav_cloudflare_cookie_v1_"
 const MISSAV_HOSTS = MISSAV_DOMAIN_OPTIONS.map(option => new URL(option.value).hostname.toLowerCase())
 const COOKIE_OPERATION_TIMEOUT_MS = 2_000
 const restoreQueues = new Map<string, Promise<unknown>>()
-const RECENT_NATIVE_SESSION_MS = 15_000
-const recentNativeSessions = new Map<string, { observedAt: number; path: string; expiryMs: number | null; result: CloudflareRestoreResult }>()
 
 export type CloudflareRestoreResult = {
-  state: "live" | "recent" | "restored" | "missing" | "invalid" | "expired" | "scope-mismatch" | "rejected" | "unconfirmed" | "store-unavailable" | "unsupported";
+  state: "live" | "restored" | "missing" | "invalid" | "expired" | "scope-mismatch" | "rejected" | "unconfirmed" | "store-unavailable" | "unsupported";
   attempted: number; accepted: number; confirmed: number; clearance: boolean; expiresInSeconds: number | null;
 }
 class CookieOperationTimeout extends Error {}
@@ -48,7 +46,6 @@ export async function captureCloudflareSession(controller: WebViewController, ho
   const cookies = cloudflareCookiesForHost(await cookieOperation(() => controller.getAllCookies(), scope), target.hostname)
   scope?.assertActive()
   if (!cookies.some(isClearance)) return 0
-  rememberNativeSession(target.hostname, cookies, { state: "live", attempted: 0, accepted: 0, confirmed: cookies.length, clearance: true, expiresInSeconds: null })
   Keychain.set(cookieKey(target.hostname), JSON.stringify(cookies), { accessibility: "first_unlock_this_device" })
   recordMissAVAccessDiagnostic("cookie-capture", target.toString(), { state: "saved", confirmed: cookies.length, clearance: true })
   return cookies.length
@@ -60,17 +57,10 @@ export async function restoreCloudflareSession(controller: WebViewController, ta
   return result.clearance ? result.confirmed : 0
 }
 
-export async function restoreCloudflareSessionDetailed(controller: WebViewController, value: string, scope?: MissAVRequestScope, options: { allowRecent?: boolean } = {}): Promise<CloudflareRestoreResult> {
+export async function restoreCloudflareSessionDetailed(controller: WebViewController, value: string, scope?: MissAVRequestScope): Promise<CloudflareRestoreResult> {
   scope?.assertActive()
   const target = sessionTarget(value)
   if (!target) return { state: "unsupported", attempted: 0, accepted: 0, confirmed: 0, clearance: false, expiresInSeconds: null }
-  // Only callers using the default shared WebKit store may opt in. This is
-  // recent native-cookie evidence, never proof that this page passed a challenge.
-  const recent = options.allowRecent ? readRecentNativeSession(target) : null
-  if (recent && !restoreQueues.has(target.hostname)) {
-    recordMissAVAccessDiagnostic("cookie-restore", target.toString(), { ...recent, elapsedMs: 0 })
-    return recent
-  }
   // Concurrent WebViews share a store. Queue restoration per host, then check
   // the live jar again, rather than overwriting one another with old snapshots.
   const previous = restoreQueues.get(target.hostname) || Promise.resolve()
@@ -79,26 +69,6 @@ export async function restoreCloudflareSessionDetailed(controller: WebViewContro
   void request.then(() => { if (restoreQueues.get(target.hostname) === request) restoreQueues.delete(target.hostname) },
     () => { if (restoreQueues.get(target.hostname) === request) restoreQueues.delete(target.hostname) })
   return scope ? scope.waitFor(request) : request
-}
-
-export function invalidateRecentCloudflareSession(value: string): void {
-  const target = sessionTarget(value)
-  if (target) recentNativeSessions.delete(target.hostname)
-}
-
-function rememberNativeSession(host: string, cookies: StoredCloudflareCookie[], result: CloudflareRestoreResult): void {
-  const clearance = cookies.find(isClearance)
-  if (!clearance || !result.clearance) { recentNativeSessions.delete(host); return }
-  recentNativeSessions.set(host, { observedAt: Date.now(), path: typeof clearance.path === "string" ? clearance.path : "/", expiryMs: toExpiryDate(clearance.expiresDate)?.getTime() ?? null, result: { ...result } })
-}
-
-function readRecentNativeSession(target: URL): CloudflareRestoreResult | null {
-  const recent = recentNativeSessions.get(target.hostname)
-  if (!recent) return null
-  const age = Date.now() - recent.observedAt
-  if (age < 0 || age >= RECENT_NATIVE_SESSION_MS || recent.expiryMs !== null && recent.expiryMs <= Date.now()) { recentNativeSessions.delete(target.hostname); return null }
-  if (target.pathname !== recent.path && !(target.pathname.startsWith(recent.path) && (recent.path.endsWith("/") || target.pathname[recent.path.length] === "/"))) return null
-  return { ...recent.result, state: "recent", attempted: 0, accepted: 0, expiresInSeconds: recent.expiryMs === null ? null : Math.max(0, Math.floor((recent.expiryMs - Date.now()) / 1000)) }
 }
 
 async function restoreSession(controller: WebViewController, target: URL, scope?: MissAVRequestScope): Promise<CloudflareRestoreResult> {
@@ -112,7 +82,6 @@ async function restoreSession(controller: WebViewController, target: URL, scope?
     result.clearance = Boolean(clearance)
     const expiry = toExpiryDate(clearance?.expiresDate)
     result.expiresInSeconds = expiry ? Math.max(0, Math.floor((expiry.getTime() - Date.now()) / 1000)) : null
-    rememberNativeSession(target.hostname, cookies, result)
     recordMissAVAccessDiagnostic("cookie-restore", target.toString(), { ...result, elapsedMs: Date.now() - started })
     return result
   }

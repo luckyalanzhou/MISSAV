@@ -1,6 +1,6 @@
 import { fetch } from "scripting"
 import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
-import { captureCloudflareSession, invalidateRecentCloudflareSession, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
+import { captureCloudflareSession, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
 import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import { readCachedListing, writeCachedListing, LISTING_CACHE_FRESH_MS } from "./listing-cache"
 import { selectMissAVDOMPage } from "./listing-dom"
@@ -209,7 +209,6 @@ class MissAVClient {
   beginSiteVerification(): () => void {
     if (this.verificationGate) throw new Error("访问线路验证正在进行。")
     this.clearRecentVideoDetails()
-    invalidateRecentCloudflareSession(getMissAVBaseURL())
     let release!: () => void
     const gate = { promise: new Promise<void>(resolve => { release = resolve }), release: () => release(), cachedKeys: new Set<string>() }
     this.verificationGate = gate
@@ -406,21 +405,10 @@ class MissAVClient {
     let pageState: "normal" | "challenge" | "blocked" | "unavailable" | "cancelled" | "load-error" = "load-error"
     let loaded = false, finished = false, challengeObserved = false
     let cookieMs = 0, loadMs = 0, captureMs = 0
-    let captureTask: Promise<void> | undefined
-    let readyElapsedMs: number | undefined
-    const release = () => {
-      recordMissAVAccessDiagnostic("page", url, { state: pageState, cookieState: cookieResult?.state,
-        clearance: cookieResult?.clearance, expiresInSeconds: cookieResult?.expiresInSeconds,
-        attempted: cookieResult?.attempted, accepted: cookieResult?.accepted, confirmed: cookieResult?.confirmed,
-        elapsedMs: readyElapsedMs ?? Date.now() - started, cookieMs, loadMs, captureMs, captureDeferred: Boolean(captureTask), loaded, finished, challengeObserved })
-      removeCancellation()
-      this.activePageScopes.delete(scope)
-      dispose()
-    }
     try {
       const cookieStarted = Date.now()
       trace?.mark("cookie-restore")
-      try { cookieResult = await scope.waitFor(restoreCloudflareSessionDetailed(controller, url, scope, { allowRecent: Boolean(trace) })) }
+      try { cookieResult = await scope.waitFor(restoreCloudflareSessionDetailed(controller, url, scope)) }
       finally { cookieMs = Date.now() - cookieStarted }
       scope.assertActive()
       const loadStarted = Date.now()
@@ -434,32 +422,24 @@ class MissAVClient {
       if (new URL(url).origin !== new URL(getMissAVBaseURL()).origin) { scope.cancel(); scope.assertActive() }
 
       if (SiteHTML.classifyCloudflareHTML(html) === "blocked") {
-        invalidateRecentCloudflareSession(url)
         pageState = "blocked"
         throw new Error("站点拒绝了当前访问，不是待完成的 Cloudflare 验证。请检查网络或切换访问域名后重试。")
       }
       if (SiteHTML.isCloudflareChallengeHTML(html)) {
-        invalidateRecentCloudflareSession(url)
         pageState = "challenge"
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }
+      const captureStarted = Date.now()
+      trace?.mark("cookie-capture")
+      try { await scope.waitFor(captureCloudflareSession(controller, new URL(url).hostname, scope)) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
+      finally { captureMs = Date.now() - captureStarted }
+      scope.assertActive()
       // A valid MISSAV document is authoritative even if WebKit reports a
       // redirect/load callback as incomplete for this route.
       if (SiteHTML.isLikelyMissAVHTML(html)) {
         pageState = "normal"
         onDocument?.({ url: page.url || url, html, compactHTML: page.compactHTML })
         this.rememberCollectionRoutes(html, url)
-        const capture = async () => {
-          const captureStarted = Date.now()
-          try { await scope.waitFor(captureCloudflareSession(controller, new URL(url).hostname, scope)) } catch { /* Best-effort backup never overrides a valid document. */ }
-          finally { captureMs = Date.now() - captureStarted }
-        }
-        if (trace) {
-          // Return playable detail now; keep the controller alive only for
-          // bounded cookie capture. Cancellation/verification still disposes it.
-          readyElapsedMs = Date.now() - started
-          captureTask = capture()
-        } else { await capture(); scope.assertActive() }
         return html
       }
       const route = new URL(url)
@@ -470,8 +450,13 @@ class MissAVClient {
       if (isMissAVRequestCancelled(error)) pageState = "cancelled"
       throw error
     } finally {
-      if (captureTask) void captureTask.then(release, release).catch(() => console.warn("详情网页资源释放失败。"))
-      else release()
+      recordMissAVAccessDiagnostic("page", url, { state: pageState, cookieState: cookieResult?.state,
+        clearance: cookieResult?.clearance, expiresInSeconds: cookieResult?.expiresInSeconds,
+        attempted: cookieResult?.attempted, accepted: cookieResult?.accepted, confirmed: cookieResult?.confirmed,
+        elapsedMs: Date.now() - started, cookieMs, loadMs, captureMs, loaded, finished, challengeObserved })
+      removeCancellation()
+      this.activePageScopes.delete(scope)
+      dispose()
     }
   }
 
