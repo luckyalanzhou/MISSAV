@@ -1,0 +1,59 @@
+import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
+import { createRequire } from "node:module"
+import { fileURLToPath } from "node:url"
+import { compileProductionModule as compile } from "./production-module.mjs"
+
+const { babelTransform } = createRequire(import.meta.url)(process.argv[2] || "playwright/lib/transform/babelBundle.js")
+const deadline = await import(compile("../request-deadline.ts"))
+const timer = setTimeout, warn = console.warn
+globalThis.setTimeout = (callback, delay, ...args) => timer(callback, delay === 2_000 ? 15 : delay, ...args)
+console.warn = () => {}
+const source = { url: "https://cdn.example/1080p/video.m3u8", label: "1080p", qualityHeight: 1080, type: "application/vnd.apple.mpegurl" }
+let mode = "normal", presented, historyWrites = 0, optionalReads = 0
+const never = () => new Promise(() => {})
+const module = { exports: {} }
+const path = fileURLToPath(new URL("../player.tsx", import.meta.url))
+new Function("require", "module", "exports", babelTransform(readFileSync(path, "utf8"), path, false, [], [], "scripting").code)(specifier => {
+  if (specifier === "./request-deadline") return deadline
+  if (specifier === "./native-player") return { presentNativeOnlinePlayer: async options => { presented = options } }
+  if (specifier === "./client") return { missavClient: {
+    getVideo: async (_, options) => { assert.equal(options.preferRecent, true); return { sources: [source], title: "Fixture", watchUrl: "https://missav.ws/cn/abc-001" } },
+    playbackHeaders: () => ({}),
+  } }
+  if (specifier === "./playback-source") return { matchFreshMissAVPlaybackSource: () => source }
+  if (specifier === "./subtitles") return {
+    isMissAVSubtitleEnabled: () => true,
+    loadMissAVSubtitle: () => { optionalReads++; return mode === "normal" ? Promise.resolve({ cues: [{ text: "Caption" }] }) : never() },
+  }
+  if (specifier === "./storage") return {
+    loadMissAVPlaybackProgress: () => { optionalReads++; return mode === "normal" ? Promise.resolve({ positionSeconds: 120, durationSeconds: 600 }) : never() },
+    recordMissAVPlayback: () => { historyWrites++; return never() },
+    saveMissAVPlaybackProgress: async () => {},
+  }
+  throw Error(`Unexpected import ${specifier}`)
+}, module, module.exports)
+try {
+  const play = module.exports.chooseAndPresentMissAVPlayer
+  const video = { videoCode: "abc-001" }
+  assert.equal((await play(video, source)).opened, true)
+  assert.equal(presented.resumePositionSeconds, 120)
+  assert.equal(presented.subtitles.cues[0].text, "Caption")
+  assert.equal(historyWrites, 1, "Unsettled history write does not hold the player")
+  mode = "stalled"; presented = undefined
+  let watchdog
+  try {
+    const result = await Promise.race([play(video, source), new Promise((_, reject) => { watchdog = timer(() => reject(Error("Optional native reads held the player")), 500) })])
+    assert.equal(result.opened, true)
+    assert.equal(presented.resumePositionSeconds, undefined)
+    assert.equal(presented.subtitles, undefined)
+  } finally { clearTimeout(watchdog) }
+  const readsBefore = optionalReads, writesBefore = historyWrites
+  const preview = { cues: [{ text: "Test" }] }
+  await play(video, source, { preview: true, subtitles: preview })
+  assert.equal(presented.subtitles, preview)
+  assert.equal(presented.resumePositionSeconds, 0)
+  assert.equal(optionalReads, readsBefore)
+  assert.equal(historyWrites, writesBefore)
+  console.log("PASS: parallel bounded subtitle/resume reads; normal data retained; history never blocks playback; isolated preview")
+} finally { globalThis.setTimeout = timer; console.warn = warn }

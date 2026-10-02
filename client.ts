@@ -41,6 +41,8 @@ export type MissAVAccessProbe = { collection: MissAVCollection; title: string; u
 
 const SEARCH_PAGE_CACHE_TTL_MS = 45_000
 const MAX_CACHED_SEARCH_PAGES = 24
+const RECENT_VIDEO_DETAIL_TTL_MS = 10_000
+const MAX_RECENT_VIDEO_DETAILS = 8
 type CachedSearchPage = { expiresAt: number; value: MissAVSearchPage }
 type PendingSearchPage = { requestId: number; forceRefresh: boolean; promise: Promise<MissAVSearchPage>; scope: MissAVRequestScope; consumers: number; settled: boolean }
 class MissAVPageContentError extends Error {}
@@ -69,6 +71,9 @@ class MissAVClient {
   private searchRequestId = 0
   private activePageScopes = new Set<MissAVRequestScope>()
   private verificationGate: { promise: Promise<void>; release: () => void; cachedKeys: Set<string> } | null = null
+  private recentVideoDetails = new Map<string, { savedAt: number; value: MissAVVideoDetail }>()
+  private recentDetailOrigin = ""
+  private recentDetailGeneration = 0
 
   async searchVideoPage(params: MissAVSearchParams, options: { forceRefresh?: boolean; scope?: MissAVRequestScope; allowStale?: boolean } = {}): Promise<MissAVSearchPage> {
     const caller = options.scope || new MissAVRequestScope()
@@ -203,6 +208,7 @@ class MissAVClient {
 
   beginSiteVerification(): () => void {
     if (this.verificationGate) throw new Error("访问线路验证正在进行。")
+    this.clearRecentVideoDetails()
     let release!: () => void
     const gate = { promise: new Promise<void>(resolve => { release = resolve }), release: () => release(), cachedKeys: new Set<string>() }
     this.verificationGate = gate
@@ -248,10 +254,16 @@ class MissAVClient {
   }
 
   clearSearchPageCache(): void {
+    this.clearRecentVideoDetails()
     this.searchPageCache.clear()
     for (const task of this.searchPageRequests.values()) task.scope.cancel()
     this.searchPageRequests.clear()
     this.searchRequestId += 1
+  }
+
+  private clearRecentVideoDetails(): void {
+    this.recentVideoDetails.clear()
+    this.recentDetailGeneration += 1
   }
 
   clearVerificationCollections(): void {
@@ -266,11 +278,11 @@ class MissAVClient {
     this.collectionPaths.set(origin, { ...this.collectionPaths.get(origin), ...links })
   }
 
-  async getVideo(item: MissAVVideoItem | string, options: { scope?: MissAVRequestScope; trace?: MissAVDetailTrace } = {}): Promise<MissAVVideoDetail> {
+  async getVideo(item: MissAVVideoItem | string, options: { scope?: MissAVRequestScope; trace?: MissAVDetailTrace; preferRecent?: boolean } = {}): Promise<MissAVVideoDetail> {
     const scope = options.scope || new MissAVRequestScope()
     const trace = options.trace || createMissAVDetailTrace(typeof item === "string" ? this.watchUrl(item) : SiteHTML.normalizeMissAVUrl(item.detailPath))
     try {
-      return await withMissAVDeadline(this.loadVideo(item, scope, trace), 20_000, "获取播放信息超时，请重试；若栏目也无法加载，请先在设置中验证访问线路。", () => { trace.mark("timeout"); scope.cancel() })
+      return await withMissAVDeadline(this.loadVideo(item, scope, trace, options.preferRecent === true), 20_000, "获取播放信息超时，请重试；若栏目也无法加载，请先在设置中验证访问线路。", () => { trace.mark("timeout"); scope.cancel() })
     } catch (error) {
       if (!scope.cancelled) trace.mark("failed")
       else if (isMissAVRequestCancelled(error)) trace.mark("cancelled")
@@ -278,10 +290,28 @@ class MissAVClient {
     }
   }
 
-  private async loadVideo(item: MissAVVideoItem | string, scope: MissAVRequestScope, trace: MissAVDetailTrace): Promise<MissAVVideoDetail> {
+  private async loadVideo(item: MissAVVideoItem | string, scope: MissAVRequestScope, trace: MissAVDetailTrace, preferRecent: boolean): Promise<MissAVVideoDetail> {
     const videoCode = typeof item === "string" ? SiteHTML.extractMissAVVideoCode(item) : item.videoCode
     if (!videoCode) throw new Error("缺少 MISSAV 视频标识符。")
     const watchUrl = typeof item === "string" ? this.watchUrl(videoCode) : SiteHTML.normalizeMissAVUrl(item.detailPath)
+    scope.assertActive()
+    const origin = new URL(getMissAVBaseURL()).origin
+    if (origin !== this.recentDetailOrigin) { this.clearRecentVideoDetails(); this.recentDetailOrigin = origin }
+    if (preferRecent) {
+      // Reuse only an immediately preceding successful detail request for
+      // playback. Detail-page refreshes always request the live document.
+      trace.mark("verification-wait")
+      await this.waitForVerification(scope)
+      scope.assertActive()
+      if (new URL(watchUrl).origin !== new URL(getMissAVBaseURL()).origin) { scope.cancel(); scope.assertActive() }
+      const recent = this.recentVideoDetails.get(watchUrl)
+      if (recent && Date.now() - recent.savedAt >= 0 && Date.now() - recent.savedAt < RECENT_VIDEO_DETAIL_TTL_MS) {
+        trace.mark("detail-parse", { sourceCount: recent.value.sources.length })
+        return copyVideoDetail(recent.value)
+      }
+      this.recentVideoDetails.delete(watchUrl)
+    }
+    const cacheGeneration = this.recentDetailGeneration
     let lastHTML: string | undefined
     let lastDetail: MissAVVideoDetail | undefined
     let parseMs = 0, parseCount = 0
@@ -302,6 +332,11 @@ class MissAVClient {
     try {
       trace.mark("detail-parse")
       const value = parseDetail(html)
+      if (value.sources.length && cacheGeneration === this.recentDetailGeneration) {
+        this.recentVideoDetails.delete(watchUrl)
+        if (this.recentVideoDetails.size >= MAX_RECENT_VIDEO_DETAILS) this.recentVideoDetails.delete(this.recentVideoDetails.keys().next().value!)
+        this.recentVideoDetails.set(watchUrl, { savedAt: Date.now(), value: copyVideoDetail(value) })
+      }
       state = "normal"
       return value
     } finally { recordMissAVAccessDiagnostic("data-task", watchUrl, { state, phase: "detail-parse", parseMs, parseCount }) }
@@ -431,5 +466,7 @@ class MissAVClient {
 function copySearchPage(value: MissAVSearchPage): MissAVSearchPage {
   return { ...value, items: value.items.map(item => ({ ...item })), ...(value.categories ? { categories: value.categories.map(item => ({ ...item })) } : {}) }
 }
+
+function copyVideoDetail(value: MissAVVideoDetail): MissAVVideoDetail { return { ...value, genres: [...value.genres], sources: value.sources.map(source => ({ ...source })) } }
 
 export const missavClient = new MissAVClient()
