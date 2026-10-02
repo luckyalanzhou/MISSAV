@@ -58,7 +58,7 @@ assert.equal(parallel.peak, 3)
 parallel.requests[1].finish(detailHTML(1, "en"))
 await settle()
 assert.equal(parallel.requests.length, 4, "Fill the freed worker slot immediately")
-assert.equal(parallel.progress.at(-1).files.length, 1, "Publish files before all details complete")
+assert.equal(parallel.progress.at(-1).files.length, 0, "Do not expose the English-only result")
 assert.equal(parallel.progress.at(-1).processedDetailCount, 1)
 parallel.requests[0].finish(detailHTML(0, "zh-CN"))
 await settle()
@@ -71,8 +71,8 @@ assert.equal(result.failedDetailCount, 0)
 assert.equal(result.metrics.httpRequests, 6)
 assert.equal(result.metrics.webViewLoads, 0)
 assert.equal(parallel.controllers.length, 0, "HTTP-only search must not create any native WebView")
-assert.equal(result.files.length, 5)
-assert.deepEqual(result.files.slice(0, 2).map(file => file.language), ["简体中文", "繁体中文"])
+assert.equal(result.files.length, 2, "Only Simplified/Traditional Chinese subtitle files are returned")
+assert.deepEqual(result.files.map(file => file.language), ["简体中文", "繁体中文"])
 assert.ok(result.metrics.firstResultMs !== null)
 assert.equal(parallel.peak, 3, "Never exceed the three-request limit")
 
@@ -80,7 +80,7 @@ const cachedResult = await parallel.run()
 assert.equal(cachedResult.metrics.httpRequests, 0, "A complete fresh cache must not issue any requests")
 assert.equal(cachedResult.metrics.searchCacheHits, 1)
 assert.equal(cachedResult.metrics.detailCacheHits, 5)
-assert.equal(cachedResult.files.length, 5)
+assert.equal(cachedResult.files.length, 2)
 const restarted = harness(5, parallel.storage)
 assert.equal((await restarted.run()).metrics.httpRequests, 0, "Persistent cache must survive a new module/script instance")
 assert.equal(restarted.searchRequests, 0)
@@ -120,10 +120,28 @@ serialFallback.fallbacks[1].finish(detailHTML(1, "zh-TW"))
 await settle()
 assert.equal(serialFallback.fallbacks.length, 3)
 serialFallback.fallbacks[2].finish(detailHTML(2))
-assert.equal((await fallbackRun).files.length, 3)
+assert.equal((await fallbackRun).files.length, 2, "Fallback detail pages must also exclude non-Chinese files")
 assert.equal(serialFallback.controllers.length, 3)
 assert.ok(serialFallback.controllers.every(controller => controller.disposed))
 assert.notEqual(serialFallback.fallbacks[0].controller, serialFallback.fallbacks[1].controller, "Late navigation callbacks cannot affect another detail's controller")
+
+const now = Date.now()
+const legacyCacheStorage = new Map([[
+  "missav_subtitlecat_search_cache_v1",
+  JSON.stringify({ version: 1, records: { "FNS-258": {
+    savedAt: now,
+    touchedAt: now,
+    entries: [{ url: entryURL(0), title: "FNS-258 0" }],
+    details: { [entryURL(0)]: { savedAt: now, files: [
+      { downloadURL: "https://www.subtitlecat.com/subs/0/FNS-258-0-en.srt", details: "English" },
+      { downloadURL: "https://www.subtitlecat.com/subs/0/FNS-258-0-zh-CN.srt", details: "Chinese (Simplified)" },
+    ] } },
+  } } }),
+]])
+const migratedLegacyCache = harness(1, legacyCacheStorage)
+const migratedLegacyResult = await migratedLegacyCache.run()
+assert.equal(migratedLegacyResult.metrics.httpRequests, 0, "Legacy caches containing other languages remain usable without refetching")
+assert.deepEqual(migratedLegacyResult.files.map(file => file.language), ["简体中文"], "Legacy cache is filtered to Chinese files")
 
 const cancelledFallback = harness(3)
 const cancelFallbackRun = cancelledFallback.run()

@@ -204,7 +204,8 @@ function readSubtitleCatSearchCache(code: string): CachedSubtitleCatSearch | nul
       const detail = candidate.details[entry.url]
       if (!detail || !isFreshSubtitleCatCache(detail.savedAt) || !Array.isArray(detail.files)) continue
       const files = parseSubtitleCatFileListing(JSON.stringify(detail.files.map(file => ({ url: file.downloadURL, details: file.details }))))
-      if (files.length !== detail.files.length) continue
+      // Older cache versions may contain every language; keep the valid cached
+      // Chinese files instead of invalidating the whole detail and refetching it.
       details[entry.url] = { savedAt: detail.savedAt, files }
     }
     return { savedAt: candidate.savedAt, touchedAt: candidate.touchedAt, entries, details }
@@ -292,16 +293,16 @@ export function parseSubtitleCatFileListing(payload: string): SubtitleCatSubtitl
     const url = canonicalSubtitleCatURL(candidate.url)
     if (!url || !/^\/subs\/\d+\/[^/]+\.srt$/i.test(url.pathname)) continue
     if (seen.has(url.toString())) continue
-    seen.add(url.toString())
     const details = normalizeSubtitleCatText(typeof candidate.details === "string" ? candidate.details : "")
     const filename = decodePathName(url.pathname)
     // The original filename can contain zh-cn even for an English/Traditional translation.
-    const languageSuffix = filename.match(/-([a-z]{2,3}(?:[-_][a-z]{2,4})?)\.srt$/i)?.[1]
-    const suffixLanguage = languageSuffix ? parseSubtitleCatLanguage(languageSuffix) : "其他语言"
+    const language = subtitleCatFileLanguage(filename, details)
+    if (!isChineseSubtitleLanguage(language)) continue
+    seen.add(url.toString())
     files.push({
       id: url.pathname,
       source: "SubtitleCat",
-      language: suffixLanguage !== "其他语言" ? suffixLanguage : parseSubtitleCatLanguage(details),
+      language,
       details: details || filename,
       downloadURL: url.toString(),
       isFree: true,
@@ -317,6 +318,9 @@ export async function downloadSubtitleCatFile(file: SubtitleCatSubtitleFile): Pr
   const url = canonicalSubtitleCatURL(file.downloadURL)
   if (!url || !/^\/subs\/\d+\/[^/]+\.srt$/i.test(url.pathname)) {
     throw new Error("Subtitle Cat 字幕下载地址不安全，已取消下载。")
+  }
+  if (!isChineseSubtitleLanguage(subtitleCatFileLanguage(decodePathName(url.pathname), file.details, file.language))) {
+    throw new Error("仅支持下载简体中文或繁体中文字幕。")
   }
 
   const key = url.toString()
@@ -436,6 +440,18 @@ function parseSubtitleCatLanguage(text: string): string {
   if (/(?:^|[^a-z])es(?:p)?(?:[^a-z]|$)|spanish/i.test(value)) return "西班牙语"
   if (/(?:^|[^a-z])tr(?:[^a-z]|$)|turkish/i.test(value)) return "土耳其语"
   return "其他语言"
+}
+
+function subtitleCatFileLanguage(filename: string, details: string, fallback = ""): string {
+  const languageSuffix = filename.match(/-([a-z]{2,3}(?:[-_][a-z]{2,4})?)\.srt$/i)?.[1]
+  const suffixLanguage = languageSuffix ? parseSubtitleCatLanguage(languageSuffix) : "其他语言"
+  if (suffixLanguage !== "其他语言") return suffixLanguage
+  const detailLanguage = parseSubtitleCatLanguage(details)
+  return detailLanguage !== "其他语言" ? detailLanguage : fallback
+}
+
+function isChineseSubtitleLanguage(language: string): boolean {
+  return language === "简体中文" || language === "繁体中文"
 }
 
 function subtitleCatLanguagePriority(language: string): number {

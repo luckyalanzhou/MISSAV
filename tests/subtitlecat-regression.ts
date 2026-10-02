@@ -15,10 +15,10 @@ const run = (): void => {
     { url: "https://www.subtitlecat.com/subs/1708/not-a-subtitle.html", details: "not an SRT" },
   ]))
 
-  assert(files.length === 3, "只应保留去重后的 Subtitle Cat SRT 下载文件")
-  assert(files[0].language === "简体中文" && files[1].language === "繁体中文", "聚合列表内简体中文和繁体中文应优先置顶")
+  assert(files.length === 2, "只应保留去重后的简体中文和繁体中文 SRT 文件")
+  assert(files[0].language === "简体中文" && files[1].language === "繁体中文", "结果只应包含简体中文和繁体中文")
   assert(files.every(file => file.source === "SubtitleCat" && file.isFree && !file.isDemo), "Subtitle Cat 的公开 SRT 应明确标记来源和免费完整状态")
-  assert(files[2].language === "英语", "应从字幕文件名或可见详情中识别英语")
+  assert(files.every(file => file.language === "简体中文" || file.language === "繁体中文"), "英语等其他语言不得出现在结果中")
 
   const searchHTML = `<h2>4 subtitles found <span>(we have many subtitles)</span></h2>
     <a href="subs/1706/FNS-258.zh-cn%28by%20transub.cc%29.html">FNS-258.zh-cn(by transub.cc)</a>
@@ -40,10 +40,9 @@ const run = (): void => {
     <div class="sub-single"><span>English</span><a id="download_en" href="/subs/1706/FNS-258.zh-cn(by transub.cc)-en.srt">Download</a></div>
     <div class="sub-single"><span>Japanese</span><button id="ja">Translate</button></div>`
   const detailFiles = parseSubtitleCatFileHTML(detailHTML)
-  assert(detailFiles.length === 3, "详情页只应列出已存在的直接 SRT 文件，Translate 按钮不能当下载文件")
-  assert(detailFiles.map(file => file.language).join(",") === "简体中文,繁体中文,英语", "原始文件名里的 zh-cn 不得覆盖翻译文件末尾的语言代码")
-  assert(detailFiles[2].details === "English", "应从下载链接前的语言标签提取文件说明")
-  assert(parseSubtitleCatFileListing(JSON.stringify([{ url: "/subs/1706/FNS-258.zh-cn(original)-en.srt", details: "Chinese (Simplified) original file" }]))[0].language === "英语", "文件末尾的语言代码应优先于原始文件说明")
+  assert(detailFiles.length === 2, "详情页只应列出简繁中文直接 SRT 文件，Translate 按钮和英语文件不能当可用结果")
+  assert(detailFiles.map(file => file.language).join(",") === "简体中文,繁体中文", "原始文件名里的 zh-cn 不得覆盖翻译文件末尾的语言代码")
+  assert(parseSubtitleCatFileListing(JSON.stringify([{ url: "/subs/1706/FNS-258.zh-cn(original)-en.srt", details: "Chinese (Simplified) original file" }])).length === 0, "文件末尾标记英语时不得因原文件名包含 zh-cn 而误收")
 
   Script.exit({ passed: 12, message: "Subtitle Cat public search and file listing regression tests passed" })
 }

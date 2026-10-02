@@ -388,7 +388,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
       <HStack spacing={10} padding={{ horizontal: PAGE_PADDING, vertical: 8 }} frame={{ maxWidth: "infinity", minHeight: 52 }}>
         <VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
           <Text font="headline" fontWeight="bold">按番号搜索字幕</Text>
-          <Text font="caption" foregroundStyle="secondaryLabel">简体中文、繁体中文优先</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel">仅搜索简体中文和繁体中文字幕</Text>
         </VStack>
         <Button action={closeSearch} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="关闭字幕搜索"><Image systemName="xmark" foregroundStyle="secondaryLabel" /></Button>
       </HStack>
@@ -409,12 +409,12 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
           {hasSearched ? <HStack spacing={8}>{loading ? <ProgressView tint={ACCENT} /> : undefined}<Text font="caption" foregroundStyle="secondaryLabel">{searchProgress}</Text></HStack> : undefined}
           {hasSearched ? <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}>
             <Text font="headline" fontWeight="semibold">{title || `番号 ${query}`}</Text>
-            <Text font="caption" foregroundStyle="secondaryLabel">{hasSuccessfulSource ? `${loading ? "已" : "共"}找到 ${files.length} 个可下载字幕文件；简体中文和繁体中文置顶。${hasIncompleteResults && !loading ? " 部分详情页未能读取，结果可能不完整。" : ""}` : loading ? "正在读取字幕详情，有结果后立即显示。" : "Subtitle Cat 搜索没有成功完成，当前无法判断该番号是否有字幕。"}</Text>
+            <Text font="caption" foregroundStyle="secondaryLabel">{hasSuccessfulSource ? `${loading ? "已" : "共"}找到 ${files.length} 个可下载中文字幕文件；仅包含简体中文和繁体中文。${hasIncompleteResults && !loading ? " 部分详情页未能读取，结果可能不完整。" : ""}` : loading ? "正在读取字幕详情，有结果后立即显示。" : "Subtitle Cat 搜索没有成功完成，当前无法判断该番号是否有中文字幕。"}</Text>
             {sourceStatus.map((status, index) => <Text key={`subtitle-source-${index}`} font="caption" foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"} multilineTextAlignment="leading">{status}</Text>)}
             {files.length ? <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>{files.map((file, index) => <VStack key={`${file.source}-${file.id}`} spacing={0} frame={{ maxWidth: "infinity" }}>
               {index ? <Divider /> : undefined}
               <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} onPreview={file => { void preview(file) }} />
-            </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{loading ? "搜索仍在进行，请稍候…" : !hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载文件，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的字幕文件。可以修改番号后重新搜索。"}</Text>}
+            </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{loading ? "搜索仍在进行，请稍候…" : !hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有中文字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载中文字幕，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的简体或繁体中文字幕。可以修改番号后重新搜索。"}</Text>}
             {hasIncompleteResults && hasSuccessfulSource ? <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading || Boolean(downloadingId)} action={() => { void search() }} /> : undefined}
             <Button title="刷新搜索" systemImage="arrow.clockwise.circle" disabled={loading || Boolean(downloadingId)} action={() => { void search(query, true) }} />
           </VStack> : undefined}

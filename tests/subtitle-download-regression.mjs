@@ -52,6 +52,7 @@ assert.ok(await redirects({ url: file.downloadURL }))
 for (const unsafe of [{ ...file, isDemo: true }, { ...file, isFree: false }, { ...file, downloadURL: "https://example.com/subs/1/a.srt" }, { ...file, downloadURL: "https://www.subtitlecat.com/index.php" }]) {
   await assert.rejects(shared.api.downloadSubtitleCatFile(unsafe), /免费|不安全/)
 }
+await assert.rejects(shared.api.downloadSubtitleCatFile({ ...file, language: "英语", downloadURL: "https://www.subtitlecat.com/subs/1/FNS-258-en.srt" }), /仅支持下载简体中文或繁体中文/)
 
 for (const [content, options, expected] of [
   ["<html><body>error</body></html>", {}, /没有返回字幕/],
