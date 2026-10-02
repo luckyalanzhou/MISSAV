@@ -1,3 +1,5 @@
+import { Script } from "scripting"
+
 export type SubtitleCue = {
   startSeconds: number
   endSeconds: number
@@ -9,10 +11,13 @@ export type SubtitleTrack = {
   prefixMaxEndSeconds: number[]
 }
 
-const SUBTITLE_DIRECTORY_NAME = "MISSAV Subtitles"
+const SUBTITLE_DIRECTORY_NAME = "subtitles"
+const LEGACY_SUBTITLE_DIRECTORY_NAME = "MISSAV Subtitles"
 const SUBTITLE_ENABLED_KEY_PREFIX = "missav_subtitle_enabled_v1_"
 const MAX_SUBTITLE_CHARACTERS = 8_000_000
 const MAX_SUBTITLE_CUES = 25_000
+// Serialize operations on one work only; there is no retained-file count limit.
+const subtitleFileOperations = new Map<string, Promise<unknown>>()
 
 const parseTimestamp = (value: string): number | null => {
   const long = value.trim().match(/^(\d+):(\d{2}):(\d{2})[,.](\d{1,3})$/)
@@ -45,7 +50,7 @@ const normalizeCueText = (lines: string[]): string => lines
 
 export function parseSubtitleTrack(source: string): SubtitleTrack {
   const normalized = source.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n")
-  if (normalized.length > MAX_SUBTITLE_CHARACTERS) throw new Error("字幕文件过大，无法缓存。")
+  if (normalized.length > MAX_SUBTITLE_CHARACTERS) throw new Error("单个字幕文件过大，无法读取。")
   const cues: SubtitleCue[] = []
 
   for (const block of normalized.split(/\n\s*\n/)) {
@@ -60,7 +65,7 @@ export function parseSubtitleTrack(source: string): SubtitleTrack {
     const text = normalizeCueText(lines.slice(timingIndex + 1))
     if (startSeconds === null || endSeconds === null || endSeconds <= startSeconds || !text || isSubtitleAttributionCue(text)) continue
     cues.push({ startSeconds, endSeconds, text })
-    if (cues.length > MAX_SUBTITLE_CUES) throw new Error("字幕条目过多，无法缓存。")
+    if (cues.length > MAX_SUBTITLE_CUES) throw new Error("单个字幕文件的对白条目过多，无法读取。")
   }
 
   cues.sort((left, right) => left.startSeconds - right.startSeconds || left.endSeconds - right.endSeconds)
@@ -86,19 +91,47 @@ export function setMissAVSubtitleEnabled(videoCode: string, enabled: boolean): v
 
 export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTrack | null> {
   const path = subtitleFilePath(videoCode)
-  if (!await FileManager.exists(path)) return null
-  const track = parseSubtitleTrack(await FileManager.readAsString(path))
-  if (!track.cues.length) return null
-  return track
+  return withSubtitleFileOperation(path, async () => {
+    if (await FileManager.exists(path)) {
+      const track = parseSubtitleTrack(await FileManager.readAsString(path))
+      return track.cues.length ? track : null
+    }
+    const legacyPath = `${FileManager.documentsDirectory.replace(/[\\/]+$/, "")}/${LEGACY_SUBTITLE_DIRECTORY_NAME}/${normalizeVideoCode(videoCode)}.srt`
+    if (!await FileManager.exists(legacyPath)) return null
+    const content = await FileManager.readAsString(legacyPath)
+    const track = parseSubtitleTrack(content)
+    if (!track.cues.length) return null
+    try {
+      await FileManager.createDirectory(subtitleDirectoryPath(), true)
+      await FileManager.writeAsString(path, content)
+    } catch (error) {
+      // Continue playing the old file if migration cannot write. Do not delete
+      // the original or change this video's enabled/disabled preference.
+      console.warn("迁移旧字幕失败，继续读取原文件:", error)
+    }
+    return track
+  })
 }
 
 export async function saveMissAVSubtitle(videoCode: string, source: string): Promise<number> {
   const track = parseSubtitleTrack(source)
   if (!track.cues.length) throw new Error("没有识别到有效对白字幕，下载内容可能只有字幕生成器署名。")
-  await FileManager.createDirectory(subtitleDirectoryPath(), true)
-  await FileManager.writeAsString(subtitleFilePath(videoCode), serializeSubtitleTrack(track))
-  setMissAVSubtitleEnabled(videoCode, true)
+  const path = subtitleFilePath(videoCode)
+  await withSubtitleFileOperation(path, async () => {
+    await FileManager.createDirectory(subtitleDirectoryPath(), true)
+    await FileManager.writeAsString(path, serializeSubtitleTrack(track))
+    setMissAVSubtitleEnabled(videoCode, true)
+  })
   return track.cues.length
+}
+
+function withSubtitleFileOperation<T>(path: string, operation: () => Promise<T>): Promise<T> {
+  const previous = subtitleFileOperations.get(path) ?? Promise.resolve()
+  const result = previous.catch(() => {}).then(operation)
+  subtitleFileOperations.set(path, result)
+  const cleanup = () => { if (subtitleFileOperations.get(path) === result) subtitleFileOperations.delete(path) }
+  void result.then(cleanup, cleanup)
+  return result
 }
 
 function serializeSubtitleTrack(track: SubtitleTrack): string {
@@ -110,8 +143,9 @@ function subtitleFilePath(videoCode: string): string {
 }
 
 function subtitleDirectoryPath(): string {
-  const documentsDirectory = FileManager.documentsDirectory.replace(/[\\/]+$/, "")
-  return `${documentsDirectory}/${SUBTITLE_DIRECTORY_NAME}`
+  const scriptDirectory = typeof Script.directory === "string" ? Script.directory.replace(/[\\/]+$/, "") : ""
+  if (!scriptDirectory) throw new Error("无法获取当前脚本目录，字幕未保存。")
+  return `${scriptDirectory}/${SUBTITLE_DIRECTORY_NAME}`
 }
 
 function subtitleEnabledKey(videoCode: string): string {

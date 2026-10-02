@@ -28,6 +28,7 @@ let hookContext
 
 const jsx = (type, props, key) => ({ type, props: props || {}, key })
 const scripting = {
+  Script: { directory: "/mock/scripts/MISSAV/" },
   ...Object.fromEntries(["AVPlayerView", "Button", "ForEach", "Text", "ZStack"].map(name => [name, name])),
   Device: { supportedInterfaceOrientations: ["portrait"] },
   Navigation: {

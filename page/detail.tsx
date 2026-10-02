@@ -148,7 +148,7 @@ export function DetailPage(props: { video: MissAVVideoItem; onFavouriteChanged: 
           <Button action={() => { void searchSubtitles() }} disabled={subtitleBusy || Boolean(openingSource)} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>{subtitleBusy ? "正在搜索…" : "搜索字幕"}</Text></HStack></Button>
           {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={subtitleEnabled ? "关闭本作品字幕显示" : "开启本作品字幕显示"}><HStack spacing={7}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text>{subtitleEnabled ? "关闭字幕" : "开启字幕"}</Text></HStack></Button> : undefined}
         </HStack> : undefined}
-        {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；下载文件会缓存在应用内部并自动关联到对应作品。</Text> : undefined}
+        {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在脚本目录的 subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
         {primarySource ? <Button title="本地字幕叠层测试" systemImage="captions.bubble" buttonStyle="bordered" disabled={Boolean(openingSource)} action={() => { void play(primarySource, true) }} /> : undefined}
         <EnvironmentValuesReader keys={["horizontalSizeClass", "dynamicTypeSize"]}>{environment => {
           const vertical = environment.horizontalSizeClass === "compact" || isAccessibilityTypeSize(environment.dynamicTypeSize)
@@ -269,7 +269,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
       const content = await downloadSubtitleCatFile(file)
       // Search text is editable and may differ from this detail page's work.
       // Always save under the displayed video's identity so its playback path
-      // and the subtitle cache use the same association key.
+      // and the subtitle folder use the same association key.
       const associatedCode = props.videoCode
       await saveMissAVSubtitle(associatedCode, content)
       props.onDownloaded(associatedCode)
@@ -303,7 +303,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
               {loading ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="magnifyingglass" />}
             </Button>
           </HStack>
-          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。下载的完整 SRT 会缓存在应用内部并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。下载的完整 SRT 保存在脚本目录的 subtitles 文件夹中，保存数量不限，并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
           {error ? <VStack spacing={8} alignment="leading" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
             <Text font="subheadline" foregroundStyle="systemRed" multilineTextAlignment="leading">{error}</Text>
             <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} action={() => { void search() }} />
