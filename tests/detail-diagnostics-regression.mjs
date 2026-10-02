@@ -24,5 +24,18 @@ try {
   for (let i = 0; i < 40; i++) brokenObserver.mark(i % 2 ? "document-read" : "source-parse")
   assert.equal(brokenObserver.describe().split("\n").length, 25)
   assert.ok(diagnostics.getMissAVAccessDiagnostics().length <= 60)
+  const clock = Date.now
+  let now = clock()
+  Date.now = () => now
+  try {
+    const ended = createMissAVDetailTrace("https://missav.ws/cn/fixture-001")
+    ended.mark("entered"); ended.mark("left"); ended.mark("cancelled")
+    now += 241_000
+    assert.match(ended.describe(), /已结束，耗时 0\.0 秒/, "Cancelled requests do not accumulate waiting time after they end")
+    const active = createMissAVDetailTrace("https://missav.ws/cn/fixture-002")
+    active.mark("entered")
+    now += 1_000
+    assert.match(active.describe(), /正在进行，已等待 1\.0 秒/)
+  } finally { Date.now = clock }
   console.log("PASS: per-request stages, timeout and timings, deduplication, bounded traces, observer isolation and redaction")
 } finally { console.info = info; console.warn = warn }
