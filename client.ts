@@ -405,6 +405,7 @@ class MissAVClient {
     let pageState: "normal" | "challenge" | "blocked" | "unavailable" | "cancelled" | "load-error" = "load-error"
     let loaded = false, finished = false, challengeObserved = false
     let cookieMs = 0, loadMs = 0, captureMs = 0
+    let backgroundCapture: Promise<void> | undefined
     try {
       const cookieStarted = Date.now()
       trace?.mark("cookie-restore")
@@ -429,15 +430,16 @@ class MissAVClient {
         pageState = "challenge"
         throw new Error("当前线路需要 Cloudflare 验证。请到设置页点击“验证访问线路”，完成验证后再重试。")
       }
-      const captureStarted = Date.now()
-      trace?.mark("cookie-capture")
-      try { await scope.waitFor(captureCloudflareSession(controller, new URL(url).hostname, scope)) } catch { /* Cookie persistence is best-effort; page parsing remains authoritative. */ }
-      finally { captureMs = Date.now() - captureStarted }
-      scope.assertActive()
       // A valid MISSAV document is authoritative even if WebKit reports a
       // redirect/load callback as incomplete for this route.
       if (SiteHTML.isLikelyMissAVHTML(html)) {
         pageState = "normal"
+        const captureStarted = Date.now()
+        // Return useful content immediately. The bounded cookie task retains
+        // the controller until finished and remains cancellable by verification.
+        backgroundCapture = Promise.resolve().then(() => captureCloudflareSession(controller, new URL(url).hostname, scope))
+          .then(() => {}, () => {})
+          .finally(() => { captureMs = Date.now() - captureStarted })
         onDocument?.({ url: page.url || url, html, compactHTML: page.compactHTML })
         this.rememberCollectionRoutes(html, url)
         return html
@@ -454,9 +456,9 @@ class MissAVClient {
         clearance: cookieResult?.clearance, expiresInSeconds: cookieResult?.expiresInSeconds,
         attempted: cookieResult?.attempted, accepted: cookieResult?.accepted, confirmed: cookieResult?.confirmed,
         elapsedMs: Date.now() - started, cookieMs, loadMs, captureMs, loaded, finished, challengeObserved })
-      removeCancellation()
-      this.activePageScopes.delete(scope)
-      dispose()
+      const cleanup = () => { removeCancellation(); this.activePageScopes.delete(scope); dispose() }
+      if (backgroundCapture) void backgroundCapture.then(cleanup)
+      else cleanup()
     }
   }
 

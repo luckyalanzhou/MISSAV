@@ -17,7 +17,12 @@ let mode = "load", htmlForRead = () => detail
 class MockWebView {
   reads = 0; waits = 0; disposed = false
   constructor() { controllers.push(this) }
-  async getAllCookies() { return [] }
+  cookieReads = 0
+  async getAllCookies() {
+    this.cookieReads++
+    if (mode === "cookie" && this.cookieReads > 1) return new Promise(resolve => { this.finishCapture = resolve })
+    return []
+  }
   loadURL(url) {
     this.url = url
     if (mode === "load") return new Promise(resolve => { this.finishLoad = resolve })
@@ -58,11 +63,19 @@ try {
   early.finishLoad(true)
   const pendingLoad = await promptly(pending)
   assert.equal(pendingLoad.sources[0].url, mediaURL)
-  assert.equal(early.disposed, true)
   await tick()
+  assert.equal(early.disposed, true)
   assert.equal(early.waits, 0, "A late load callback cannot use a disposed controller")
   assert.equal(early.reads, 1)
   assert.equal(diagnostics.getMissAVAccessDiagnostics().findLast(item => item.phase === "detail-parse").parseCount, 1, "Final detail parsing reuses readiness parsing")
+
+  mode = "cookie"
+  assert.equal((await promptly(missavClient.getVideo("abc-130"))).sources[0].url, mediaURL, "Cookie backup cannot hold playable content")
+  const captureView = controllers.at(-1)
+  assert.equal(captureView.disposed, false, "Background cookie read retains its native controller")
+  captureView.finishCapture([])
+  await tick()
+  assert.equal(captureView.disposed, true, "Cookie completion releases the retained controller")
 
   mode = "wait"
   assert.equal((await promptly(missavClient.getVideo("abc-124"))).sources[0].url, mediaURL)

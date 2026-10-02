@@ -41,6 +41,13 @@ try {
   assert.equal(presented.resumePositionSeconds, 120)
   assert.equal(presented.subtitles.cues[0].text, "Caption")
   assert.equal(historyWrites, 1, "Unsettled history write does not hold the player")
+  const preparedAsset = { source: source.url }
+  const readsBeforePrepared = optionalReads
+  await play(video, source, { detail, preparation: { data: { subtitles: { cues: [{ text: "Prepared" }] }, progress: { positionSeconds: 42 } }, takeAsset: () => preparedAsset } })
+  assert.equal(presented.asset, preparedAsset)
+  assert.equal(presented.resumePositionSeconds, 42)
+  assert.equal(presented.subtitles.cues[0].text, "Prepared")
+  assert.equal(optionalReads, readsBeforePrepared, "Prepared playback adds no file/SQLite wait")
   mode = "stalled"; presented = undefined
   let watchdog
   try {

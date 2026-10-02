@@ -7,6 +7,7 @@ import { createPlaybackProgressWriter } from "./playback-writer"
 
 export type NativePlaybackRequest = {
   url: string
+  asset?: AVAsset
   headers?: Record<string, string>
   title: string
   providerLabel: string
@@ -20,7 +21,7 @@ export type NativePlaybackRequest = {
 export async function presentNativeOnlinePlayer(request: NativePlaybackRequest): Promise<void> {
   if (!/^https?:\/\//i.test(request.url)) throw new Error("当前清晰度没有可用的播放地址。")
   const player = new AVPlayer()
-  let asset: AVAsset | undefined
+  let asset: AVAsset | undefined = request.asset
   let hasStarted = false
   let hasEnded = false
   let closing = false
@@ -70,7 +71,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     // playAndRecord; combining it with playback can fail with OSStatus -50.
     await SharedAudioSession.setCategory("playback", [])
     await SharedAudioSession.setActive(true)
-    asset = request.headers && Object.keys(request.headers).length > 0
+    asset ??= request.headers && Object.keys(request.headers).length > 0
       ? new AVAsset(request.url, { headers: request.headers })
       : undefined
     const accepted = player.setSource(asset ?? request.url)

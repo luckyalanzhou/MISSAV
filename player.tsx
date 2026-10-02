@@ -3,9 +3,10 @@ import { missavClient, type MissAVVideoDetail, type MissAVVideoItem, type MissAV
 import { loadMissAVPlaybackProgress, recordMissAVPlayback, saveMissAVPlaybackProgress } from "./storage"
 import { isMissAVSubtitleEnabled, loadMissAVSubtitle, type SubtitleTrack } from "./subtitles"
 import { withMissAVDeadline } from "./request-deadline"
+import type { MissAVPlaybackPreparation } from "./playback-preparation"
 export type MissAVPlaybackResult = { opened: true } | { opened: false }
 
-export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selected: MissAVVideoSource, options: { detail: MissAVVideoDetail; subtitles?: SubtitleTrack; preview?: boolean }): Promise<MissAVPlaybackResult> {
+export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selected: MissAVVideoSource, options: { detail: MissAVVideoDetail; preparation?: MissAVPlaybackPreparation; subtitles?: SubtitleTrack; preview?: boolean }): Promise<MissAVPlaybackResult> {
   const freshDetail = options.detail
   const freshSource = freshDetail.sources.find(source => source.url === selected.url && source.type === selected.type)
   if (!freshSource) throw new Error("所选清晰度已不可用，请刷新详情后重试。")
@@ -15,14 +16,15 @@ export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selec
     // Optional native file/SQLite operations run together and cannot keep a
     // ready stream from opening indefinitely. Keep resume/subtitles when they
     // arrive on time; late results do not change an already opened player.
-    const [storedSubtitles, progress] = await Promise.all([
+    const [storedSubtitles, progress] = options.preparation && !preview ? [options.preparation.data.subtitles, options.preparation.data.progress] : await Promise.all([
       !preview && isMissAVSubtitleEnabled(video.videoCode) ? optionalPlaybackData(() => loadMissAVSubtitle(video.videoCode), "字幕读取") : Promise.resolve(null),
       !preview ? optionalPlaybackData(() => loadMissAVPlaybackProgress(video.videoCode), "播放进度读取") : Promise.resolve(null),
     ])
-    const subtitles = options?.subtitles ?? storedSubtitles ?? undefined
+    const subtitles = options?.subtitles ?? (isMissAVSubtitleEnabled(video.videoCode) ? storedSubtitles : null) ?? undefined
     if (!preview) void Promise.resolve().then(() => recordMissAVPlayback(video, freshSource)).catch(() => console.warn("播放记录保存失败，不影响视频播放。"))
     await presentNativeOnlinePlayer({
       url: freshSource.url,
+      asset: options.preparation?.takeAsset(freshDetail, freshSource),
       headers: missavClient.playbackHeaders(freshDetail.watchUrl, freshSource.url),
       title: freshDetail.title,
       providerLabel: "MISSAV",
