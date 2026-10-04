@@ -57,4 +57,8 @@ for (const file of ["home", "discover", "search", "recommendations", "library", 
   assert.match(text, /detailNavigation\.open\(video\)/)
   assert.doesNotMatch(text, /setSelected\(video\); detailPresented\.setValue\(true\)/)
 }
+const homeTab = readFileSync(new URL("../home_screen_default_ui.tsx", import.meta.url), "utf8")
+assert.match(homeTab, /initialDetail=\{selected\.detail\}/)
+assert.match(homeTab, /preparation=\{selected\.preparation\}/)
+assert.match(homeTab, /detailNavigation\.open\(video\)/)
 console.log("PASS: prepared navigation; repeated taps, supersession, cancellation, empty-source recovery; all six entrances")

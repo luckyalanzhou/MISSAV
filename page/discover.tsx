@@ -10,14 +10,15 @@ const collections = MISSAV_COLLECTION_OPTIONS.map(item => ({ ...item }))
 const filters = MISSAV_FILTER_OPTIONS.map(item => ({ ...item }))
 const sorts = MISSAV_SORT_OPTIONS.map(item => ({ ...item }))
 
-export function DiscoverPage(props: { accessRevision?: number; onHistoryChanged: () => void; toolbar?: any }) {
-  const [group, setGroup] = useState<MissAVCollectionGroup>("subtitles")
-  const [collection, setCollection] = useState<MissAVCollection>("chinese-subtitle")
+export function DiscoverPage(props: { initialCollection?: MissAVCollection; accessRevision?: number; onHistoryChanged: () => void; toolbar?: any }) {
+  const initialCollection = props.initialCollection || "chinese-subtitle"
+  const [group, setGroup] = useState<MissAVCollectionGroup>(() => MISSAV_COLLECTION_GROUPS.find(option => option.collections.includes(initialCollection))?.value || "subtitles")
+  const [collection, setCollection] = useState<MissAVCollection>(initialCollection)
   const [categoryPath, setCategoryPath] = useState("")
   const [categoryTitle, setCategoryTitle] = useState("")
   const [categories, setCategories] = useState<MissAVCategoryItem[]>([])
   const [filter, setFilter] = useState<MissAVFilter>("")
-  const [sort, setSort] = useState<MissAVSort>(defaultCollectionSort("chinese-subtitle"))
+  const [sort, setSort] = useState<MissAVSort>(defaultCollectionSort(initialCollection))
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<MissAVVideoItem[]>([])
   const [hasNext, setHasNext] = useState(true)
@@ -29,7 +30,7 @@ export function DiscoverPage(props: { accessRevision?: number; onHistoryChanged:
   const firstLoad = useRef(false)
   const generation = useRef(0)
   const requestScope = useRef<MissAVRequestScope | null>(null)
-  const query = useRef<{ page: number; collection: MissAVCollection; filter: MissAVFilter; sort: MissAVSort; categoryPath: string }>({ page: 1, collection: "chinese-subtitle", filter: "", sort: defaultCollectionSort("chinese-subtitle"), categoryPath: "" })
+  const query = useRef<{ page: number; collection: MissAVCollection; filter: MissAVFilter; sort: MissAVSort; categoryPath: string }>({ page: 1, collection: initialCollection, filter: "", sort: defaultCollectionSort(initialCollection), categoryPath: "" })
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
 
   async function load(next: { page?: number; collection?: MissAVCollection; filter?: MissAVFilter; sort?: MissAVSort; categoryPath?: string } = {}, forceRefresh = false) {

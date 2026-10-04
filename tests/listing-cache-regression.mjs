@@ -56,11 +56,15 @@ try {
   const result = await fresh().searchVideoPage(params)
   assert.equal(result.items[0].videoCode, "cache-001")
   const initialLoads = loads
+  assert.equal((await fresh().readCachedVideoPage(params)).items[0].videoCode, "cache-001")
+  assert.equal(loads, initialLoads, "HomeTab cache previews never open a WebView")
   assert.equal((await fresh().searchVideoPage(params)).items[0].videoCode, "cache-001")
   assert.equal(loads, initialLoads, "A new client instance reuses a fresh persisted successful listing")
   await fresh().searchVideoPage(params, { forceRefresh: true })
   assert.equal(loads, initialLoads + 1)
   sqlite.prepare("UPDATE listing_cache SET saved_at=?").run(Date.now() - 120_000)
+  assert.equal((await fresh().readCachedVideoPage(params)).stale, true)
+  assert.equal(loads, initialLoads + 1, "Even stale previews are cache-only")
   html = '<html><title>Just a moment</title><body><div id="challenge-form">Verify you are human</div></body></html>'
   const shared = fresh()
   const stale = shared.searchVideoPage(params, { allowStale: true })
@@ -71,6 +75,7 @@ try {
   assert.ok(shared.accessProbeRoutes().some(probe => probe.collection === "new"), "A cached fallback does not clear the need to verify this route")
   assert.equal(JSON.parse(sqlite.prepare("SELECT payload FROM listing_cache").get().payload).items[0].videoCode, "cache-001", "Challenges cannot overwrite persisted content")
   setMissAVBaseURL("https://missav.ai/")
+  assert.equal(await fresh().readCachedVideoPage(params), null, "Preview cache is isolated by domain")
   await assert.rejects(fresh().searchVideoPage(params, { allowStale: true }), /Cloudflare/)
   setMissAVBaseURL("https://missav.ws/")
   const path = "https://missav.ws/cn/new"

@@ -40,7 +40,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "./components/state_view") return { StateView: "StateView" }
   throw new Error(`Unexpected module ${specifier}`)
 }, module, module.exports)
-function render() {
+function render(props = {}) {
   hook = 0
   const nodes = []
   const visit = value => {
@@ -50,7 +50,7 @@ function render() {
     if (value.type === "ScrollViewReader") visit(value.props.children({ scrollTo: () => {} }))
     else visit(value.props.children)
   }
-  visit(module.exports.DiscoverPage({ onHistoryChanged() {} }))
+  visit(module.exports.DiscoverPage({ onHistoryChanged() {}, ...props }))
   return nodes
 }
 const named = (nodes, name) => nodes.filter(node => (typeof node.type === "function" ? node.type.name : node.type) === name)
@@ -115,4 +115,14 @@ for (const [title, collection, count] of [["素人", "siro", 6], ["无码影片"
   assert.equal(named(nodes, "DiscoverHero").length, 0, "Changing group clears the preceding group's content")
   await complete(`${collection}-001`)
 }
-console.log("MISSAV Browse group/subcategory selection, late responses, directory entry and filter reset passed")
+for (const [collection, title, sort] of [["new", "最近更新", "published_at"], ["today-hot", "今日热门", "today_views"]]) {
+  states.length = 0
+  nodes = render({ initialCollection: collection })
+  assert.equal(chip(nodes, "日本 AV").props.active, true)
+  assert.equal(chip(nodes, title).props.active, true)
+  named(nodes, "ScrollView").find(node => node.props.onAppear).props.onAppear()
+  assert.equal(requests.at(-1).params.collection, collection)
+  assert.equal(requests.at(-1).params.sort, sort)
+  await complete(`${collection}-direct`)
+}
+console.log("MISSAV Browse groups, late responses, directories, filters and direct HomeTab collection entrances passed")

@@ -75,6 +75,15 @@ class MissAVClient {
   private recentDetailOrigin = ""
   private recentDetailGeneration = 0
 
+  // Cache-only preview for the HomeTab; never starts a verification or HTTP request.
+  async readCachedVideoPage(params: MissAVSearchParams): Promise<MissAVSearchPage | null> {
+    const url = this.collectionUrl(params)
+    const memory = this.searchPageCache.get(url)
+    if (memory) return copySearchPage(memory.value)
+    const cached = await readCachedListing(url)
+    return cached ? { ...cached.value, cachedAt: cached.savedAt, stale: Date.now() - cached.savedAt >= LISTING_CACHE_FRESH_MS } : null
+  }
+
   async searchVideoPage(params: MissAVSearchParams, options: { forceRefresh?: boolean; scope?: MissAVRequestScope; allowStale?: boolean } = {}): Promise<MissAVSearchPage> {
     const caller = options.scope || new MissAVRequestScope()
     await this.waitForVerification(caller)
