@@ -10,17 +10,19 @@ import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
 import { SubtitleFileRow } from "./components/subtitle_file_row"
 import { withMissAVDeadline } from "../request-deadline"
-import { createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
+import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import type { MissAVPlaybackPreparation } from "../playback-preparation"
 import { extractSubtitleSearchCode } from "../subtitle-search-code"
 
-export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: MissAVVideoDetail; preparation?: MissAVPlaybackPreparation; onHistoryChanged: () => void }) {
+export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: MissAVVideoDetail; initialTrace?: MissAVDetailTrace; preparation?: MissAVPlaybackPreparation; onHistoryChanged: () => void }) {
   const [detail, setDetail] = useState<MissAVVideoDetail | null>(props.initialDetail ?? null)
   const [detailError, setDetailError] = useState<string | null>(null)
   const [loading, setLoading] = useState(!props.initialDetail)
   const [loadProgress, setLoadProgress] = useState<MissAVDetailProgress | null>(null)
-  const detailTrace = useRef<MissAVDetailTrace | null>(null)
+  const [clock, setClock] = useState(Date.now())
+  const [loadStartedAt, setLoadStartedAt] = useState<number | null>(null)
+  const detailTrace = useRef<MissAVDetailTrace | null>(props.initialTrace ?? null)
   const [openingSource, setOpeningSource] = useState<string | null>(null)
   const [subtitleAvailable, setSubtitleAvailable] = useState(false)
   const [subtitleEnabled, setSubtitleEnabled] = useState(true)
@@ -37,6 +39,9 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   async function load() {
     const current = ++generation.current
     requestScope.current?.cancel()
+    const startedAt = Date.now()
+    setLoadStartedAt(startedAt)
+    setClock(startedAt)
     const trace = createMissAVDetailTrace(props.video.detailPath, progress => { if (current === generation.current) setLoadProgress(progress) })
     detailTrace.current = trace
     trace.mark("entered")
@@ -61,6 +66,21 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
       }
     } finally { if (current === generation.current) { setLoading(false); requestScope.current = null } }
   }
+
+  async function copyLoadDiagnostics() {
+    try {
+      await copyMissAVDetailReport(detailTrace.current, props.video.videoCode)
+      await Dialog.alert({ title: "诊断已复制", message: "已复制详情加载的阶段耗时和解析信息。回到对话粘贴即可发送给我。" })
+    } catch (reason) {
+      await Dialog.alert({ title: "复制诊断失败", message: reason instanceof Error ? reason.message : String(reason) })
+    }
+  }
+
+  useEffect(() => {
+    if (!loading) return
+    const timer = setInterval(() => setClock(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [loading])
 
   // A navigation destination can be constructed before it is shown. Own
   // requests with the native visible-page lifecycle, not separate effect
@@ -160,8 +180,8 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
         {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在脚本目录的 subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
       </VStack>
 
-      {loading && loadProgress ? <Text font="caption" foregroundStyle="secondaryLabel">{MISSAV_DETAIL_STAGE_LABELS[loadProgress.stage]}</Text> : undefined}
-      {loading || detailError ? <Button title="加载诊断信息" systemImage="info.circle" buttonStyle="plain" action={() => { void Dialog.alert({ title: "详情加载诊断", message: detailTrace.current?.describe() || "尚未开始详情请求。" }) }} /> : undefined}
+      {loading && loadProgress ? <Text font="caption" foregroundStyle="secondaryLabel">{`${MISSAV_DETAIL_STAGE_LABELS[loadProgress.stage]} · ${(Math.max(loadProgress.elapsedMs, loadStartedAt === null ? loadProgress.elapsedMs : clock - loadStartedAt) / 1000).toFixed(1)} 秒`}</Text> : undefined}
+      {detailTrace.current || loading || detailError ? <Button title={loading ? "复制当前诊断" : detailError ? "复制失败诊断" : "复制完整诊断"} systemImage="doc.on.doc" buttonStyle="plain" action={() => { void copyLoadDiagnostics() }} /> : undefined}
       {detailError && !detail ? <StateView title="详情加载失败" description={detailError} kind="error" action={() => { void load() }} /> : undefined}
       {detailError && detail ? <StateView title="刷新失败" description="正在显示上次加载的详情。" kind="error" action={() => { void load() }} presentation="row" /> : undefined}
 
@@ -382,7 +402,7 @@ function TagSearchPage(props: { tag: string; onHistoryChanged: () => void }) {
   useEffect(() => () => { ++generation.current; requestScope.current?.cancel() }, [props.tag])
   useEffect(() => { if (resultsRevision) scrollProxy.current?.scrollTo("tag-results-top", "top") }, [resultsRevision])
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}><PageBackground /><ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle={props.tag} navigationBarTitleDisplayMode="inline" refreshable={() => load(page)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}><VStack key="tag-results-top" spacing={18} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}><VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><HStack spacing={7}><Image systemName="tag.fill" foregroundStyle={ACCENT} /><Text font="title2" fontWeight="bold">{props.tag}</Text></HStack><Text font="footnote" foregroundStyle="secondaryLabel">{`相关作品 · 第 ${page} 页 · ${items.length} 个结果`}</Text></VStack>{loading && !items.length ? <StateView title="正在搜索标签" loading presentation="section" /> : error && !items.length ? <StateView title="标签搜索失败" description={error} kind="error" action={() => { void load(page) }} /> : !items.length ? <StateView title="暂无相关作品" description="未找到带有此标签的作品。" systemImage="tag.slash" /> : <VideoRowList items={items} status={() => `标签 · ${props.tag}`} statusSystemImage="tag" onOpen={open} />}{error && items.length ? <StateView title="刷新失败" description="正在显示上次成功的结果。" kind="error" action={() => { void load(page) }} presentation="row" /> : undefined}{items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load(page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load(page + 1) }} /></HStack> : undefined}</VStack></ScrollView>}}</ScrollViewReader></ZStack>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}><PageBackground /><ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle={props.tag} navigationBarTitleDisplayMode="inline" refreshable={() => load(page)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}><VStack key="tag-results-top" spacing={18} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}><VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><HStack spacing={7}><Image systemName="tag.fill" foregroundStyle={ACCENT} /><Text font="title2" fontWeight="bold">{props.tag}</Text></HStack><Text font="footnote" foregroundStyle="secondaryLabel">{`相关作品 · 第 ${page} 页 · ${items.length} 个结果`}</Text></VStack>{loading && !items.length ? <StateView title="正在搜索标签" loading presentation="section" /> : error && !items.length ? <StateView title="标签搜索失败" description={error} kind="error" action={() => { void load(page) }} /> : !items.length ? <StateView title="暂无相关作品" description="未找到带有此标签的作品。" systemImage="tag.slash" /> : <VideoRowList items={items} status={() => `标签 · ${props.tag}`} statusSystemImage="tag" onOpen={open} />}{error && items.length ? <StateView title="刷新失败" description="正在显示上次成功的结果。" kind="error" action={() => { void load(page) }} presentation="row" /> : undefined}{items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load(page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load(page + 1) }} /></HStack> : undefined}</VStack></ScrollView>}}</ScrollViewReader></ZStack>
 }
 
 function SourceRow(props: { source: MissAVVideoSource; openingSource: string | null; action: () => void }) {

@@ -49,7 +49,8 @@ export function createMissAVDetailTrace(target: string, onProgress?: (progress: 
       publish(updated)
     },
     describe() {
-      const totalMs = Math.max(0, Date.now() - started)
+      const terminal = [...entries].reverse().find(entry => ["completed", "timeout", "cancelled", "discarded", "failed", "left"].includes(entry.stage))
+      const totalMs = Math.max(0, terminal?.elapsedMs ?? Date.now() - started)
       const details = entries.map((entry, index) => {
         const endMs = entries[index + 1]?.elapsedMs ?? totalMs
         const phaseMs = Math.max(0, endMs - entry.elapsedMs)
@@ -69,3 +70,13 @@ export function createMissAVDetailTrace(target: string, onProgress?: (progress: 
   }
 }
 export type MissAVDetailTrace = ReturnType<typeof createMissAVDetailTrace>
+
+// The user explicitly requests this copy action; reports contain only a video
+// code, elapsed stage timings, and counts, never HTML, cookies, or media URLs.
+export async function copyMissAVDetailReport(trace: MissAVDetailTrace | null, videoCode: string): Promise<void> {
+  if (!trace) throw new Error("还没有可复制的详情加载诊断。")
+  await Pasteboard.setItems([{ "public.plain-text": `${videoCode.toUpperCase()}\n${trace.describe()}` }], {
+    localOnly: true,
+    expirationDate: new Date(Date.now() + 10 * 60 * 1000),
+  })
+}
