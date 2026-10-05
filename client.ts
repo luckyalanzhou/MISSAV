@@ -354,12 +354,15 @@ class MissAVClient {
   watchUrl(videoCode: string): string { return new URL(`${MISSAV_LOCALE}/${SiteHTML.extractMissAVVideoCode(videoCode) || videoCode}`, getMissAVBaseURL()).toString() }
   browseProbeURL(): string { return this.collectionUrl({ collection: "new", page: 1, sort: defaultMissAVCollectionSort("new") }) }
   accessProbeRoutes(): MissAVAccessProbe[] {
-    // Check one real entry per group and any routes that actually challenged
-    // the user, rather than adding dozens of hidden requests on every check.
+    // Cloudflare clearance is host-scoped. Prefer the most recently challenged
+    // route, then use one stable listing as the fast fallback; callers should
+    // not serially preflight every category before opening the verification UI.
     const origin = new URL(getMissAVBaseURL()).origin
     const requests: MissAVSearchParams[] = []
     for (const [url, params] of [...this.verificationRequests].reverse()) if (new URL(url).origin === origin) requests.push(params)
-    requests.push(...MISSAV_COLLECTION_GROUPS.map(group => ({ collection: group.defaultCollection, page: 1, sort: defaultMissAVCollectionSort(group.defaultCollection) })))
+    requests.push({ collection: "new", page: 1, sort: defaultMissAVCollectionSort("new") })
+    requests.push(...MISSAV_COLLECTION_GROUPS.filter(group => group.defaultCollection !== "new")
+      .map(group => ({ collection: group.defaultCollection, page: 1, sort: defaultMissAVCollectionSort(group.defaultCollection) })))
     const seen = new Set<string>()
     const probes: MissAVAccessProbe[] = []
     for (const params of requests) {

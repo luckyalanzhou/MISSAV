@@ -1,15 +1,14 @@
 import { getMissAVBaseURL, MISSAV_LOCALE } from "./domain"
-import { isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, isLikelyMissAVListingHTML, isMissAVDirectoryCollection, missavClient, parseMissAVDirectoryPage, type MissAVAccessProbe } from "./client"
+import { missavClient, type MissAVAccessProbe } from "./client"
 import { classifyCloudflareHTML } from "./html-parser"
 import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import { captureCloudflareSession, restoreCloudflareSession } from "./cloudflare-session"
-import { loadWebViewPage, readMatchingWebViewDocument, type WebViewPageLoad, type WebViewDocument } from "./webview"
+import { readMatchingWebViewDocument, type WebViewDocument } from "./webview"
 
 export type MissAVSiteVerificationResult =
   | { status: "accessible"; challengeCompleted: boolean }
   | { status: "incomplete" | "unavailable" | "blocked"; probe: MissAVAccessProbe }
 
-const MISSAV_ACCESS_PROBE_TIMEOUT_MS = 10_000
 let siteVerificationRequest: Promise<MissAVSiteVerificationResult> | null = null
 
 function origin(): string { return new URL(getMissAVBaseURL()).origin }
@@ -39,74 +38,41 @@ async function runSiteVerification(): Promise<MissAVSiteVerificationResult> {
 
 async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
   const verificationOrigin = origin()
-  let challengeCompleted = false
-  // Check real group entries and recently challenged subcategories.
-  // Group headings are never treated as page URLs.
-  for (const probe of missavClient.accessProbeRoutes()) {
+  const probe = missavClient.accessProbeRoutes()[0]
+  if (!probe) throw new Error("没有可用于检查的访问线路。")
+  if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
+
+  probe.url = missavClient.accessProbeURL(probe)
+  const probeURL = probe.url
+  const probeHost = new URL(probeURL).hostname
+  const controller = new WebViewController()
+  try {
+    // Open the foreground WebView immediately. A hidden 10-second preflight
+    // delayed the challenge UI and duplicated the actual verification request.
+    const { listingConfirmed, challengeObserved, blocked, document } = await presentVerificationPage(
+      controller,
+      probe,
+      async () => { await restoreCloudflareSession(controller, probeURL) },
+    )
     if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
-    // Share cookies, not the preceding probe's document. A cancelled load
-    // must never validate the next route using the previous listing's HTML.
-    let controller = new WebViewController()
-    try {
-      // The preceding listing can reveal updated routes for the next probes.
-      probe.url = missavClient.accessProbeURL(probe)
-      const probeURL = probe.url
-      const probeHost = new URL(probeURL).hostname
-      await restoreCloudflareSession(controller, probeURL)
-      let initialPage: WebViewPageLoad = { loaded: false, finished: false, html: null }
-      try { initialPage = await loadWebViewPage(controller, probeURL, MISSAV_ACCESS_PROBE_TIMEOUT_MS) }
-      catch {
-        const document = await readMatchingWebViewDocument(controller, probeURL)
-        initialPage = { loaded: false, finished: false, html: document?.html ?? null, url: document?.url }
-      }
-      if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
+    if (blocked) return { status: "blocked", probe }
+    try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
+    if (listingConfirmed && missavClient.cacheVerifiedPage(probe, document)) {
+      missavClient.clearVerificationCollections()
+      return { status: "accessible", challengeCompleted: challengeObserved }
+    }
 
-      // The HTML is the source of truth; WebKit can report a redirect callback
-      // as incomplete even though a usable list is already on screen.
-      if (classifyCloudflareHTML(initialPage.html) === "blocked") return { status: "blocked", probe }
-      const initialChallenge = classifyCloudflareHTML(initialPage.html) === "challenge"
-      if (initialPage.challengeObserved && !initialChallenge) challengeCompleted = true
-      const needsVisibleCheck = initialChallenge || !isProbePageHTML(initialPage.html, probe)
-      if (needsVisibleCheck) {
-        // Discard the hidden document, not its shared cookies. A challenge
-        // initialized off-screen can retain a stalled widget when reused.
-        // Start the exact route once in a fresh foreground WebView instead.
-        controller.dispose()
-        controller = new WebViewController()
-        await restoreCloudflareSession(controller, probeURL)
-        const { listingConfirmed: visibleListingConfirmed, challengeObserved, blocked, document } = await presentVerificationPage(controller, probe)
-        if (origin() !== verificationOrigin) throw new Error("访问域名已更改，请重新验证。")
-        if (blocked) return { status: "blocked", probe }
-        try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
-        if (visibleListingConfirmed) {
-          if (initialChallenge || challengeObserved) challengeCompleted = true
-          if (!missavClient.cacheVerifiedPage(probe, document)) return { status: "unavailable", probe }
-          continue
-        }
-
-        // Never retry in the background after the user closes the challenge:
-        // doing so can finish later and falsely report that the closed page was
-        // verified. Success requires observing a real listing in this window.
-        const closedPageHTML = (await readMatchingWebViewDocument(controller, probeURL))?.html ?? null
-        const closedState = classifyCloudflareHTML(closedPageHTML)
-        return { status: closedState === "blocked" ? "blocked" : closedState === "challenge" ? "incomplete" : "unavailable", probe }
-      }
-      if (!missavClient.cacheVerifiedPage(probe, { url: initialPage.url || probeURL, html: initialPage.html })) return { status: "unavailable", probe }
-      try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
-    } finally { controller.dispose() }
+    // Never retry in the background after the user closes the challenge:
+    // success requires observing a real listing in this foreground window.
+    const closedPageHTML = (await readMatchingWebViewDocument(controller, probeURL))?.html ?? null
+    const closedState = classifyCloudflareHTML(closedPageHTML)
+    return { status: closedState === "blocked" ? "blocked" : closedState === "challenge" ? "incomplete" : "unavailable", probe }
+  } finally {
+    controller.dispose()
   }
-  missavClient.clearVerificationCollections()
-  return { status: "accessible", challengeCompleted }
 }
 
-function isProbePageHTML(html: string | null, probe: MissAVAccessProbe): boolean {
-  if (!isLikelyMissAVHTML(html) || isCloudflareHTML(html)) return false
-  return isMissAVDirectoryCollection(probe.collection) && !probe.params.categoryPath && !probe.params.query
-    ? Boolean(parseMissAVDirectoryPage(html, 1, probe.collection, probe.url).categories?.length)
-    : isLikelyMissAVListingHTML(html)
-}
-
-async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe): Promise<{ listingConfirmed: boolean; challengeObserved: boolean; blocked: boolean; document: WebViewDocument | null }> {
+async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe, restoreCookies: () => Promise<unknown>): Promise<{ listingConfirmed: boolean; challengeObserved: boolean; blocked: boolean; document: WebViewDocument | null }> {
   const probeURL = probe.url
   let presentationClosed = false
   let listingConfirmed = false
@@ -118,7 +84,10 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
   // Let the modal become visible before navigating so Cloudflare's interactive
   // challenge starts in the foreground on the first tap.
   await new Promise<void>(resolve => setTimeout(resolve, 500))
-  if (!presentationClosed) void controller.loadURL(probeURL).catch(() => undefined)
+  if (!presentationClosed) {
+    try { await restoreCookies() } catch { /* Continue with the live WebView cookie store. */ }
+    if (!presentationClosed) void controller.loadURL(probeURL).catch(() => undefined)
+  }
 
   while (!presentationClosed) {
     await Promise.race([
