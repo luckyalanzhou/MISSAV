@@ -5,13 +5,14 @@ import { resolveMissAVResumePosition } from "./playback-progress"
 export type HomeSection = "latest" | "trending"
 export type HomeScreenData = {
   recent: MissAVPlaybackRecord[]
+  hasRecommendationHistory: boolean
   latest: MissAVVideoItem[]
   trending: MissAVVideoItem[]
   loading: Record<HomeSection, boolean>
   errors: Record<HomeSection | "history", string | null>
 }
 export function emptyHomeScreenData(): HomeScreenData {
-  return { recent: [], latest: [], trending: [], loading: { latest: true, trending: true }, errors: { latest: null, trending: null, history: null } }
+  return { recent: [], hasRecommendationHistory: false, latest: [], trending: [], loading: { latest: true, trending: true }, errors: { latest: null, trending: null, history: null } }
 }
 export function continueWatchingRecords(records: MissAVPlaybackRecord[]): MissAVPlaybackRecord[] {
   return records.filter(record => resolveMissAVResumePosition(record.positionSeconds, record.durationSeconds, 0) > 0).slice(0, 5)
@@ -24,6 +25,7 @@ export function playbackProgressFraction(record: MissAVPlaybackRecord): number |
 type Scope = { cancelled: boolean; cancel(): void }
 type Dependencies = {
   history(): Promise<MissAVPlaybackRecord[]>
+  recommendationHistory?(): Promise<boolean>
   cached(params: MissAVSearchParams): Promise<MissAVSearchPage | null>
   search(params: MissAVSearchParams, scope: Scope, force: boolean): Promise<MissAVSearchPage>
   scope(): Scope
@@ -54,12 +56,23 @@ export class HomeScreenLoader {
   async loadLocal() {
     if (this.disposed) return
     const generation = ++this.localGeneration
+    let records: MissAVPlaybackRecord[] | undefined
     try {
-      const records = await this.dependencies.history()
+      records = await this.dependencies.history()
       if (this.disposed || generation !== this.localGeneration) return
-      this.publish({ recent: continueWatchingRecords(records), errors: { ...this.data.errors, history: null } })
+      this.publish({ recent: continueWatchingRecords(records), hasRecommendationHistory: records.length > 0 || this.data.hasRecommendationHistory, errors: { ...this.data.errors, history: null } })
     } catch {
-      if (!this.disposed && generation === this.localGeneration) this.publish({ errors: { ...this.data.errors, history: "播放记录暂时无法读取。" } })
+      if (this.disposed || generation !== this.localGeneration) return
+      if (!this.dependencies.recommendationHistory) this.publish({ errors: { ...this.data.errors, history: "播放记录暂时无法读取。" } })
+    }
+    if (this.dependencies.recommendationHistory && !this.disposed && generation === this.localGeneration) {
+      try {
+        const hasBrowseHistory = await this.dependencies.recommendationHistory()
+        if (this.disposed || generation !== this.localGeneration) return
+        this.publish({ hasRecommendationHistory: Boolean(records?.length) || hasBrowseHistory, errors: { ...this.data.errors, history: records ? null : "播放记录暂时无法读取。" } })
+      } catch {
+        if (!this.disposed && generation === this.localGeneration && !records) this.publish({ errors: { ...this.data.errors, history: "本机历史记录暂时无法读取。" } })
+      }
     }
   }
   loadRemote(force = false): Promise<void> {
