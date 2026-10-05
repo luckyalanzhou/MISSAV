@@ -18,6 +18,7 @@ type DiagnosticInput = {
   background?: boolean; phase?: typeof phases[number];
   domMatched?: boolean; compactChars?: number;
   detailStage?: MissAVDetailStage; requestId?: number; documentChars?: number; sourceCount?: number;
+  cacheHit?: boolean;
 }
 export type MissAVAccessDiagnostic = DiagnosticInput & { at: number; event: typeof events[number]; host: string; route: string }
 const history: MissAVAccessDiagnostic[] = []
@@ -35,7 +36,7 @@ export function recordMissAVAccessDiagnostic(event: typeof events[number], targe
     if (typeof value === "number" && Number.isFinite(value)) entry[key] = Math.max(0, Math.round(value))
     else if (key === "expiresInSeconds" && value === null) entry.expiresInSeconds = null
   }
-  for (const key of ["clearance", "loaded", "finished", "challengeObserved", "background", "domMatched"] as const) {
+  for (const key of ["clearance", "loaded", "finished", "challengeObserved", "background", "domMatched", "cacheHit"] as const) {
     if (typeof input[key] === "boolean") entry[key] = input[key]
   }
   if (input.cookieState && states.includes(input.cookieState)) entry.cookieState = input.cookieState

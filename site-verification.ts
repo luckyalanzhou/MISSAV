@@ -1,5 +1,5 @@
 import { getMissAVBaseURL, MISSAV_LOCALE } from "./domain"
-import { missavClient, type MissAVAccessProbe } from "./client"
+import { isCloudflareChallengeHTML as isCloudflareHTML, isLikelyMissAVHTML, isLikelyMissAVListingHTML, isMissAVDirectoryCollection, missavClient, parseMissAVDirectoryPage, type MissAVAccessProbe } from "./client"
 import { classifyCloudflareHTML } from "./html-parser"
 import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import { captureCloudflareSession, restoreCloudflareSession } from "./cloudflare-session"
@@ -70,6 +70,13 @@ async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
   } finally {
     controller.dispose()
   }
+}
+
+function isProbePageHTML(html: string | null, probe: MissAVAccessProbe): boolean {
+  if (!isLikelyMissAVHTML(html) || isCloudflareHTML(html)) return false
+  return isMissAVDirectoryCollection(probe.collection) && !probe.params.categoryPath && !probe.params.query
+    ? Boolean(parseMissAVDirectoryPage(html, 1, probe.collection, probe.url).categories?.length)
+    : isLikelyMissAVListingHTML(html)
 }
 
 async function presentVerificationPage(controller: WebViewController, probe: MissAVAccessProbe, restoreCookies: () => Promise<unknown>): Promise<{ listingConfirmed: boolean; challengeObserved: boolean; blocked: boolean; document: WebViewDocument | null }> {

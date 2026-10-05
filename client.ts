@@ -315,7 +315,7 @@ class MissAVClient {
       if (new URL(watchUrl).origin !== new URL(getMissAVBaseURL()).origin) { scope.cancel(); scope.assertActive() }
       const recent = this.recentVideoDetails.get(watchUrl)
       if (recent && Date.now() - recent.savedAt >= 0 && Date.now() - recent.savedAt < RECENT_VIDEO_DETAIL_TTL_MS) {
-        trace.mark("detail-parse", { sourceCount: recent.value.sources.length })
+        trace.mark("detail-parse", { sourceCount: recent.value.sources.length, cacheHit: true })
         return copyVideoDetail(recent.value)
       }
       this.recentVideoDetails.delete(watchUrl)
@@ -331,7 +331,11 @@ class MissAVClient {
         try {
           lastDetail = SiteHTML.parseMissAVVideoDetail(html, videoCode, watchUrl)
           lastHTML = html
-        } finally { parseMs += Date.now() - started; parseCount += 1 }
+        } finally {
+          parseMs += Date.now() - started
+          parseCount += 1
+          trace.annotate({ parseMs, parseCount, ...(lastDetail ? { sourceCount: lastDetail.sources.length } : {}) })
+        }
       }
       return lastDetail
     }
@@ -339,8 +343,8 @@ class MissAVClient {
     scope.assertActive()
     let state: "normal" | "load-error" = "load-error"
     try {
-      trace.mark("detail-parse")
       const value = parseDetail(html)
+      trace.mark("detail-parse", { sourceCount: value.sources.length, parseMs, parseCount })
       if (value.sources.length && cacheGeneration === this.recentDetailGeneration) {
         this.recentVideoDetails.delete(watchUrl)
         if (this.recentVideoDetails.size >= MAX_RECENT_VIDEO_DETAILS) this.recentVideoDetails.delete(this.recentVideoDetails.keys().next().value!)
@@ -425,12 +429,13 @@ class MissAVClient {
       finally { cookieMs = Date.now() - cookieStarted }
       scope.assertActive()
       const loadStarted = Date.now()
-      trace?.mark("page-load")
+      trace?.mark("page-load", { cookieMs })
       let page: Awaited<ReturnType<typeof loadWebViewPage>>
       try { page = await loadWebViewPage(controller, url, undefined, isContentReady, scope, trace ? () => trace.mark("document-read") : undefined) }
       finally { loadMs = Date.now() - loadStarted }
       loaded = page.loaded; finished = page.finished; challengeObserved = Boolean(page.challengeObserved)
       const html = page.html
+      trace?.annotate({ loadMs, ...(html ? { documentChars: html.length } : {}) })
       scope.assertActive()
       if (new URL(url).origin !== new URL(getMissAVBaseURL()).origin) { scope.cancel(); scope.assertActive() }
 

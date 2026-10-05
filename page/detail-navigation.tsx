@@ -1,6 +1,7 @@
 import { Button, HStack, ProgressView, Text, VStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem } from "../client"
 import { ACCENT } from "../design"
+import { createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
 import { MissAVPlaybackPreparation } from "../playback-preparation"
 
 // Every list waits for playable detail before changing native navigation state.
@@ -8,16 +9,20 @@ import { MissAVPlaybackPreparation } from "../playback-preparation"
 export function useDetailNavigation() {
   const [selected, setSelected] = useState<{ video: MissAVVideoItem; detail: MissAVVideoDetail; preparation: MissAVPlaybackPreparation; navigationID: number } | null>(null)
   const [pending, setPending] = useState<MissAVVideoItem | null>(null)
+  const [progress, setProgress] = useState<MissAVDetailProgress | null>(null)
   const isPresented = useObservable(false)
   const generation = useRef(0)
-  const request = useRef<{ path: string; scope: MissAVRequestScope; preparation: MissAVPlaybackPreparation } | null>(null)
+  const request = useRef<{ path: string; scope: MissAVRequestScope; preparation: MissAVPlaybackPreparation; trace: MissAVDetailTrace } | null>(null)
+  const latestTrace = useRef<MissAVDetailTrace | null>(null)
   const selectedOwner = useRef<MissAVPlaybackPreparation | null>(null)
   function cancel() {
     ++generation.current
+    request.current?.trace.mark("cancelled")
     request.current?.scope.cancel()
     request.current?.preparation.dispose()
     request.current = null
     setPending(null)
+    setProgress(null)
   }
   async function open(video: MissAVVideoItem) {
     if (request.current?.path === video.detailPath) return
@@ -25,12 +30,17 @@ export function useDetailNavigation() {
     const current = generation.current
     const scope = new MissAVRequestScope()
     const preparation = new MissAVPlaybackPreparation(video)
-    request.current = { path: video.detailPath, scope, preparation }
+    const trace = createMissAVDetailTrace(video.detailPath, value => { if (current === generation.current) setProgress(value) })
+    latestTrace.current = trace
+    request.current = { path: video.detailPath, scope, preparation, trace }
     setPending(video)
+    setProgress(null)
+    trace.mark("entered")
     try {
-      const detail = await missavClient.getVideo(video, { scope, preferRecent: true })
+      const detail = await missavClient.getVideo(video, { scope, preferRecent: true, trace })
       if (current !== generation.current || scope.cancelled) return
       if (!detail.sources.length) throw new Error("此作品暂未返回可用播放地址，请重试。")
+      trace.mark("ui-update", { sourceCount: detail.sources.length })
       preparation.prepareSource(detail)
       selectedOwner.current?.dispose()
       selectedOwner.current = preparation
@@ -38,7 +48,9 @@ export function useDetailNavigation() {
       request.current = null
       setPending(null)
       isPresented.setValue(true)
+      trace.mark("completed", { sourceCount: detail.sources.length })
     } catch (reason) {
+      if (!isMissAVRequestCancelled(reason)) trace.mark("failed")
       preparation.dispose()
       if (current === generation.current && !isMissAVRequestCancelled(reason)) {
         await Dialog.alert({ title: "作品加载失败", message: reason instanceof Error ? reason.message : String(reason) })
@@ -47,8 +59,11 @@ export function useDetailNavigation() {
       if (current === generation.current) { request.current = null; setPending(null) }
     }
   }
+  function showDiagnostics() {
+    void Dialog.alert({ title: "详情加载诊断", message: latestTrace.current?.describe() || "尚未开始详情请求。" })
+  }
   useEffect(() => () => { cancel(); selectedOwner.current?.dispose() }, [])
-  return { selected, pending, isPresented, open, cancel }
+  return { selected, pending, progress, isPresented, open, cancel, showDiagnostics }
 }
 
 export function DetailPreparationStatus({ navigation }: { navigation: ReturnType<typeof useDetailNavigation> }) {
@@ -56,7 +71,11 @@ export function DetailPreparationStatus({ navigation }: { navigation: ReturnType
   return <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 20, bottom: 24 }}>
     <HStack spacing={12} padding={14} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 14 }}>
       <ProgressView tint={ACCENT} />
-      <Text font="subheadline" frame={{ maxWidth: "infinity", alignment: "leading" }}>{`正在准备 ${navigation.pending.videoCode.toUpperCase()}`}</Text>
+      <VStack spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="subheadline">{`正在准备 ${navigation.pending.videoCode.toUpperCase()}`}</Text>
+        <Text font="footnote" foregroundStyle="secondaryLabel">{navigation.progress ? `${MISSAV_DETAIL_STAGE_LABELS[navigation.progress.stage]} · ${(navigation.progress.elapsedMs / 1000).toFixed(1)} 秒` : "正在开始请求…"}</Text>
+      </VStack>
+      <Button title="诊断" systemImage="info.circle" buttonStyle="plain" action={navigation.showDiagnostics} />
       <Button title="取消" action={navigation.cancel} />
     </HStack>
   </VStack>
