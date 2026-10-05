@@ -1,6 +1,6 @@
 import { fetch } from "scripting"
 import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
-import { captureCloudflareSession, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
+import { captureCloudflareSession, readCloudflareCookieHeader, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
 import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import { readCachedListing, writeCachedListing, LISTING_CACHE_FRESH_MS } from "./listing-cache"
 import { selectMissAVDOMPage } from "./listing-dom"
@@ -43,6 +43,7 @@ const SEARCH_PAGE_CACHE_TTL_MS = 45_000
 const MAX_CACHED_SEARCH_PAGES = 24
 const RECENT_VIDEO_DETAIL_TTL_MS = 10_000
 const MAX_RECENT_VIDEO_DETAILS = 8
+const FAST_DETAIL_FETCH_TIMEOUT_SECONDS = 1
 type CachedSearchPage = { expiresAt: number; value: MissAVSearchPage }
 type PendingSearchPage = { requestId: number; forceRefresh: boolean; promise: Promise<MissAVSearchPage>; scope: MissAVRequestScope; consumers: number; settled: boolean }
 class MissAVPageContentError extends Error {}
@@ -431,7 +432,17 @@ class MissAVClient {
       const loadStarted = Date.now()
       trace?.mark("page-load", { cookieMs })
       let page: Awaited<ReturnType<typeof loadWebViewPage>>
-      try { page = await loadWebViewPage(controller, url, undefined, isContentReady, scope, trace ? () => trace.mark("document-read") : undefined) }
+      try {
+        const fastHTML = isContentReady ? await this.tryFastDetailHTML(controller, url, isContentReady, scope) : null
+        if (fastHTML) {
+          loaded = true
+          finished = true
+          trace?.mark("document-read")
+          page = { loaded, finished, html: fastHTML, url }
+        } else {
+          page = await loadWebViewPage(controller, url, undefined, isContentReady, scope, trace ? () => trace.mark("document-read") : undefined)
+        }
+      }
       finally { loadMs = Date.now() - loadStarted }
       loaded = page.loaded; finished = page.finished; challengeObserved = Boolean(page.challengeObserved)
       const html = page.html
@@ -477,6 +488,27 @@ class MissAVClient {
       if (backgroundCapture) void backgroundCapture.then(cleanup)
       else cleanup()
     }
+  }
+
+  private async tryFastDetailHTML(controller: WebViewController, url: string, isContentReady: (html: string) => boolean, scope: MissAVRequestScope): Promise<string | null> {
+    let cookieHeader = ""
+    try { cookieHeader = await readCloudflareCookieHeader(controller, url, scope) } catch { return null }
+    if (!cookieHeader) return null
+    try {
+      const response = await fetch(url, {
+        headers: { ...this.requestHeaders(url), Cookie: cookieHeader },
+        timeout: FAST_DETAIL_FETCH_TIMEOUT_SECONDS,
+        debugLabel: "MissAV fast detail HTML",
+        handleRedirect: async request => {
+          try { return new URL(request.url).origin === new URL(url).origin ? request : null } catch { return null }
+        },
+      })
+      if (!response.ok) return null
+      const html = await response.text()
+      scope.assertActive()
+      if (SiteHTML.classifyCloudflareHTML(html) !== "none" || !SiteHTML.isLikelyMissAVHTML(html) || !isContentReady(html)) return null
+      return html
+    } catch { return null }
   }
 
   private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": MISSAV_ACCEPT_LANGUAGE, ...(referer ? { Referer: resolveMissAVURL(referer) } : {}) } }

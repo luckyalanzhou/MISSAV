@@ -39,6 +39,22 @@ export function cloudflareCookiesForHost(cookies: readonly unknown[], host: stri
     && !isCookieExpired(cookie))
 }
 
+// Return only cookies valid for this exact request. The caller receives a
+// header string, never the cookie records themselves.
+export async function readCloudflareCookieHeader(controller: WebViewController, value: string, scope?: MissAVRequestScope): Promise<string> {
+  const target = sessionTarget(value)
+  if (!target) return ""
+  const cookies = await cookieOperation(
+    () => typeof controller.getCookies === "function" ? controller.getCookies(target.toString()) : controller.getAllCookies(),
+    scope,
+  )
+  const applicable = cloudflareCookiesForHost(cookies, target.hostname).filter(cookie => cookieMatchesURL(cookie, target))
+  if (!applicable.some(cookie => cookie.name.toLowerCase() === "cf_clearance")) return ""
+  return applicable
+    .map(cookie => `${cookie.name}=${cookie.value}`)
+    .join("; ")
+}
+
 export async function captureCloudflareSession(controller: WebViewController, host: string, scope?: MissAVRequestScope): Promise<number> {
   scope?.assertActive()
   const target = sessionTarget(host)
