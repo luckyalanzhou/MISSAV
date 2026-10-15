@@ -39,8 +39,11 @@ class MockWebView {
   }
   async waitForLoad() { assert.equal(this.disposed, 0); return true }
   async evaluateJavaScript() { this.reads++; assert.equal(this.disposed, 0); return { url: this.url, html: this.html } }
-  present() { if (presentationError) throw presentationError; return Promise.resolve() }
-  dismiss() {}
+  present() {
+    if (presentationError) throw presentationError
+    return new Promise(resolve => { this.finishPresentation = resolve })
+  }
+  dismiss() { this.finishPresentation?.() }
   dispose() { this.disposed++ }
 }
 globalThis.WebViewController = MockWebView
@@ -146,7 +149,7 @@ const verificationEnd = requests.length
 assert.equal((await browseAfter).items[0].videoCode, "verified-003")
 assert.equal(requests.length, verificationEnd)
 await missavClient.searchVideoPage({ collection: "new", sort: "published_at", page: 1 })
-assert.equal(requests.length, verificationEnd)
+  assert.equal(requests.length, verificationEnd + 1, "Verifying one route does not falsely cache an unrelated collection")
 
 // Even a native presentation failure releases the gate and waiting requests.
 missavClient.clearSearchPageCache()

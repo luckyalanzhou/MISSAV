@@ -1,6 +1,6 @@
 import { fetch } from "scripting"
 import { getMissAVBaseURL, MISSAV_ACCEPT_LANGUAGE, MISSAV_LOCALE, resolveMissAVURL } from "./domain"
-import { captureCloudflareSession, readCloudflareCookieHeader, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
+import { captureCloudflareSession, restoreCloudflareSessionDetailed, type CloudflareRestoreResult } from "./cloudflare-session"
 import { recordMissAVAccessDiagnostic } from "./access-diagnostics"
 import { readCachedListing, writeCachedListing, LISTING_CACHE_FRESH_MS } from "./listing-cache"
 import { selectMissAVDOMPage } from "./listing-dom"
@@ -433,7 +433,9 @@ class MissAVClient {
       trace?.mark("page-load", { cookieMs })
       let page: Awaited<ReturnType<typeof loadWebViewPage>>
       try {
-        const fastHTML = isContentReady ? await this.tryFastDetailHTML(controller, url, isContentReady, scope) : null
+        const fastHTML = isContentReady && cookieResult?.requestCookieHeader
+          ? await this.tryFastDetailHTML(url, cookieResult.requestCookieHeader, isContentReady, scope)
+          : null
         if (fastHTML) {
           loaded = true
           finished = true
@@ -490,10 +492,7 @@ class MissAVClient {
     }
   }
 
-  private async tryFastDetailHTML(controller: WebViewController, url: string, isContentReady: (html: string) => boolean, scope: MissAVRequestScope): Promise<string | null> {
-    let cookieHeader = ""
-    try { cookieHeader = await readCloudflareCookieHeader(controller, url, scope) } catch { return null }
-    if (!cookieHeader) return null
+  private async tryFastDetailHTML(url: string, cookieHeader: string, isContentReady: (html: string) => boolean, scope: MissAVRequestScope): Promise<string | null> {
     try {
       const response = await fetch(url, {
         headers: { ...this.requestHeaders(url), Cookie: cookieHeader },

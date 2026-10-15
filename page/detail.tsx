@@ -14,6 +14,7 @@ import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LA
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import type { MissAVPlaybackPreparation } from "../playback-preparation"
 import { extractSubtitleSearchCode } from "../subtitle-search-code"
+import { startPlaybackPolling } from "../playback-polling"
 
 export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: MissAVVideoDetail; initialTrace?: MissAVDetailTrace; preparation?: MissAVPlaybackPreparation; onHistoryChanged: () => void }) {
   const [detail, setDetail] = useState<MissAVVideoDetail | null>(props.initialDetail ?? null)
@@ -78,8 +79,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
 
   useEffect(() => {
     if (!loading) return
-    const timer = setInterval(() => setClock(Date.now()), 1000)
-    return () => clearInterval(timer)
+    return startPlaybackPolling(() => setClock(Date.now()), 1000)
   }, [loading])
 
   // A navigation destination can be constructed before it is shown. Own

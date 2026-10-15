@@ -10,6 +10,7 @@ const restoreQueues = new Map<string, Promise<unknown>>()
 export type CloudflareRestoreResult = {
   state: "live" | "restored" | "missing" | "invalid" | "expired" | "scope-mismatch" | "rejected" | "unconfirmed" | "store-unavailable" | "unsupported";
   attempted: number; accepted: number; confirmed: number; clearance: boolean; expiresInSeconds: number | null;
+  requestCookieHeader?: string;
 }
 class CookieOperationTimeout extends Error {}
 
@@ -96,9 +97,13 @@ async function restoreSession(controller: WebViewController, target: URL, scope?
     result.confirmed = cookies.length
     const clearance = cookies.find(isClearance)
     result.clearance = Boolean(clearance)
+    result.requestCookieHeader = clearance ? cookieHeader(cookies) : undefined
     const expiry = toExpiryDate(clearance?.expiresDate)
     result.expiresInSeconds = expiry ? Math.max(0, Math.floor((expiry.getTime() - Date.now()) / 1000)) : null
-    recordMissAVAccessDiagnostic("cookie-restore", target.toString(), { ...result, elapsedMs: Date.now() - started })
+    recordMissAVAccessDiagnostic("cookie-restore", target.toString(), {
+      state: result.state, attempted: result.attempted, accepted: result.accepted, confirmed: result.confirmed,
+      clearance: result.clearance, expiresInSeconds: result.expiresInSeconds, elapsedMs: Date.now() - started,
+    })
     return result
   }
   scope?.assertActive()
@@ -147,6 +152,10 @@ async function restoreSession(controller: WebViewController, target: URL, scope?
     scope?.assertActive()
     return finish(result.accepted ? "unconfirmed" : "store-unavailable")
   }
+}
+
+function cookieHeader(cookies: StoredCloudflareCookie[]): string {
+  return cookies.map(cookie => `${cookie.name}=${cookie.value}`).join("; ")
 }
 
 function readCloudflareSession(host: string): { cookies: StoredCloudflareCookie[]; state: "missing" | "invalid" | "expired" | "store-unavailable" } {

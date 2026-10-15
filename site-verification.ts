@@ -58,7 +58,6 @@ async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
     if (blocked) return { status: "blocked", probe }
     try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
     if (listingConfirmed && missavClient.cacheVerifiedPage(probe, document)) {
-      missavClient.clearVerificationCollections()
       return { status: "accessible", challengeCompleted: challengeObserved }
     }
 

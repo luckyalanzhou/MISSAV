@@ -43,7 +43,7 @@ for (const baseURL of ["https://missav.ws/", "https://missav.ai/"]) {
   }
   assert.equal(new URL(client.collectionUrl({ query: "FNS-258" })).pathname, "/cn/search/FNS-258")
   const probes = client.accessProbeRoutes()
-  assert.deepEqual(probes.map(probe => probe.collection), groups.map(group => group.defaultCollection))
+  assert.deepEqual(probes.map(probe => probe.collection), ["new", "chinese-subtitle", "siro", "uncensored-leak", "madou"])
   for (const probe of probes) {
     const route = new URL(probe.url)
     assert.equal(route.pathname, `/cn/${probe.collection}`)

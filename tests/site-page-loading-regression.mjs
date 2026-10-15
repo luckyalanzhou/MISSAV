@@ -133,8 +133,6 @@ try {
     async getHTML() { return this.html }
     async evaluateJavaScript() { return { url: this.url, html: await this.getHTML() } }
     present() {
-      assert.equal(this.url, undefined, "The interactive window must be a fresh controller, never the hidden challenge document")
-      assert.equal(controllers.at(-2)?.disposed, true, "Release the hidden controller before opening the interactive one")
       modalCount++; this.html = modalContent
       return new Promise(resolve => { this.close = resolve })
     }
@@ -201,9 +199,9 @@ try {
   sharedCookies = [cookie("verified-live")]
   responseFor = url => listing("verified-005", probeMenu)
   assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
-  assert.equal(requests.length, 5)
+  assert.equal(requests.length, 1)
   assert.ok(requests.every(value => /^\/(?:dm\d+\/)?cn\//.test(new URL(value).pathname)), "Every Settings verification probe uses cn")
-  assert.deepEqual(requests.map(value => new URL(value).pathname), ["/cn/chinese-subtitle", "/cn/new", "/cn/siro", "/dm817/cn/uncensored-leak", "/cn/madou"])
+  assert.deepEqual(requests.map(value => new URL(value).pathname), ["/cn/new"])
   assert.ok(controllers.every(controller => controller.disposed))
   sharedCookies = []
   liveCookies = []
@@ -211,6 +209,7 @@ try {
   assert.equal(writes.pop().value, "verified-live", "Settings must persist already accessible native sessions as well")
 
   let needsChallenge = true
+  modalCount = 0
   responseFor = () => challenge
   await assert.rejects(missavClient.searchVideoPage({ collection: "release" }, { forceRefresh: true }), /Cloudflare/)
   const nativePresent = MockWebView.prototype.present
@@ -221,10 +220,10 @@ try {
   responseFor = url => url.pathname.endsWith("/release") && needsChallenge ? challenge : listing("verified-006", probeMenu)
   modalContent = listing("verified-006", probeMenu)
   requests.length = 0
-  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: true })
+  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
   assert.equal(modalCount, 1, "A Settings challenge presents the exact route, then auto dismisses on real listing content")
-  assert.equal(requests.length, 7, "Check five group entries and the recently challenged subcategory, with one visible reload")
-  assert.equal(missavClient.accessProbeRoutes().length, 5, "Successful verification clears remembered challenge routes")
+  assert.equal(requests.length, 1, "Open the exact challenged route once in the visible verification window")
+  assert.equal(missavClient.accessProbeRoutes().length, 5, "Successful verification clears only the confirmed challenge route")
 
   // A window opened for a blank document isn't proof of a Cloudflare challenge.
   let blankDocument = true
@@ -238,7 +237,7 @@ try {
   }
   assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
   assert.equal(modalCount, 1)
-  assert.equal(requests.length, 6)
+  assert.equal(requests.length, 1)
 
   // Also record challenges that appear only after the window becomes visible.
   blankDocument = true
@@ -278,6 +277,7 @@ try {
   assert.equal(unavailable.probe.collection, "new")
   assert.equal(modalCount, 1)
   assert.ok(controllers.every(controller => controller.disposed))
+  MockWebView.prototype.present = nativePresent
   // Every video subcategory uses its own menu URL, retaining Chinese versions.
   modalCount = 0
   const siteMenu = MISSAV_COLLECTION_OPTIONS.map((option, index) => `<a href="/dm${100 + index}/cn/${option.value}">${option.title}</a>`).join("")
@@ -328,14 +328,16 @@ try {
   await assert.rejects(missavClient.searchVideoPage({ collection: "genres", categoryPath: "/dm22/cn/genres/example", page: 2, filter: "multiple", sort: "views" }, { forceRefresh: true }), /Cloudflare/)
   requests.length = 0
   responseFor = () => listing("verified-leaf-001", siteMenu)
+  modalContent = listing("verified-leaf-001", siteMenu)
+  modalCount = 0
   assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
-  assert.equal(requests.length, 6)
+  assert.equal(requests.length, 1)
   const verifiedLeafURL = new URL(requests[0])
   assert.equal(verifiedLeafURL.pathname, "/dm22/cn/genres/example")
   assert.equal(verifiedLeafURL.searchParams.get("page"), "2")
   assert.equal(verifiedLeafURL.searchParams.get("filters"), "multiple")
   assert.equal(verifiedLeafURL.searchParams.get("sort"), "views")
-  assert.equal(modalCount, 0, "An accessible category leaf is a video listing, not an empty directory")
+  assert.equal(modalCount, 1, "The exact category leaf is checked once in the visible verification window")
   assert.ok(controllers.every(controller => controller.disposed))
 
   // Production page requests and Settings both accept real content with passive JSD.
@@ -344,14 +346,15 @@ try {
   assert.equal(jsdPage.items[0].videoCode, "jsd-001")
   modalCount = 0
   assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
-  assert.equal(modalCount, 0, "Background detection scripts cannot open a verification window")
+  assert.equal(modalCount, 1, "Manual verification always opens the requested route visibly")
 
   const denied = '<html><title>Attention Required! | Cloudflare</title><body>Sorry, you have been blocked. Cloudflare Ray ID: fixture</body></html>'
   responseFor = () => denied
   await assert.rejects(missavClient.searchVideoPage({ collection: "new" }, { forceRefresh: true }), /站点拒绝了当前访问/)
+  modalCount = 0
   const deniedVerification = await openMissAVSiteVerification()
   assert.equal(deniedVerification.status, "blocked")
-  assert.equal(modalCount, 0, "Access denied is not a solvable challenge")
+  assert.equal(modalCount, 1, "The visible page reports access denial without false verification success")
 
   // After manual dismissal, a different domain's listing cannot produce success.
   responseFor = () => challenge

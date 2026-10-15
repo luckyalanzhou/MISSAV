@@ -58,6 +58,7 @@ function harness(videoCode = "FNS-258") {
     if (specifier === "../request-deadline") return deadline
     if (specifier === "../detail-loading") return detailLoading
     if (specifier === "../subtitle-search-code") return subtitleSearchCode
+    if (specifier === "../playback-polling") return { startPlaybackPolling: () => () => {} }
     if (specifier === "../subtitlecat") return {
       searchSubtitleCatFiles: (code, options) => new Promise((resolve, reject) => {
         const request = { code, options, controller: null,

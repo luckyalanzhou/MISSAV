@@ -37,6 +37,7 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "../request-deadline") return deadline
   if (specifier === "../detail-loading") return detailLoading
   if (specifier === "../subtitle-search-code") return subtitleSearchCode
+  if (specifier === "../playback-polling") return { startPlaybackPolling: () => () => {} }
   if (specifier === "./detail-navigation") return {}
   if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo: (_, options) => {
     detailReads++; detailScope = options.scope

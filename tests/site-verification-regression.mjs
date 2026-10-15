@@ -4,17 +4,13 @@ import { fileURLToPath } from "node:url"
 
 const verificationPath = fileURLToPath(new URL("../site-verification.ts", import.meta.url))
 const verificationSource = readFileSync(verificationPath, "utf8")
-const visibleSuccessBranch = verificationSource.match(/if \(visibleListingConfirmed\) \{([\s\S]*?)\n\s{8}\}/)
-
-assert.ok(visibleSuccessBranch, "The visible verification result branch should remain explicit")
-assert.match(visibleSuccessBranch[1], /\bcontinue\b/, "A verified visible route must continue checking the remaining access probes")
-assert.doesNotMatch(visibleSuccessBranch[1], /return\s+["']accessible["']/, "One verified route must not mark the whole line as accessible")
-assert.match(verificationSource, /Start the exact route once in a fresh foreground WebView/)
-assert.match(verificationSource, /controller\.dispose\(\)\s*controller = new WebViewController\(\)\s*await restoreCloudflareSession\(controller, probeURL\)/, "A stalled hidden challenge must never become the interactive window")
+assert.match(verificationSource, /const probe = missavClient\.accessProbeRoutes\(\)\[0\]/, "Verification opens the highest-priority exact route")
+assert.match(verificationSource, /controller\.present\(\{ fullscreen: true, navigationTitle: "验证访问线路" \}\)/)
+assert.match(verificationSource, /if \(!presentationClosed\) void controller\.loadURL\(probeURL\)/, "The first tap navigates in the visible WebView")
+assert.match(verificationSource, /listingConfirmed && missavClient\.cacheVerifiedPage\(probe, document\)/)
+assert.doesNotMatch(verificationSource, /clearVerificationCollections\(\)/, "One successful page cannot clear unrelated failed routes")
 assert.match(verificationSource, /Never retry in the background after the user closes the challenge/)
-assert.match(verificationSource, /if \(!presentationClosed\) void controller\.loadURL\(probeURL\)/)
-assert.doesNotMatch(verificationSource, /const verifiedPage: WebViewPageLoad[\s\S]*?await loadWebViewPage\(controller, probeURL\)/, "Closing the challenge must not trigger a hidden retry that later reports false success")
 assert.match(verificationSource, /status: "incomplete" \| "unavailable" \| "blocked"; probe: MissAVAccessProbe/)
 
-console.log("MISSAV site verification regression test passed")
+console.log("MISSAV visible exact-route verification and scoped challenge cleanup passed")
 

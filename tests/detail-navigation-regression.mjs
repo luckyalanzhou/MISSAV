@@ -20,6 +20,12 @@ new Function("require", "module", "exports", babelTransform(readFileSync(path, "
   if (specifier === "scripting") return scripting
   if (specifier === "scripting/jsx-runtime") return { jsx: () => {}, jsxs: () => {} }
   if (specifier === "../design") return {}
+  if (specifier === "../detail-loading") return {
+    MISSAV_DETAIL_STAGE_LABELS: {},
+    createMissAVDetailTrace: () => ({ mark() {} }),
+    copyMissAVDetailReport: async () => {},
+  }
+  if (specifier === "../playback-polling") return { startPlaybackPolling: () => () => {} }
   if (specifier === "../playback-preparation") return { MissAVPlaybackPreparation: class { prepareSource() {} dispose() {} } }
   if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo(video, options) {
     return options.scope.waitFor(new Promise((resolve, reject) => pending.push({ video, resolve, reject })))

@@ -3,6 +3,7 @@ import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAV
 import { ACCENT } from "../design"
 import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
 import { MissAVPlaybackPreparation } from "../playback-preparation"
+import { startPlaybackPolling } from "../playback-polling"
 
 // Every list waits for playable detail before changing native navigation state.
 // Repeated taps share the visible preparation; another selection cancels its owner.
@@ -75,8 +76,7 @@ export function useDetailNavigation() {
   }
   useEffect(() => {
     if (!pending) return
-    const timer = setInterval(() => setClock(Date.now()), 1000)
-    return () => clearInterval(timer)
+    return startPlaybackPolling(() => setClock(Date.now()), 1000)
   }, [pending?.detailPath])
   useEffect(() => () => { cancel(); selectedOwner.current?.dispose() }, [])
   const elapsedMs = pending && requestStartedAt.current !== null ? Math.max(0, clock - requestStartedAt.current) : progress?.elapsedMs ?? 0

@@ -12,8 +12,8 @@ export type SubtitleTrack = {
   prefixMaxEndSeconds: number[]
 }
 
-const SUBTITLE_DIRECTORY_NAME = "subtitles"
-const LEGACY_SUBTITLE_DIRECTORY_NAME = "MISSAV Subtitles"
+const SCRIPT_SUBTITLE_DIRECTORY_NAME = "subtitles"
+const SUBTITLE_DIRECTORY_NAME = "MISSAV Subtitles"
 const SUBTITLE_ENABLED_KEY_PREFIX = "missav_subtitle_enabled_v1_"
 const MAX_SUBTITLE_CHARACTERS = 8_000_000
 const MAX_SUBTITLE_CUES = 25_000
@@ -107,15 +107,15 @@ export async function loadMissAVSubtitle(videoCode: string): Promise<SubtitleTra
       const track = await parseMissAVSubtitle(content)
       return track.cues.length ? track : null
     }
-    const legacyPath = `${FileManager.documentsDirectory.replace(/[\\/]+$/, "")}/${LEGACY_SUBTITLE_DIRECTORY_NAME}/${normalizeVideoCode(videoCode)}.srt`
-    if (!await FileManager.exists(legacyPath)) return null
+    const legacyPath = scriptSubtitleFilePath(videoCode)
+    if (!legacyPath || !await FileManager.exists(legacyPath)) return null
     const content = await FileManager.readAsString(legacyPath)
     const track = await parseMissAVSubtitle(content)
     if (!track.cues.length) return null
     try {
       await writeSubtitleSafely(path, content)
     } catch (error) {
-      // Continue playing the old file if migration cannot write. Do not delete
+      // Continue playing the script-local file if migration cannot write. Do not delete
       // the original or change this video's enabled/disabled preference.
       console.warn("迁移旧字幕失败，继续读取原文件:", error)
     }
@@ -226,9 +226,14 @@ function subtitleFilePath(videoCode: string): string {
 }
 
 function subtitleDirectoryPath(): string {
+  const documentsDirectory = FileManager.documentsDirectory.replace(/[\\/]+$/, "")
+  if (!documentsDirectory) throw new Error("无法获取文稿目录，字幕未保存。")
+  return `${documentsDirectory}/${SUBTITLE_DIRECTORY_NAME}`
+}
+
+function scriptSubtitleFilePath(videoCode: string): string {
   const scriptDirectory = typeof Script.directory === "string" ? Script.directory.replace(/[\\/]+$/, "") : ""
-  if (!scriptDirectory) throw new Error("无法获取当前脚本目录，字幕未保存。")
-  return `${scriptDirectory}/${SUBTITLE_DIRECTORY_NAME}`
+  return scriptDirectory ? `${scriptDirectory}/${SCRIPT_SUBTITLE_DIRECTORY_NAME}/${normalizeVideoCode(videoCode)}.srt` : ""
 }
 
 function subtitleEnabledKey(videoCode: string): string {

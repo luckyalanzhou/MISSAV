@@ -72,6 +72,20 @@ function pageHarness(relative, exported) {
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "../storage") return storage
     if (specifier === "../playback-progress") return progress
+    if (specifier === "../home-screen-data") return {
+      emptyHomeScreenData: () => ({ recent: [], latest: [], trending: [], errors: {}, loading: {} }),
+      HomeScreenLoader: class {
+        constructor(options) { this.options = options }
+        async loadRemote() { await this.loadLocal() }
+        async loadLocal() {
+          const recent = await this.options.history()
+          this.options.changed({ recent, latest: [], trending: [], hasRecommendationHistory: recent.length > 0, errors: {}, loading: {} })
+        }
+        refresh() {}
+        dispose() {}
+      },
+      playbackProgressFraction: record => record.durationSeconds ? record.positionSeconds / record.durationSeconds : undefined,
+    }
     if (specifier === "../client") return { ...requestTypes, missavClient: { searchVideoPage: async () => ({ items: [] }) } }
     if (specifier === "../design") return { PageBackground: "PageBackground", SectionHeading: "SectionHeading", ActionRow: "ActionRow" }
     if (specifier === "./components/media_cards") return { MediaHero: "MediaHero", MediaTile: "MediaTile" }
@@ -79,6 +93,7 @@ function pageHarness(relative, exported) {
     if (specifier === "./components/destructive_menu") return { DestructiveMenu: "DestructiveMenu" }
     if (specifier === "./components/state_view") return { StateView: "StateView" }
     if (specifier === "./recommendations") return { RecommendationsPage: "RecommendationsPage" }
+    if (specifier === "./discover") return { DiscoverPage: "DiscoverPage" }
     if (specifier === "./detail") return { DetailPage: "DetailPage" }
     if (specifier === "./detail-navigation") return { DetailPreparationStatus: "DetailPreparationStatus", useDetailNavigation: () => detailNavigation }
     throw new Error(`Unexpected module: ${specifier}`)
@@ -141,17 +156,17 @@ try {
   const home = pageHarness("../page/home.tsx", "MediaHomePage")
   home({ ...callbacks, revision: 0 })
   await settle()
-  let hero = named(home({ ...callbacks, revision: 0 }), "MediaHero")
-  assert.equal(hero.props.eyebrow, "继续观看 · 12:34")
-  assert.equal(hero.props.video.videoCode, first.videoCode)
+  let continueCard = named(home({ ...callbacks, revision: 0 }), "ContinueWatchingCard")
+  assert.equal(continueCard.props.record.positionSeconds, 754.9)
+  assert.equal(continueCard.props.record.video.videoCode, first.videoCode)
 
   await database.savePlaybackProgress(first.videoCode, 3723.9, 7800)
   library({ ...callbacks, historyRevision: 1 })
   home({ ...callbacks, revision: 1 })
   await settle()
   assert.equal(named(library({ ...callbacks, historyRevision: 1 }), "VideoRowList").props.status(first), "继续观看 · 1:02:03", "Closing playback and refreshing its revision must expose the latest saved progress")
-  hero = named(home({ ...callbacks, revision: 1 }), "MediaHero")
-  assert.equal(hero.props.eyebrow, "继续观看 · 1:02:03")
+  continueCard = named(home({ ...callbacks, revision: 1 }), "ContinueWatchingCard")
+  assert.equal(continueCard.props.record.positionSeconds, 3723.9)
 
   await database.savePlaybackProgress(first.videoCode, 0, 7800)
   assert.equal((await storage.loadMissAVHistory(1))[0].positionSeconds, undefined, "Ended playback clears progress without losing history")
