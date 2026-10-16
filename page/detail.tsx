@@ -213,7 +213,18 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   const subtitleOperation = useRef(false)
   const active = useRef(true)
 
-  function closeSearch() { active.current = false; stopSearch(); props.onClose() }
+  function closeSearch() { active.current = false; stopSearch(); setLoading(false); props.onClose() }
+
+  function appear() {
+    active.current = true
+    if (!hasSearched && !loading) void search(props.videoCode)
+  }
+
+  function disappear() {
+    active.current = false
+    stopSearch()
+    setLoading(false)
+  }
 
   function stopSearch() {
     const session = searchSession.current
@@ -298,7 +309,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
       closeSearch()
     } catch (reason) {
       if (active.current) setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { subtitleOperation.current = false; if (active.current) setDownloadingId(null) }
+    } finally { subtitleOperation.current = false; setDownloadingId(null) }
   }
 
   async function preview(file: SubtitleCatSubtitleFile) {
@@ -312,7 +323,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
       if (active.current) await QuickLook.previewText(content)
     } catch (reason) {
       if (active.current) setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { subtitleOperation.current = false; if (active.current) setDownloadingId(null) }
+    } finally { subtitleOperation.current = false; setDownloadingId(null) }
   }
 
   function pauseSearchForSubtitle() {
@@ -324,7 +335,6 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
   }
 
   useEffect(() => {
-    void search(props.videoCode)
     return () => {
       active.current = false
       stopSearch()
@@ -333,7 +343,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="systemBackground" navigationTitle="按番号搜索字幕" navigationBarTitleDisplayMode="inline">
     <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+      <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onAppear={appear} onDisappear={disappear}>
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
           <Text font="caption" foregroundStyle="secondaryLabel">仅搜索简体中文和繁体中文字幕</Text>
           <HStack spacing={8} padding={{ horizontal: 12 }} frame={{ maxWidth: "infinity", minHeight: 50 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
