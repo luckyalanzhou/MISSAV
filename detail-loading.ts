@@ -10,6 +10,7 @@ export const MISSAV_DETAIL_STAGE_LABELS: Record<MissAVDetailStage, string> = {
 export type MissAVDetailMetrics = {
   cookieMs?: number; loadMs?: number; parseMs?: number; parseCount?: number;
   documentChars?: number; sourceCount?: number; cacheHit?: boolean;
+  fastFetchMs?: number; fastFetchResult?: string;
 }
 export type MissAVDetailProgress = { stage: MissAVDetailStage; elapsedMs: number; requestId: number; metrics?: MissAVDetailMetrics }
 let sequence = 0
@@ -62,6 +63,7 @@ export function createMissAVDetailTrace(target: string, onProgress?: (progress: 
           metrics?.documentChars !== undefined ? `HTML ${metrics.documentChars}字` : "",
           metrics?.sourceCount !== undefined ? `播放源 ${metrics.sourceCount}` : "",
           metrics?.cacheHit ? "命中详情缓存" : "",
+          metrics?.fastFetchMs !== undefined ? `直连 ${metrics.fastFetchMs}ms${metrics.fastFetchResult ? ` · ${metrics.fastFetchResult}` : ""}` : "",
         ].filter(Boolean).join(" · ")
         return `${(entry.elapsedMs / 1000).toFixed(1)} 秒：${MISSAV_DETAIL_STAGE_LABELS[entry.stage]}（阶段 ${phaseMs}ms）${measurements ? `\n  ${measurements}` : ""}`
       }).join("\n")

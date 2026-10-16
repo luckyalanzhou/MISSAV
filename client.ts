@@ -433,9 +433,11 @@ class MissAVClient {
       trace?.mark("page-load", { cookieMs })
       let page: Awaited<ReturnType<typeof loadWebViewPage>>
       try {
-        const fastHTML = isContentReady && cookieResult?.requestCookieHeader
+        const fastResult = isContentReady && cookieResult?.requestCookieHeader
           ? await this.tryFastDetailHTML(url, cookieResult.requestCookieHeader, isContentReady, scope)
           : null
+        if (fastResult) trace?.annotate({ fastFetchMs: fastResult.elapsedMs, fastFetchResult: fastResult.outcome })
+        const fastHTML = fastResult?.html ?? null
         if (fastHTML) {
           loaded = true
           finished = true
@@ -492,7 +494,9 @@ class MissAVClient {
     }
   }
 
-  private async tryFastDetailHTML(url: string, cookieHeader: string, isContentReady: (html: string) => boolean, scope: MissAVRequestScope): Promise<string | null> {
+  private async tryFastDetailHTML(url: string, cookieHeader: string, isContentReady: (html: string) => boolean, scope: MissAVRequestScope): Promise<{ html: string | null; elapsedMs: number; outcome: string }> {
+    const startedAt = Date.now()
+    const result = (html: string | null, outcome: string) => ({ html, elapsedMs: Date.now() - startedAt, outcome })
     try {
       const response = await fetch(url, {
         headers: { ...this.requestHeaders(url), Cookie: cookieHeader },
@@ -502,12 +506,18 @@ class MissAVClient {
           try { return new URL(request.url).origin === new URL(url).origin ? request : null } catch { return null }
         },
       })
-      if (!response.ok) return null
+      if (!response.ok) return result(null, `HTTP ${response.status}`)
       const html = await response.text()
       scope.assertActive()
-      if (SiteHTML.classifyCloudflareHTML(html) !== "none" || !SiteHTML.isLikelyMissAVHTML(html) || !isContentReady(html)) return null
-      return html
-    } catch { return null }
+      const cloudflareState = SiteHTML.classifyCloudflareHTML(html)
+      if (cloudflareState === "challenge") return result(null, "Cloudflare challenge")
+      if (cloudflareState === "blocked") return result(null, "Cloudflare blocked")
+      if (!SiteHTML.isLikelyMissAVHTML(html)) return result(null, "unrecognized page")
+      let contentReady = false
+      try { contentReady = isContentReady(html) } catch { return result(null, "detail parse error") }
+      if (!contentReady) return result(null, "no playable source")
+      return result(html, "hit")
+    } catch { return result(null, scope.cancelled ? "cancelled" : "request error") }
   }
 
   private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": MISSAV_ACCEPT_LANGUAGE, ...(referer ? { Referer: resolveMissAVURL(referer) } : {}) } }
