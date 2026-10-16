@@ -16,8 +16,9 @@ for (const file of ["page/settings.tsx", "page/detail.tsx", "page/library.tsx", 
 assert.match(source("page/settings.tsx"), /site-verification/)
 assert.match(source("page/settings.tsx"), /验证访问线路/)
 assert.match(source("page/library.tsx"), /formatMissAVContinueWatching/)
-assert.match(source("index.tsx"), /removeLegacyMissAVAccountData\(\)/)
-assert.match(source("home_screen_default_ui.tsx"), /removeLegacyMissAVAccountData\(\)/)
+assert.match(source("index.tsx"), /initializeMissAVRuntime\(\)/)
+assert.match(source("home_screen_default_ui.tsx"), /initializeMissAVRuntime\(\)/)
+assert.match(source("runtime.ts"), /removeLegacyMissAVAccountData\(\)/)
 
 const stored = new Map()
 const secrets = new Map(keys.map(key => [key, "fixture"]))

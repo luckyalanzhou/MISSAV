@@ -37,7 +37,7 @@
 
 `tests/cloudflare-page-state-regression.mjs` 使用真实生产解析/加载模块和模拟的原生桥接，检查后台脚本误判、真实挑战与拒绝访问、短暂检测自动结束、读取次数上限、实际 URL 核对和超时后的迟到回调。
 
-`tests/site-page-loading-regression.mjs` 另外检查正常 JSD 页面能进入作品列表且无需弹窗、拒绝访问的错误分类、弹窗关闭后异域页面不能验证成功，以及原有中文路由、Cookie、账号与分类加载行为。
+`tests/site-page-loading-regression.mjs` 另外检查正常 JSD 页面能进入作品列表且无需弹窗、拒绝访问的错误分类、弹窗关闭后异域页面不能验证成功，以及原有中文路由、Cookie 与分类加载行为。
 
 以上是本机回归检查，不代表 iPhone 上的实际 Cloudflare 策略或 WebKit 回调行为已经验证。
 

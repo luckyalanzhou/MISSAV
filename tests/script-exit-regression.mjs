@@ -35,14 +35,11 @@ function scenario(failure) {
       return new Promise((resolve, reject) => { resolvePresentation = resolve; rejectPresentation = reject })
     } } },
     "./page": { HomePage: "HomePage" },
-    "./database": { getMissAVDatabase: () => Promise.resolve({}) },
     "./lifecycle": { installMissAVLifecycle: () => () => {
       calls.push("cleanup")
       if (failure === "cleanup") throw new Error("cleanup")
     } },
-    "./listing-cache": { installMissAVListingCache: () => { if (failure === "cache") throw new Error("cache") } },
-    "./listing-cache-db": { missavListingCacheDatabase: {} },
-    "./removed-account-migration": { removeLegacyMissAVAccountData: () => { if (failure === "migration") throw new Error("migration") } },
+    "./runtime": { initializeMissAVRuntime: () => { if (failure === "runtime") throw new Error("runtime") } },
   }, { error: () => calls.push("error"), present: () => { throw new Error("Must not hold exit open behind console") } })
   return { calls, presentation, resolve: resolvePresentation, reject: rejectPresentation }
 }
@@ -61,12 +58,7 @@ const nativeDismiss = scenario()
 nativeDismiss.resolve()
 await tick()
 assert.deepEqual(nativeDismiss.calls, ["enable", "cleanup", "exit"])
-const failedMigration = scenario("migration")
-assert.ok(failedMigration.presentation, "Legacy account cleanup failure must not prevent opening Home")
-failedMigration.resolve()
-await tick()
-assert.equal(failedMigration.calls.filter(call => call === "exit").length, 1)
-for (const failure of ["setup", "cache", "cleanup", "presentation"]) {
+for (const failure of ["setup", "runtime", "cleanup", "presentation"]) {
   const state = scenario(failure)
   if (failure === "cleanup") state.presentation.element.props.onClose()
   if (failure === "presentation") state.reject(new Error("presentation"))
@@ -75,7 +67,7 @@ for (const failure of ["setup", "cache", "cleanup", "presentation"]) {
   assert.ok(state.calls.includes("error"))
 }
 
-let ready = true, minimized = false, minimizeCalls = 0, closeCalls = 0
+let minimized = false, minimizeCalls = 0, closeCalls = 0
 const tags = ["Button", "Image", "NavigationStack", "Tab", "TabView", "Text", "Toolbar", "ToolbarItem"]
 const { HomePage } = execute("page/index.tsx", {
   scripting: {
@@ -84,13 +76,11 @@ const { HomePage } = execute("page/index.tsx", {
     useState: initial => [typeof initial === "function" ? initial() : initial, () => {}],
     useObservable: value => ({ value, setValue(next) { this.value = next } }),
   },
-  "../access": { isMissAVAccessReady: () => ready },
   "./home": { MediaHomePage: "MediaHomePage" },
   "./discover": { DiscoverPage: "DiscoverPage" },
   "./library": { LibraryPage: "LibraryPage" },
   "./search": { SearchPage: "SearchPage" },
   "./settings": { SettingsPage: "SettingsPage" },
-  "./access_gate": { AccessGate: "AccessGate" },
 })
 function find(node, label) {
   if (node?.props?.accessibilityLabel === label) return node
@@ -109,9 +99,4 @@ find(page, "设置").props.action()
 assert.equal(closeCalls, 0, "Settings navigation must not terminate the script")
 find(page, "关闭并结束 MISSAV 脚本").props.action()
 assert.equal(closeCalls, 1)
-ready = false
-const gate = HomePage({ onClose })
-assert.equal(gate.type, "AccessGate")
-gate.props.onClose()
-assert.equal(closeCalls, 2, "The access gate close must terminate the same root instance")
-console.log("PASS: immediate idempotent root exit; native dismiss/error cleanup; access-gate close; minimize/settings do not exit")
+console.log("PASS: immediate idempotent root exit; native dismiss/error cleanup; direct home entry; minimize/settings do not exit")

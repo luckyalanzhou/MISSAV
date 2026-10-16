@@ -44,6 +44,9 @@ const MAX_CACHED_SEARCH_PAGES = 24
 const RECENT_VIDEO_DETAIL_TTL_MS = 10_000
 const MAX_RECENT_VIDEO_DETAILS = 8
 const FAST_DETAIL_FETCH_TIMEOUT_SECONDS = 1
+const FAST_DETAIL_FAILURE_LIMIT = 2
+const FAST_DETAIL_FAILURE_WINDOW_MS = 5 * 60_000
+const FAST_DETAIL_COOLDOWN_MS = 60_000
 type CachedSearchPage = { expiresAt: number; value: MissAVSearchPage }
 type PendingSearchPage = { requestId: number; forceRefresh: boolean; promise: Promise<MissAVSearchPage>; scope: MissAVRequestScope; consumers: number; settled: boolean }
 class MissAVPageContentError extends Error {}
@@ -55,7 +58,7 @@ export const MISSAV_SORT_OPTIONS: ReadonlyArray<{ value: MissAVSort; title: stri
   { value: "weekly_views", title: "本周观看", systemImage: "calendar.day.timeline.left" },
   { value: "monthly_views", title: "本月观看", systemImage: "calendar" },
   { value: "views", title: "总观看数", systemImage: "play.circle" },
-  { value: "saved", title: "最多收藏", systemImage: "bookmark" },
+  { value: "saved", title: "站内收藏最多", systemImage: "bookmark" },
 ]
 export const MISSAV_FILTER_OPTIONS: ReadonlyArray<{ value: MissAVFilter; title: string; systemImage: string }> = [
   { value: "", title: "全部作品", systemImage: "rectangle.grid.1x2" },
@@ -75,6 +78,7 @@ class MissAVClient {
   private recentVideoDetails = new Map<string, { savedAt: number; value: MissAVVideoDetail }>()
   private recentDetailOrigin = ""
   private recentDetailGeneration = 0
+  private fastDetailPolicy = new Map<string, { failures: number; lastFailureAt: number; skipUntil: number }>()
 
   // Cache-only preview for the HomeTab; never starts a verification or HTTP request.
   async readCachedVideoPage(params: MissAVSearchParams): Promise<MissAVSearchPage | null> {
@@ -219,6 +223,7 @@ class MissAVClient {
   beginSiteVerification(): () => void {
     if (this.verificationGate) throw new Error("访问线路验证正在进行。")
     this.clearRecentVideoDetails()
+    this.fastDetailPolicy.clear()
     let release!: () => void
     const gate = { promise: new Promise<void>(resolve => { release = resolve }), release: () => release(), cachedKeys: new Set<string>() }
     this.verificationGate = gate
@@ -265,6 +270,7 @@ class MissAVClient {
 
   clearSearchPageCache(): void {
     this.clearRecentVideoDetails()
+    this.fastDetailPolicy.clear()
     this.searchPageCache.clear()
     for (const task of this.searchPageRequests.values()) task.scope.cancel()
     this.searchPageRequests.clear()
@@ -434,8 +440,11 @@ class MissAVClient {
       let page: Awaited<ReturnType<typeof loadWebViewPage>>
       try {
         const fastResult = isContentReady && cookieResult?.requestCookieHeader
-          ? await this.tryFastDetailHTML(url, cookieResult.requestCookieHeader, isContentReady, scope)
+          ? this.shouldTryFastDetail(url)
+            ? await this.tryFastDetailHTML(url, cookieResult.requestCookieHeader, isContentReady, scope)
+            : { html: null, elapsedMs: 0, outcome: "cooldown" }
           : null
+        if (fastResult && fastResult.outcome !== "cooldown") this.rememberFastDetailOutcome(url, fastResult.outcome)
         if (fastResult) trace?.annotate({ fastFetchMs: fastResult.elapsedMs, fastFetchResult: fastResult.outcome })
         const fastHTML = fastResult?.html ?? null
         if (fastHTML) {
@@ -518,6 +527,25 @@ class MissAVClient {
       if (!contentReady) return result(null, "no playable source")
       return result(html, "hit")
     } catch { return result(null, scope.cancelled ? "cancelled" : "request error") }
+  }
+
+  private shouldTryFastDetail(url: string): boolean {
+    const origin = new URL(url).origin
+    const state = this.fastDetailPolicy.get(origin)
+    if (!state) return true
+    if (state.skipUntil > Date.now()) return false
+    if (state.skipUntil > 0) this.fastDetailPolicy.delete(origin)
+    return true
+  }
+
+  private rememberFastDetailOutcome(url: string, outcome: string): void {
+    if (outcome === "cancelled") return
+    const origin = new URL(url).origin
+    if (outcome === "hit") { this.fastDetailPolicy.delete(origin); return }
+    const now = Date.now()
+    const previous = this.fastDetailPolicy.get(origin)
+    const failures = previous && now - previous.lastFailureAt <= FAST_DETAIL_FAILURE_WINDOW_MS ? previous.failures + 1 : 1
+    this.fastDetailPolicy.set(origin, { failures, lastFailureAt: now, skipUntil: failures >= FAST_DETAIL_FAILURE_LIMIT ? now + FAST_DETAIL_COOLDOWN_MS : 0 })
   }
 
   private requestHeaders(referer?: string): Record<string, string> { return { "User-Agent": USER_AGENT, Accept: "text/html,application/xhtml+xml", "Accept-Language": MISSAV_ACCEPT_LANGUAGE, ...(referer ? { Referer: resolveMissAVURL(referer) } : {}) } }

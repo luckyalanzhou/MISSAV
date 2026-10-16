@@ -1,14 +1,11 @@
-import { Button, Image, NavigationStack, Script, Tab, TabView, Text, Toolbar, ToolbarItem, useObservable, useState } from "scripting"
-import { isMissAVAccessReady } from "../access"
+import { Button, Image, NavigationStack, Script, Tab, TabView, Text, Toolbar, ToolbarItem, useObservable } from "scripting"
 import { MediaHomePage } from "./home"
 import { DiscoverPage } from "./discover"
 import { LibraryPage } from "./library"
 import { SearchPage } from "./search"
 import { SettingsPage } from "./settings"
-import { AccessGate } from "./access_gate"
 
 export function HomePage(props: { onClose: () => void }) {
-  const [accessReady, setAccessReady] = useState(() => isMissAVAccessReady())
   const selection = useObservable<number>(0)
   const historyRevision = useObservable(0)
   const domainRevision = useObservable(0)
@@ -31,7 +28,6 @@ export function HomePage(props: { onClose: () => void }) {
     </ToolbarItem> : null}
   </Toolbar>
   const localRevision = historyRevision.value
-  if (!accessReady) return <AccessGate onReady={() => setAccessReady(true)} onClose={props.onClose} />
   return <NavigationStack>
     <TabView selection={selection} tint="systemPink" tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="onScrollDown" toolbar={toolbar}>
       <Tab title="首页" systemImage="house" value={0}><MediaHomePage key={`home-${domainRevision.value}`} accessRevision={accessRevision.value} revision={localRevision} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>

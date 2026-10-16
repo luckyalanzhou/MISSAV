@@ -1,13 +1,10 @@
-import { Button, HStack, Image, List, Navigation, Picker, Section, SecureField, Text, VStack, useState } from "scripting"
-import { submitMissAVAccess } from "../access"
+import { Button, HStack, Image, List, Picker, Section, Text, VStack, useState } from "scripting"
 import { openMissAVSiteVerification } from "../site-verification"
 import { ACCENT } from "../design"
 import { getMissAVBaseURL, getMissAVDomainLabel, getMissAVLandingURL, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../domain"
 
-export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerified?: () => void; onAccessReady?: () => void; accessRequired?: boolean }) {
-  const dismiss = Navigation.useDismiss()
+export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerified?: () => void }) {
   const [domain, setDomain] = useState<MissAVBaseURL>(() => getMissAVBaseURL())
-  const [customDomain, setCustomDomain] = useState("")
   const [accessBusy, setAccessBusy] = useState(false)
   const [accessMessage, setAccessMessage] = useState<string | null>(null)
   const operationBusy = accessBusy
@@ -42,22 +39,6 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
       setAccessMessage(reason instanceof Error ? reason.message : "访问线路验证窗口当前无法打开。")
     } finally { setAccessBusy(false) }
   }
-
-
-  function saveCustomDomain() {
-    const ready = submitMissAVAccess(customDomain)
-    setCustomDomain("")
-    if (ready) props.onAccessReady?.()
-    dismiss()
-  }
-
-  if (props.accessRequired) return <List listStyle="insetGroup" navigationTitle="设置" navigationBarTitleDisplayMode="large">
-    <Section footer={<Text>保存后将重新连接。</Text>}>
-      <SecureField title="" value={customDomain} onChanged={setCustomDomain} textContentType="URL" autocorrectionDisabled submitLabel="done" onSubmit={saveCustomDomain} />
-      <Button title="保存" systemImage="checkmark" disabled={!customDomain.length} tint={ACCENT} action={saveCustomDomain} />
-    </Section>
-  </List>
-
   return <List listStyle="insetGroup" navigationTitle="设置" navigationBarTitleDisplayMode="large">
     <Section header={<Text>访问站点</Text>} footer={<Text>栏目提示需要验证时，请点击“验证访问线路”。如果仍无法访问，可切换域名；更改将应用于浏览、搜索、详情和播放。</Text>}>
       <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy}>

@@ -42,6 +42,18 @@ function harness(count = 5, storage = new Map()) {
     }
     if (specifier === "./subtitles") return { parseMissAVSubtitle() { throw new Error("Search must not download/parse subtitle text") } }
     if (specifier === "./subtitle-search-code") return subtitleSearchCode
+    if (specifier === "./subtitle-search-cache") return {
+      readSubtitleSearchCachePayload: async code => storage.get(`cache:${code}`) ?? null,
+      writeSubtitleSearchCachePayload: async (code, payload, touchedAt) => {
+        storage.set(`cache:${code}`, payload)
+        const keys = [...storage.keys()].filter(key => key.startsWith("cache:")).sort((left, right) => {
+          const a = JSON.parse(storage.get(left)).record?.touchedAt ?? touchedAt
+          const b = JSON.parse(storage.get(right)).record?.touchedAt ?? touchedAt
+          return a - b
+        })
+        while (keys.length > 50) storage.delete(keys.shift())
+      },
+    }
     throw new Error(`Unexpected dependency: ${specifier}`)
   }, module, module.exports, { get: key => storage.get(key), set: (key, value) => storage.set(key, value) }, { now: () => clock }, { log: (_, data) => metricsLog.push(data) })
   const createController = () => { const controller = { disposed: false, dispose() { this.disposed = true } }; controllers.push(controller); return controller }
@@ -131,8 +143,8 @@ assert.notEqual(serialFallback.fallbacks[0].controller, serialFallback.fallbacks
 
 const now = Date.now()
 const legacyCacheStorage = new Map([[
-  "missav_subtitlecat_search_cache_v1",
-  JSON.stringify({ version: 1, records: { "FNS-258": {
+  "cache:FNS-258",
+  JSON.stringify({ version: 1, record: {
     savedAt: now,
     touchedAt: now,
     entries: [{ url: entryURL(0), title: "FNS-258 0" }],
@@ -140,7 +152,7 @@ const legacyCacheStorage = new Map([[
       { downloadURL: "https://www.subtitlecat.com/subs/0/FNS-258-0-en.srt", details: "English" },
       { downloadURL: "https://www.subtitlecat.com/subs/0/FNS-258-0-zh-CN.srt", details: "Chinese (Simplified)" },
     ] } },
-  } } }),
+  } }),
 ]])
 const migratedLegacyCache = harness(1, legacyCacheStorage)
 const migratedLegacyResult = await migratedLegacyCache.run()
@@ -197,24 +209,24 @@ assert.equal(retried.metrics.httpRequests, 1)
 assert.equal(retried.metrics.detailCacheHits, 1)
 assert.equal(retried.failedDetailCount, 0)
 
-const corruptStorage = new Map([["missav_subtitlecat_search_cache_v1", "{ broken JSON"]])
+const corruptStorage = new Map([["cache:FNS-258", "{ broken JSON"]])
 assert.equal((await harness(0, corruptStorage).run()).metrics.httpRequests, 1, "Corrupt cache must fail open to normal search")
 const limited = harness(0)
 for (let index = 0; index < 51; index++) {
   limited.advance(1)
   await limited.api.searchSubtitleCatFiles(`TEST-${index}`, { createController: limited.createController })
 }
-const records = JSON.parse(limited.storage.get("missav_subtitlecat_search_cache_v1")).records
-assert.equal(Object.keys(records).length, 50, "Keep at most 50 video codes")
-assert.equal(records["TEST-0"], undefined, "Evict the oldest cache record")
-assert.ok(records["TEST-50"])
-const unsafe = new Map([["missav_subtitlecat_search_cache_v1", JSON.stringify({ version: 1, records: {
-  "FNS-258": { savedAt: Date.now(), touchedAt: Date.now(), entries: [{ title: "FNS-258", url: "https://evil.example/subs/1/FNS-258.html" }], details: {} },
-} })]])
+const records = [...limited.storage.keys()].filter(key => key.startsWith("cache:"))
+assert.equal(records.length, 50, "Keep at most 50 video codes")
+assert.equal(limited.storage.has("cache:TEST-0"), false, "Evict the oldest cache record")
+assert.ok(limited.storage.has("cache:TEST-50"))
+const unsafe = new Map([["cache:FNS-258", JSON.stringify({ version: 1, record:
+  { savedAt: Date.now(), touchedAt: Date.now(), entries: [{ title: "FNS-258", url: "https://evil.example/subs/1/FNS-258.html" }], details: {} },
+})]])
 assert.equal((await harness(0, unsafe).run()).metrics.httpRequests, 1, "Persisted foreign URLs cannot be accepted as cache hits")
-const unavailableStorage = new Map()
-unavailableStorage.set = () => { throw new Error("Storage unavailable") }
-assert.equal((await harness(0, unavailableStorage).run()).searchResultCount, 0, "Storage failure must not break valid online search")
+const unavailableCache = new Map()
+unavailableCache.set = () => { throw new Error("Cache persistence unavailable") }
+assert.equal((await harness(0, unavailableCache).run()).searchResultCount, 0, "Cache persistence failure must not break valid online search")
 console.log("PASS: persistent two-layer cache; zero-request repeat; explicit refresh; 30-minute expiry; failed-detail-only retry; corrupt cache safety")
 const networkTimeout = harness(1)
 const timedOut = networkTimeout.run()

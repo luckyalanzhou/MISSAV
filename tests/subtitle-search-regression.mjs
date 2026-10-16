@@ -91,7 +91,13 @@ function harness(videoCode = "FNS-258") {
   return { render, pending, controllers, saved, associated, previews,
     holdDownloads() { holdDownloads = true },
     finishDownload() { heldDownloads.shift()("fixture SRT") },
-    mount() { render(); mounted = true; cleanups = effects.map(effect => effect()); return cleanups },
+    mount() {
+      const nodes = render()
+      mounted = true
+      cleanups = effects.map(effect => effect())
+      nodes.find(node => node.type === "ScrollView")?.props.onAppear?.()
+      return cleanups
+    },
     back() { dismissed++; unmount() },
     startWebView() { const request = pending.at(-1); request.controller = new Controller(); request.options.onControllerChange(request.controller); return request.controller },
     get dismissed() { return dismissed },

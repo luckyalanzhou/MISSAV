@@ -55,6 +55,7 @@ try {
   assert.doesNotMatch(JSON.stringify(diagnostics.getMissAVAccessDiagnostics()) + warnings.join("\n"), /PRIVATE_/)
   const entry = readFileSync(new URL("../index.tsx", import.meta.url), "utf8")
   assert.match(entry, /installMissAVLifecycle\(Script\)/)
+  assert.match(entry, /initializeMissAVRuntime\(\)/)
   assert.doesNotMatch(entry, /onResume\(\(\) => \{\}\)/)
   const lifecycle = readFileSync(new URL("../lifecycle.ts", import.meta.url), "utf8")
   assert.doesNotMatch(lifecycle, /WebViewController|openMissAVSiteVerification|Navigation\.present|searchVideoPage/)

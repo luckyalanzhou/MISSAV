@@ -2,14 +2,12 @@ import { fetch } from "scripting"
 import { loadSubtitleWebViewDocument, readSubtitleWebViewDocument } from "./subtitlecat-webview"
 import { parseMissAVSubtitle } from "./subtitles"
 import { extractSubtitleSearchCode } from "./subtitle-search-code"
+import { readSubtitleSearchCachePayload, writeSubtitleSearchCachePayload } from "./subtitle-search-cache"
 
 const SUBTITLECAT_ORIGIN = "https://www.subtitlecat.com"
 const SUBTITLECAT_HOME = `${SUBTITLECAT_ORIGIN}/`
 const SUBTITLECAT_USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
-const SUBTITLECAT_CACHE_KEY = "missav_subtitlecat_search_cache_v1"
 const SUBTITLECAT_CACHE_TTL_MS = 30 * 60 * 1000
-const SUBTITLECAT_CACHE_MAX_CODES = 50
-const SUBTITLECAT_CACHE_MAX_CHARACTERS = 2_000_000
 const subtitleDownloads = new Map<string, Promise<string>>()
 const downloadedContents = new Map<string, { savedAt: number; content: string }>()
 
@@ -97,7 +95,7 @@ export async function searchSubtitleCatFiles(value: string, options: SubtitleCat
   }
   // The site's public GET search form uses index.php?search=...; show=1000 is its Load More link.
   const searchURL = `${SUBTITLECAT_ORIGIN}/index.php?search=${encodeURIComponent(videoCode)}&show=1000`
-  const cached = readSubtitleCatSearchCache(videoCode)
+  const cached = await readSubtitleCatSearchCache(videoCode)
   const entries = !options.forceRefresh && cached && isFreshSubtitleCatCache(cached.savedAt)
     ? cached.entries
     : parseSubtitleCatSearchHTML(await readPage(searchURL), videoCode)
@@ -105,7 +103,6 @@ export async function searchSubtitleCatFiles(value: string, options: SubtitleCat
   const cache: CachedSubtitleCatSearch = metrics.searchCacheHits
     ? cached!
     : { savedAt: Date.now(), touchedAt: Date.now(), entries, details: options.forceRefresh ? {} : cached?.details || {} }
-  if (!metrics.searchCacheHits) writeSubtitleCatSearchCache(videoCode, cache)
   const files: SubtitleCatSubtitleFile[] = []
   const seen = new Set<string>()
   let failedDetailCount = 0
@@ -147,7 +144,6 @@ export async function searchSubtitleCatFiles(value: string, options: SubtitleCat
         mergeFiles(detailFiles)
         cache.details[entry.url] = { savedAt: Date.now(), files: detailFiles }
         cache.touchedAt = Date.now()
-        writeSubtitleCatSearchCache(videoCode, cache)
       } catch (error) {
         if (error instanceof SubtitleCatSearchCancelledError || options.isCancelled?.()) return
         failedDetailCount += 1
@@ -158,6 +154,7 @@ export async function searchSubtitleCatFiles(value: string, options: SubtitleCat
   }
   await Promise.all(Array.from({ length: Math.min(3, pendingEntries.length) }, worker))
   checkCancelled()
+  await writeSubtitleCatSearchCache(videoCode, cache)
   if (entries.length && failedDetailCount === entries.length) {
     throw new Error(`Subtitle Cat 搜索到 ${entries.length} 个匹配条目，但详情页暂时无法读取，请重试。`)
   }
@@ -171,25 +168,15 @@ function isFreshSubtitleCatCache(savedAt: number): boolean {
   return Number.isFinite(savedAt) && age >= 0 && age < SUBTITLECAT_CACHE_TTL_MS
 }
 
-function loadSubtitleCatCacheRecords(): Record<string, CachedSubtitleCatSearch> {
+async function readSubtitleCatSearchCache(code: string): Promise<CachedSubtitleCatSearch | null> {
+  let candidate: CachedSubtitleCatSearch | null = null
   try {
-    const raw = Storage.get<unknown>(SUBTITLECAT_CACHE_KEY)
-    if (typeof raw !== "string" || raw.length > SUBTITLECAT_CACHE_MAX_CHARACTERS) return {}
+    const raw = await readSubtitleSearchCachePayload(code)
+    if (!raw) return null
     const stored = JSON.parse(raw)
-    if (stored?.version !== 1 || !stored.records || typeof stored.records !== "object" || Array.isArray(stored.records)) return {}
-    const records: Record<string, CachedSubtitleCatSearch> = {}
-    for (const [code, record] of Object.entries(stored.records)) {
-      if (!/^[A-Z0-9]{2,16}(?:-[A-Z0-9]{1,16}){0,2}$/.test(code) || !record || typeof record !== "object") continue
-      const candidate = record as CachedSubtitleCatSearch
-      if (!isFreshSubtitleCatCache(candidate.touchedAt) || !Array.isArray(candidate.entries) || !candidate.details || typeof candidate.details !== "object" || Array.isArray(candidate.details)) continue
-      records[code] = candidate
-    }
-    return records
-  } catch { return {} }
-}
-
-function readSubtitleCatSearchCache(code: string): CachedSubtitleCatSearch | null {
-  const candidate = loadSubtitleCatCacheRecords()[code]
+    if (stored?.version !== 1 || !stored.record || typeof stored.record !== "object") return null
+    candidate = stored.record as CachedSubtitleCatSearch
+  } catch { return null }
   if (!candidate) return null
   try {
     // Revalidate persisted URLs and exact code matching; corruption must trigger a new request.
@@ -213,24 +200,17 @@ function readSubtitleCatSearchCache(code: string): CachedSubtitleCatSearch | nul
   } catch { return null }
 }
 
-function writeSubtitleCatSearchCache(code: string, record: CachedSubtitleCatSearch): void {
+async function writeSubtitleCatSearchCache(code: string, record: CachedSubtitleCatSearch): Promise<void> {
   try {
-    const records = loadSubtitleCatCacheRecords()
     // Never retain stale/nonmatching details after an updated search result.
     const details: Record<string, CachedSubtitleCatDetail> = {}
     for (const entry of record.entries) {
       const detail = record.details[entry.url]
       if (detail && isFreshSubtitleCatCache(detail.savedAt)) details[entry.url] = detail
     }
-    records[code] = { ...record, details }
-    const keys = Object.keys(records).sort((left, right) => records[left].touchedAt - records[right].touchedAt)
-    while (keys.length > SUBTITLECAT_CACHE_MAX_CODES) delete records[keys.shift()!]
-    let serialized = JSON.stringify({ version: 1, records })
-    while (serialized.length > SUBTITLECAT_CACHE_MAX_CHARACTERS && keys.length) {
-      delete records[keys.shift()!]
-      serialized = JSON.stringify({ version: 1, records })
-    }
-    Storage.set(SUBTITLECAT_CACHE_KEY, serialized)
+    const clean = { ...record, details }
+    const serialized = JSON.stringify({ version: 1, record: clean })
+    await writeSubtitleSearchCachePayload(code, serialized, clean.touchedAt)
   } catch { /* Cache failures must not interrupt search or download. */ }
 }
 

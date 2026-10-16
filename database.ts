@@ -36,9 +36,12 @@ export function getMissAVDatabase(): Promise<SQLite.Database> {
       await db.execute(`CREATE TABLE IF NOT EXISTS playback_history (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, first_played_at INTEGER NOT NULL, last_played_at INTEGER NOT NULL, play_count INTEGER NOT NULL DEFAULT 1, quality_label TEXT NOT NULL)`)
       await db.execute(`CREATE TABLE IF NOT EXISTS playback_progress (video_code TEXT PRIMARY KEY REFERENCES videos(video_code) ON DELETE CASCADE, position_seconds REAL NOT NULL, duration_seconds REAL, updated_at INTEGER NOT NULL)`)
       await db.execute("CREATE TABLE IF NOT EXISTS listing_cache (cache_key TEXT PRIMARY KEY, payload TEXT NOT NULL, saved_at INTEGER NOT NULL)")
+      await db.execute("CREATE TABLE IF NOT EXISTS subtitle_search_cache (cache_code TEXT PRIMARY KEY, payload TEXT NOT NULL, touched_at INTEGER NOT NULL)")
       await db.createIndex("idx_browse_last_viewed", { table: "browse_history", columns: ["last_viewed_at"], ifNotExists: true })
       await db.createIndex("idx_playback_last_played", { table: "playback_history", columns: ["last_played_at"], ifNotExists: true })
       await db.createIndex("idx_listing_saved", { table: "listing_cache", columns: ["saved_at"], ifNotExists: true })
+      await db.createIndex("idx_subtitle_cache_touched", { table: "subtitle_search_cache", columns: ["touched_at"], ifNotExists: true })
+      await migrateDatabaseSchema(db)
       await migrateLegacyRecords(db)
       return db
     })()
@@ -106,9 +109,12 @@ export async function savePlaybackProgress(videoCode: string, positionSeconds: n
 }
 export async function clearPlaybackHistory(): Promise<void> {
   const db = await getMissAVDatabase()
-  await db.transaction([{ sql: "DELETE FROM playback_progress" }, { sql: "DELETE FROM playback_history" }])
+  await db.transaction([{ sql: "DELETE FROM playback_progress" }, { sql: "DELETE FROM playback_history" }, pruneUnreferencedVideosStep()])
 }
-export async function clearBrowseHistory(): Promise<void> { const db = await getMissAVDatabase(); await db.execute("DELETE FROM browse_history") }
+export async function clearBrowseHistory(): Promise<void> {
+  const db = await getMissAVDatabase()
+  await db.transaction([{ sql: "DELETE FROM browse_history" }, pruneUnreferencedVideosStep()])
+}
 
 export async function recommendationProfile(): Promise<{ terms: Map<string, number>; excluded: Set<string> }> {
   const db = await getMissAVDatabase()
@@ -138,3 +144,22 @@ async function migrateLegacyRecords(db: SQLite.Database): Promise<void> {
   Storage.set(MIGRATION_KEY, true)
 }
 function arrayRecords<T>(value: unknown): T[] { return Array.isArray(value) ? value as T[] : [] }
+
+function pruneUnreferencedVideosStep() {
+  return { sql: `DELETE FROM videos WHERE video_code NOT IN (
+    SELECT video_code FROM browse_history
+    UNION SELECT video_code FROM playback_history
+    UNION SELECT video_code FROM playback_progress
+  )` }
+}
+
+async function migrateDatabaseSchema(db: SQLite.Database): Promise<void> {
+  const row = await db.fetchOne<{ user_version: number }>("PRAGMA user_version")
+  const version = Number(row?.user_version || 0)
+  if (version < 1) {
+    // Older builds created a local favourites table. The feature and every UI/API
+    // that referenced it have been removed, so delete the dormant private data too.
+    await db.transaction([{ sql: "DROP TABLE IF EXISTS favourites" }, pruneUnreferencedVideosStep()])
+    await db.execute("PRAGMA user_version = 1")
+  }
+}

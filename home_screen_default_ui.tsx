@@ -1,9 +1,7 @@
 import { Button, HStack, Image, LazyHStack, LazyVGrid, NavigationLink, NavigationStack, ProgressView, ScrollView, Script, Text, Toolbar, ToolbarItem, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
-import { isMissAVAccessReady } from "./access"
-import { removeLegacyMissAVAccountData } from "./removed-account-migration"
 import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "./client"
 import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "./design"
-import { loadMissAVHistory, type MissAVPlaybackRecord } from "./storage"
+import { loadMissAVBrowseHistory, loadMissAVHistory, type MissAVPlaybackRecord } from "./storage"
 import { formatMissAVContinueWatching } from "./playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "./home-screen-data"
 import { MediaArtwork, MediaGridCard, MediaTile } from "./page/components/media_cards"
@@ -15,10 +13,9 @@ import { LibraryPage } from "./page/library"
 import { RecommendationsPage } from "./page/recommendations"
 import { SearchPage } from "./page/search"
 import { SettingsPage } from "./page/settings"
-import { AccessGate } from "./page/access_gate"
+import { initializeMissAVRuntime } from "./runtime"
 
 export default function MISSAVHomeScreenView() {
-  const [accessReady, setAccessReady] = useState(() => isMissAVAccessReady())
   const [data, setData] = useState(emptyHomeScreenData)
   const [historyRevision, setHistoryRevision] = useState(0)
   const [domainRevision, setDomainRevision] = useState(0)
@@ -38,16 +35,13 @@ export default function MISSAVHomeScreenView() {
   }
 
   useEffect(() => {
-    try { removeLegacyMissAVAccountData() } catch { console.error("清理旧会话备份失败，下次启动重试。") }
-    return Script.onHomeTabEvent(event => {
-      if (event === "selected" && !accessReady && isMissAVAccessReady()) setAccessReady(true)
-    })
-  }, [accessReady])
+    initializeMissAVRuntime()
+  }, [])
 
   useEffect(() => {
-    if (!accessReady) return
     const owner = new HomeScreenLoader({
       history: () => loadMissAVHistory(50),
+      recommendationHistory: async () => (await loadMissAVBrowseHistory(1)).length > 0,
       cached: params => missavClient.readCachedVideoPage(params),
       search: (params, scope, forceRefresh) => missavClient.searchVideoPage(params, { scope: scope as MissAVRequestScope, forceRefresh, allowStale: true }),
       scope: () => new MissAVRequestScope(),
@@ -63,11 +57,10 @@ export default function MISSAVHomeScreenView() {
       owner.dispose()
       if (loader.current === owner) loader.current = null
     }
-  }, [accessReady, domainRevision])
+  }, [domainRevision])
   // History changes do not restart online listing requests or recreate listeners.
-  useEffect(() => { if (accessReady) void loader.current?.loadLocal() }, [accessReady, historyRevision, domainRevision])
+  useEffect(() => { void loader.current?.loadLocal() }, [historyRevision, domainRevision])
 
-  if (!accessReady) return <AccessGate onReady={() => setAccessReady(true)} />
   const toolbar = <Toolbar><ToolbarItem placement="topBarTrailing">
     <NavigationLink destination={<SettingsPage onDomainChanged={refreshAfterDomainOrAccessChange} onAccessVerified={refreshAfterDomainOrAccessChange} />} buttonStyle="plain" accessibilityLabel="设置" frame={{ width: 44, height: 44 }}><Image systemName="gearshape" font="headline" foregroundStyle="label" /></NavigationLink>
   </ToolbarItem></Toolbar>
@@ -91,7 +84,7 @@ export default function MISSAVHomeScreenView() {
 
   return <NavigationStack><ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
-    <ScrollView navigationTitle="MISSAV" navigationBarTitleDisplayMode="inline" toolbar={toolbar} scrollEdgeEffectHidden={{ edges: "top", hidden: true }} refreshable={() => loader.current?.refresh() || Promise.resolve()} navigationDestination={{ isPresented: detailNavigation.isPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} preparation={selected.preparation} onHistoryChanged={bumpHistory} /> : <VStack /> }}>
+    <ScrollView navigationTitle="MISSAV" navigationBarTitleDisplayMode="inline" toolbar={toolbar} scrollEdgeEffectHidden={{ edges: "top", hidden: true }} refreshable={() => loader.current?.refresh() || Promise.resolve()} navigationDestination={{ isPresented: detailNavigation.isPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={bumpHistory} /> : <VStack /> }}>
       <VStack spacing={22} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 12, bottom: PAGE_BOTTOM_PADDING }}>
         <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle="plain"><HomeAction title="搜索番号、女优或作品" systemImage="magnifyingglass" /></NavigationLink>
 

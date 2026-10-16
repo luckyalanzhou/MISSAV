@@ -177,7 +177,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
           }}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>搜索字幕</Text></HStack></Button>
           {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={subtitleEnabled ? "关闭本作品字幕显示" : "开启本作品字幕显示"}><HStack spacing={7}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text>{subtitleEnabled ? "关闭字幕" : "开启字幕"}</Text></HStack></Button> : undefined}
         </HStack> : undefined}
-        {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在脚本目录的 subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
+        {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在文稿目录的 MISSAV Subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
       </VStack>
 
       {loading && loadProgress ? <Text font="caption" foregroundStyle="secondaryLabel">{`${MISSAV_DETAIL_STAGE_LABELS[loadProgress.stage]} · ${(Math.max(loadProgress.elapsedMs, loadStartedAt === null ? loadProgress.elapsedMs : clock - loadStartedAt) / 1000).toFixed(1)} 秒`}</Text> : undefined}
@@ -352,7 +352,7 @@ function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode
               {loading ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="magnifyingglass" />}
             </Button>
           </HStack>
-          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。点击语言名称可预览文本，预览不会关联字幕。下载的完整 SRT 保存在脚本目录的 subtitles 文件夹中，保存数量不限，并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。点击语言名称可预览文本，预览不会关联字幕。下载的完整 SRT 保存在文稿目录的 MISSAV Subtitles 文件夹中，保存数量不限，并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
           {error ? <VStack spacing={8} alignment="leading" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
             <Text font="subheadline" foregroundStyle="systemRed" multilineTextAlignment="leading">{error}</Text>
             <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} action={() => { void search() }} />
