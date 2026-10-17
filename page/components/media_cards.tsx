@@ -1,11 +1,33 @@
-import { Button, HStack, Image, LazyHStack, ScrollView, Text, VStack, ZStack } from "scripting"
+import { Button, HStack, Image, LazyHStack, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import type { MissAVVideoItem } from "../../client"
+import { getMissAVBaseURL } from "../../domain"
+import { thumbnailQuality } from "../../thumbnail-quality"
 import { ACCENT, MEDIA_HERO_RADIUS, MEDIA_RADIUS, MEDIA_TILE_HEIGHT, MEDIA_TILE_WIDTH, SECTION_CONTENT_SPACING, SectionHeading } from "../../design"
 
-export function MediaArtwork(props: { video: MissAVVideoItem; width?: number; height: number; radius?: number }) {
+export function MediaArtwork(props: { video: MissAVVideoItem; width?: number; height: number; radius?: number; showQuality?: boolean }) {
   const radius = props.radius ?? MEDIA_RADIUS
   return <ZStack frame={{ ...(props.width ? { width: props.width } : { maxWidth: "infinity" }), height: props.height }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: radius, style: "continuous" }}>
     {props.video.coverUrl ? <Image imageUrl={props.video.coverUrl} resizable aspectRatio={{ value: 16 / 9, contentMode: "fill" }} frame={{ ...(props.width ? { width: props.width } : { maxWidth: "infinity" }), height: props.height }} clipped /> : <Image systemName="play.rectangle" font="title2" foregroundStyle="tertiaryLabel" />}
+    {props.showQuality !== false ? <ThumbnailQualityBadge video={props.video} /> : undefined}
+  </ZStack>
+}
+
+function ThumbnailQualityBadge({ video }: { video: MissAVVideoItem }) {
+  const key = `${getMissAVBaseURL()}|${video.videoCode.toLowerCase()}`
+  const [value, setValue] = useState<{ key: string; height: number | null } | null>(null)
+  const subscription = useRef<(() => void) | null>(null)
+  const visible = useRef(false)
+  const stop = () => { subscription.current?.(); subscription.current = null }
+  const start = () => {
+    stop()
+    subscription.current = thumbnailQuality.watch(video, height => setValue({ key, height }))
+  }
+  useEffect(() => { if (visible.current) start(); return stop }, [key])
+  const height = value?.key === key ? value.height : null
+  return <ZStack alignment="bottomTrailing" frame={{ maxWidth: "infinity", maxHeight: "infinity" }} padding={6} allowsHitTesting={false}
+    onAppear={() => { visible.current = true; start() }} onDisappear={() => { visible.current = false; stop() }}>
+    {height ? <Text font="caption2" fontWeight="semibold" foregroundStyle="white" padding={{ horizontal: 6, vertical: 3 }} background="black"
+      clipShape={{ type: "rect", cornerRadius: 5 }} accessibilityLabel={`最高可选画质 ${height}p`}>{`${height}p`}</Text> : undefined}
   </ZStack>
 }
 
