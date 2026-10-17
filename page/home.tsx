@@ -1,6 +1,6 @@
 import { HStack, Image, LazyHStack, LazyVGrid, NavigationLink, ProgressView, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVCollectionGroup, type MissAVVideoItem } from "../client"
-import { loadMissAVHistory, loadMissAVBrowseHistory, type MissAVPlaybackRecord } from "../storage"
+import { loadAllMissAVHistory, loadMissAVBrowseHistory, type MissAVPlaybackRecord } from "../storage"
 import { formatMissAVContinueWatching } from "../playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "../home-screen-data"
 import { ACCENT, ActionRow, MEDIA_TILE_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
@@ -29,7 +29,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
 
   useEffect(() => {
     const owner = new HomeScreenLoader({
-      history: () => loadMissAVHistory(50),
+      history: () => loadAllMissAVHistory(),
       recommendationHistory: async () => (await loadMissAVBrowseHistory(1)).length > 0,
       cached: params => missavClient.readCachedVideoPage(params),
       search: (params, scope, forceRefresh) => missavClient.searchVideoPage(params, { scope: scope as MissAVRequestScope, forceRefresh, allowStale: true }),

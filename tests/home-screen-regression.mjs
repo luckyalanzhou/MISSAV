@@ -9,7 +9,7 @@ const video = code => ({ videoCode: code, title: code, detailPath: `/cn/${code}`
 const record = (code, positionSeconds, durationSeconds) => ({ video: video(code), videoCode: code, positionSeconds, durationSeconds })
 const page = (code, extra = {}) => ({ items: [video(code)], page: 1, title: code, hasNext: true, ...extra })
 const records = [record("NEW", 0, 100), record("SHORT", 4, 100), record("DONE", 95, 100), record("BAD", NaN, 100), record("FIRST", 40, 100), record("UNKNOWN", 6), ...Array.from({ length: 8 }, (_, i) => record(`PLAY-${i}`, 10, 100))]
-assert.deepEqual(continueWatchingRecords(records).map(item => item.videoCode), ["FIRST", "UNKNOWN", "PLAY-0", "PLAY-1", "PLAY-2"])
+assert.deepEqual(continueWatchingRecords(records).map(item => item.videoCode), ["FIRST", "UNKNOWN", ...Array.from({ length: 8 }, (_, i) => `PLAY-${i}`)])
 assert.equal(playbackProgressFraction(records[4]), 0.4)
 assert.equal(playbackProgressFraction(records[5]), undefined)
 

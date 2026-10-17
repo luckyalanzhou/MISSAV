@@ -3,6 +3,7 @@ import {
   clearBrowseHistory,
   clearPlaybackHistory,
   loadBrowseHistory,
+  loadAllPlaybackHistory,
   loadPlaybackHistory,
   loadPlaybackProgress,
   recordBrowse,
@@ -17,6 +18,7 @@ import {
 
 export type { MissAVBrowseRecord, MissAVPlaybackRecord, MissAVPlaybackProgress }
 export const loadMissAVHistory = loadPlaybackHistory
+export const loadAllMissAVHistory = loadAllPlaybackHistory
 export const loadMissAVPlaybackProgress = loadPlaybackProgress
 export const loadMissAVBrowseHistory = loadBrowseHistory
 export const recordMissAVPlayback = recordPlayback

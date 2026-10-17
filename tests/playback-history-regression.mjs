@@ -29,6 +29,7 @@ globalThis.SQLite = { open: () => nativeBridge }
 const database = await import(compile("../database.ts"))
 const storage = await import(compile("../storage.ts"))
 const progress = await import(compile("../playback-progress.ts"))
+const homeScreenData = await import(compile("../home-screen-data.ts"))
 const video = code => ({ videoCode: code, title: `${code} title`, detailPath: `/cn/${code}`, coverUrl: "", duration: "2:10:00" })
 const source = label => ({ label, url: "https://cdn.example/video.m3u8", type: "application/vnd.apple.mpegurl" })
 const first = video("first-001")
@@ -79,7 +80,8 @@ function pageHarness(relative, exported) {
         async loadRemote() { await this.loadLocal() }
         async loadLocal() {
           const recent = await this.options.history()
-          this.options.changed({ recent, latest: [], trending: [], hasRecommendationHistory: recent.length > 0, errors: {}, loading: {} })
+          const unfinished = homeScreenData.continueWatchingRecords(recent)
+          this.options.changed({ recent: unfinished, latest: [], trending: [], hasRecommendationHistory: recent.length > 0, errors: {}, loading: {} })
         }
         refresh() {}
         dispose() {}
@@ -175,10 +177,20 @@ try {
   assert.equal(records[0].positionSeconds, 65)
   assert.equal(records[0].durationSeconds, undefined)
   assert.equal(progress.formatMissAVContinueWatching(records[0].positionSeconds), "继续观看 · 01:05")
+
+  for (let index = 0; index < 55; index++) {
+    const item = video(`continue-${String(index).padStart(3, "0")}`)
+    await database.recordPlayback(item, source("720p"))
+    await database.savePlaybackProgress(item.videoCode, 60, 7800)
+  }
+  home({ ...callbacks, revision: 2 }); await settle()
+  const allContinueCards = home({ ...callbacks, revision: 2 }).filter(node => (typeof node.type === "function" ? node.type.name : node.type) === "ContinueWatchingCard")
+  assert.equal(allContinueCards.length, 56, "The home horizontal shelf includes every unfinished playback, beyond the former 50-record fetch limit")
+
   await database.clearPlaybackHistory()
   assert.deepEqual(await storage.loadMissAVHistory(), [])
   assert.equal(sqlite.prepare("SELECT COUNT(*) AS count FROM playback_progress").get().count, 0)
-  console.log("PASS: actual SQLite history/progress join, legacy records, limits, reset, library/home labels and refresh")
+  console.log("PASS: actual SQLite history/progress join, legacy records, bounded library history, unbounded home shelf, reset and playback labels")
 } finally {
   Date.now = dateNow
   sqlite.close()

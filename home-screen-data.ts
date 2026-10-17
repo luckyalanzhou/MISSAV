@@ -15,7 +15,7 @@ export function emptyHomeScreenData(): HomeScreenData {
   return { recent: [], hasRecommendationHistory: false, latest: [], trending: [], loading: { latest: true, trending: true }, errors: { latest: null, trending: null, history: null } }
 }
 export function continueWatchingRecords(records: MissAVPlaybackRecord[]): MissAVPlaybackRecord[] {
-  return records.filter(record => resolveMissAVResumePosition(record.positionSeconds, record.durationSeconds, 0) > 0).slice(0, 5)
+  return records.filter(record => resolveMissAVResumePosition(record.positionSeconds, record.durationSeconds, 0) > 0)
 }
 export function playbackProgressFraction(record: MissAVPlaybackRecord): number | undefined {
   if (!record.durationSeconds || !Number.isFinite(record.durationSeconds) || record.durationSeconds <= 0) return undefined
