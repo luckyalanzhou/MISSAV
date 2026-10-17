@@ -74,6 +74,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
   const subcollections = collectionOptionsForGroup(group)
   const directoryMode = isMissAVDirectoryCollection(collection) && !categoryPath
   const title = categoryTitle || collections.find(item => item.value === collection)?.title || "中文字幕"
+  const groupTitle = MISSAV_COLLECTION_GROUPS.find(item => item.value === group)?.title || "中文字幕"
   const filterTitle = filters.find(item => item.value === filter)?.title ?? "全部作品"
   const sortTitle = sorts.find(item => item.value === sort)?.title ?? "发行日期"
   const hero = page === 1 ? items[0] : undefined
@@ -82,12 +83,12 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
-      <VStack key="discover-results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        <ScrollView axes="horizontal" scrollIndicator="hidden">
-          <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
-            {MISSAV_COLLECTION_GROUPS.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === group} action={() => { setGroup(item.value); selectCollection(item.defaultCollection) }} />)}
-          </HStack>
-        </ScrollView>
+      <VStack key="discover-results-top" spacing={16} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
+        <HStack padding={{ horizontal: PAGE_PADDING }}>
+          <Menu label={<OptionChip title={groupTitle} systemImage="square.grid.2x2" />}>
+            {MISSAV_COLLECTION_GROUPS.map(item => <Button key={item.value} title={item.title} systemImage={item.value === group ? "checkmark" : "square.grid.2x2"} action={() => { setGroup(item.value); selectCollection(item.defaultCollection) }} />)}
+          </Menu>
+        </HStack>
 
         {subcollections.length > 1 ? <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
@@ -156,8 +157,8 @@ function OptionChip(props: { title: string; systemImage: string }) {
 function DiscoverHero(props: { video: MissAVVideoItem; eyebrow: string; onOpen: (video: MissAVVideoItem) => void }) {
   const metadata = [props.video.videoCode.toUpperCase(), props.video.duration].filter(Boolean).join(" · ")
   return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ maxWidth: "infinity" }} contentShape="rect" accessibilityLabel={[props.eyebrow, props.video.title, metadata].filter(Boolean).join("，")}>
-    <ZStack alignment="bottomLeading" frame={{ maxWidth: "infinity", height: 220 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 18, style: "continuous" }}>
-      {props.video.coverUrl ? <Image imageUrl={props.video.coverUrl} resizable aspectRatio={{ value: 16 / 9, contentMode: "fill" }} frame={{ maxWidth: "infinity", height: 220 }} clipped /> : <Image systemName="play.rectangle" font="largeTitle" foregroundStyle="tertiaryLabel" />}
+    <ZStack alignment="bottomLeading" frame={{ maxWidth: "infinity", height: 188 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 18, style: "continuous" }}>
+      {props.video.coverUrl ? <Image imageUrl={props.video.coverUrl} resizable aspectRatio={{ value: 16 / 9, contentMode: "fill" }} frame={{ maxWidth: "infinity", height: 188 }} clipped /> : <Image systemName="play.rectangle" font="largeTitle" foregroundStyle="tertiaryLabel" />}
       <VStack spacing={6} alignment="leading" padding={{ horizontal: 18, vertical: 16 }} frame={{ maxWidth: "infinity", alignment: "leading" }} background="rgba(0,0,0,0.68)">
         <Text font="caption" fontWeight="bold" foregroundStyle="white">{props.eyebrow}</Text>
         <Text font="title3" fontWeight="bold" foregroundStyle="white" lineLimit={3} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>

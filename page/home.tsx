@@ -3,7 +3,7 @@ import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVCol
 import { loadMissAVHistory, loadMissAVBrowseHistory, type MissAVPlaybackRecord } from "../storage"
 import { formatMissAVContinueWatching } from "../playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "../home-screen-data"
-import { ACCENT, ActionRow, MEDIA_TILE_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SECTION_SPACING, SectionHeading } from "../design"
+import { ACCENT, ActionRow, MEDIA_TILE_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
 import { MediaGridCard, MediaTile } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { DetailPage } from "./detail"
@@ -70,7 +70,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
     <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
-      <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
+      <VStack spacing={24} alignment="leading" padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
         {continueWatching.length ? <VStack spacing={12} alignment="leading">
           <VStack spacing={3} padding={{ horizontal: PAGE_PADDING }}><SectionHeading title="继续观看" subtitle={`${continueWatching.length} 部未看完`} level="primary" /></VStack>
           <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top" padding={{ horizontal: PAGE_PADDING }}>{continueWatching.map(record => <ContinueWatchingCard key={record.videoCode} record={record} onOpen={open} />)}</LazyHStack></ScrollView>
