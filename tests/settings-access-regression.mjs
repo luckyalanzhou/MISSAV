@@ -23,7 +23,7 @@ function harness() {
   const scripting = {
     ...Object.fromEntries(["Button", "HStack", "Image", "List", "Picker", "ProgressView", "Section", "SecureField", "Text", "TextField", "VStack"].map(name => [name, name])),
     Dialog: { alert: async value => calls.alerts.push(value) },
-    Pasteboard: { setItems: async items => { calls.copied = items[0]["public.plain-text"] } },
+    Pasteboard: { setString: async value => { calls.copied = value } },
     Navigation: { useDismiss: () => () => {} },
     useState: initial => {
       const index = hook++

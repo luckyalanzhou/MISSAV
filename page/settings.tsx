@@ -66,7 +66,9 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     }
     const report = ["MISSAV 线路诊断（最近 20 条以内）", ...entries.map(formatDiagnostic)].join("\n")
     try {
-      await Pasteboard.setItems([{ "public.plain-text": report }], { localOnly: true, expirationDate: new Date(Date.now() + 10 * 60 * 1000) })
+      // Diagnostics are plain text; use the dedicated text API for reliable
+      // clipboard writes across Scripting runtime versions.
+      await Pasteboard.setString(report)
       await Dialog.alert({ title: "诊断已复制", message: "已复制脱敏的线路状态、栏目和耗时；不包含 Cookie、账号信息或页面内容。" })
     } catch (reason) {
       await Dialog.alert({ title: "复制诊断失败", message: reason instanceof Error ? reason.message : "请稍后重试。" })
