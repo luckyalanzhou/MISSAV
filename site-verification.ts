@@ -6,7 +6,7 @@ import { captureCloudflareSession, restoreCloudflareSession } from "./cloudflare
 import { readMatchingWebViewDocument, type WebViewDocument } from "./webview"
 
 export type MissAVSiteVerificationResult =
-  | { status: "accessible"; challengeCompleted: boolean }
+  | { status: "accessible"; challengeCompleted: boolean; probe: MissAVAccessProbe }
   | { status: "incomplete" | "unavailable" | "blocked"; probe: MissAVAccessProbe }
 
 let siteVerificationRequest: Promise<MissAVSiteVerificationResult> | null = null
@@ -27,7 +27,7 @@ async function runSiteVerification(): Promise<MissAVSiteVerificationResult> {
   recordMissAVAccessDiagnostic("verification", target, { state: "started" })
   try {
     const result = await verifySiteProbes()
-    recordMissAVAccessDiagnostic("verification", result.status === "accessible" ? target : result.probe.url,
+    recordMissAVAccessDiagnostic("verification", result.probe.url,
       { state: result.status, elapsedMs: Date.now() - started, challengeObserved: result.status === "accessible" && result.challengeCompleted })
     return result
   } catch (error) {
@@ -58,7 +58,7 @@ async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
     if (blocked) return { status: "blocked", probe }
     try { await captureCloudflareSession(controller, probeHost) } catch { /* Cookie persistence is best-effort. */ }
     if (listingConfirmed && missavClient.cacheVerifiedPage(probe, document)) {
-      return { status: "accessible", challengeCompleted: challengeObserved }
+      return { status: "accessible", challengeCompleted: challengeObserved, probe }
     }
 
     // Never retry in the background after the user closes the challenge:

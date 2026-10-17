@@ -14,6 +14,14 @@ const { missavClient } = await import(compile("../client.ts"))
 const { MISSAV_COLLECTION_OPTIONS, isMissAVDirectoryCollection } = await import(compile("../collections.ts"))
 const { openMissAVSiteVerification } = await import(compile("../site-verification.ts"))
 
+async function expectAccessible(challengeCompleted) {
+  const result = await openMissAVSiteVerification()
+  assert.equal(result.status, "accessible")
+  assert.equal(result.challengeCompleted, challengeCompleted)
+  assert.ok(result.probe?.url, "Successful verification returns the exact route it checked")
+  return result
+}
+
 const nativeTimeout = globalThis.setTimeout
 // Accelerate polling only, keeping the production timeout behavior intact.
 globalThis.setTimeout = (callback, delay, ...args) => nativeTimeout(callback, [250, 300, 500].includes(delay) ? 0 : delay, ...args)
@@ -198,7 +206,7 @@ try {
   const probeMenu = menu + '<a href="/dm333/cn/fc2">FC2</a>'
   sharedCookies = [cookie("verified-live")]
   responseFor = url => listing("verified-005", probeMenu)
-  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
+  await expectAccessible(false)
   assert.equal(requests.length, 1)
   assert.ok(requests.every(value => /^\/(?:dm\d+\/)?cn\//.test(new URL(value).pathname)), "Every Settings verification probe uses cn")
   assert.deepEqual(requests.map(value => new URL(value).pathname), ["/cn/new"])
@@ -220,7 +228,7 @@ try {
   responseFor = url => url.pathname.endsWith("/release") && needsChallenge ? challenge : listing("verified-006", probeMenu)
   modalContent = listing("verified-006", probeMenu)
   requests.length = 0
-  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
+  await expectAccessible(false)
   assert.equal(modalCount, 1, "A Settings challenge presents the exact route, then auto dismisses on real listing content")
   assert.equal(requests.length, 1, "Open the exact challenged route once in the visible verification window")
   assert.equal(missavClient.accessProbeRoutes().length, 5, "Successful verification clears only the confirmed challenge route")
@@ -235,7 +243,7 @@ try {
     blankDocument = false
     return nativePresent.call(this)
   }
-  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
+  await expectAccessible(false)
   assert.equal(modalCount, 1)
   assert.equal(requests.length, 1)
 
@@ -250,7 +258,7 @@ try {
   }
   responseFor = () => blankDocument ? null : listing("foreground-008", probeMenu)
   modalContent = challenge
-  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: true })
+  await expectAccessible(true)
   assert.equal(modalCount, 1)
   assert.ok(visibleReads >= 2)
   MockWebView.prototype.getHTML = nativeGetHTML
@@ -330,7 +338,7 @@ try {
   responseFor = () => listing("verified-leaf-001", siteMenu)
   modalContent = listing("verified-leaf-001", siteMenu)
   modalCount = 0
-  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
+  await expectAccessible(false)
   assert.equal(requests.length, 1)
   const verifiedLeafURL = new URL(requests[0])
   assert.equal(verifiedLeafURL.pathname, "/dm22/cn/genres/example")
@@ -345,7 +353,7 @@ try {
   const jsdPage = await missavClient.searchVideoPage({ collection: "new" }, { forceRefresh: true })
   assert.equal(jsdPage.items[0].videoCode, "jsd-001")
   modalCount = 0
-  assert.deepEqual(await openMissAVSiteVerification(), { status: "accessible", challengeCompleted: false })
+  await expectAccessible(false)
   assert.equal(modalCount, 1, "Manual verification always opens the requested route visibly")
 
   const denied = '<html><title>Attention Required! | Cloudflare</title><body>Sorry, you have been blocked. Cloudflare Ray ID: fixture</body></html>'

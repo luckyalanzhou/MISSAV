@@ -16,11 +16,14 @@ const text = nodes => nodes.filter(node => node.type === "Text").map(node => nod
 function harness() {
   const states = []
   const pending = []
-  const calls = { accessRefreshed: 0, domainChanged: 0 }
+  const calls = { accessRefreshed: 0, domainChanged: 0, copied: null, alerts: [] }
+  const diagnostics = [{ at: 1730000000000, event: "verification", host: "missav.ws", route: "cn/release", state: "accessible", elapsedMs: 1250, challengeObserved: true }]
   let hook = 0
   let domain = "https://missav.ws/"
   const scripting = {
-    ...Object.fromEntries(["Button", "HStack", "Image", "List", "Picker", "Section", "SecureField", "Text", "TextField", "VStack"].map(name => [name, name])),
+    ...Object.fromEntries(["Button", "HStack", "Image", "List", "Picker", "ProgressView", "Section", "SecureField", "Text", "TextField", "VStack"].map(name => [name, name])),
+    Dialog: { alert: async value => calls.alerts.push(value) },
+    Pasteboard: { setItems: async items => { calls.copied = items[0]["public.plain-text"] } },
     Navigation: { useDismiss: () => () => {} },
     useState: initial => {
       const index = hook++
@@ -33,6 +36,7 @@ function harness() {
     if (specifier === "scripting") return scripting
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
     if (specifier === "../design") return { ACCENT: "pink" }
+    if (specifier === "../access-diagnostics") return { getMissAVAccessDiagnostics: () => diagnostics }
     if (specifier === "../access") return { submitMissAVAccess: () => true }
     if (specifier === "../site-verification") return {
       openMissAVSiteVerification: () => new Promise((resolve, reject) => pending.push({ resolve, reject })),
@@ -46,11 +50,12 @@ function harness() {
     }
     throw new Error(`Unexpected module ${specifier}`)
   }, module, module.exports)
-  return { calls, pending, render() {
+  return { calls, diagnostics, pending, render() {
     hook = 0
     const nodes = []
     function visit(value) {
       if (Array.isArray(value)) { value.forEach(visit); return }
+      if (typeof value?.type === "function") { visit(value.type(value.props)); return }
       if (!value?.props) return
       nodes.push(value)
       visit(value.props.children)
@@ -64,7 +69,10 @@ const page = harness()
 let nodes = page.render()
 assert.ok(button(nodes, "验证访问线路"))
 assert.equal(nodes.filter(node => node.type === "Button" && node.props.title === "验证访问线路").length, 1)
+assert.match(text(nodes), /测试栏目可访问/)
 assert.doesNotMatch(text(nodes), /网站账号|网站收藏|登录|密码/)
+assert.doesNotMatch(text(nodes), /当前站点/)
+assert.match(text(nodes), /MISSAV Subtitles/)
 assert.equal(nodes.some(node => node.type === "SecureField" || node.type === "TextField"), false)
 const accessSection = nodes.find(node => node.type === "Section" && node.props.header?.props.children === "访问站点")
 assert.ok(accessSection.props.children.some(child => child?.type === "Button" && child.props.title === "验证访问线路"))
@@ -76,20 +84,25 @@ button(nodes, "正在验证访问线路").props.action()
 nodes.find(node => node.type === "Picker").props.onChanged("https://missav.ai/")
 assert.equal(page.pending.length, 1, "Busy state prevents another verification")
 assert.equal(page.calls.domainChanged, 0, "Do not change origin while verification is pending")
-page.pending.at(-1).resolve({ status: "accessible", challengeCompleted: false })
+page.pending.at(-1).resolve({ status: "accessible", challengeCompleted: false, probe: { title: "最近更新", url: "https://missav.ws/cn/release" } })
 await settle()
 nodes = page.render()
 assert.equal(page.calls.accessRefreshed, 1)
-assert.match(text(nodes), /已检查栏目可访问，本次无需 Cloudflare 验证/)
+assert.match(text(nodes), /测试栏目“最近更新”已可访问，无需完成 Cloudflare 验证/)
 assert.doesNotMatch(text(nodes), /Cloudflare 验证完成/)
 assert.equal(button(nodes, "验证访问线路").props.disabled, false)
+button(nodes, "复制线路诊断").props.action()
+await settle()
+assert.match(page.calls.copied, /MISSAV 线路诊断/)
+assert.match(page.calls.copied, /missav\.ws\/cn\/release · accessible · 1\.3 秒/)
+assert.doesNotMatch(page.calls.copied, /cookie-value|cf_clearance=/i)
 button(nodes, "验证访问线路").props.action()
-page.pending.at(-1).resolve({ status: "accessible", challengeCompleted: true })
+page.pending.at(-1).resolve({ status: "accessible", challengeCompleted: true, probe: { title: "最近更新", url: "https://missav.ws/cn/release" } })
 await settle()
 nodes = page.render()
 assert.equal(page.calls.accessRefreshed, 2)
-assert.match(text(nodes), /Cloudflare 验证完成，已检查栏目可访问/)
-assert.doesNotMatch(text(nodes), /本次无需 Cloudflare 验证/)
+assert.match(text(nodes), /Cloudflare 验证完成；测试栏目“最近更新”已可访问/)
+assert.doesNotMatch(text(nodes), /无需完成 Cloudflare 验证/)
 for (const status of ["blocked", "incomplete", "unavailable", "error"]) {
   button(page.render(), "验证访问线路").props.action()
   if (status === "error") page.pending.at(-1).reject(new Error("Fixture verification unavailable"))
