@@ -79,20 +79,7 @@ class MissAVClient {
   private recentDetailOrigin = ""
   private recentDetailGeneration = 0
   private fastDetailPolicy = new Map<string, { failures: number; lastFailureAt: number; skipUntil: number }>()
-  thumbnailAccessRevision = 0
-  private foregroundDetails = 0
-  private thumbnailScope: MissAVRequestScope | null = null
-
-  canLoadThumbnailQuality(): boolean {
-    return !this.verificationGate && this.foregroundDetails === 0 && this.searchPageRequests.size === 0
-  }
-
-  trackThumbnailWork(scope: MissAVRequestScope): () => void {
-    if (!this.canLoadThumbnailQuality()) scope.cancel()
-    scope.assertActive()
-    this.thumbnailScope = scope
-    return () => { if (this.thumbnailScope === scope) this.thumbnailScope = null }
-  }
+  detailCacheRevision = 0
 
   // Cache-only preview for the HomeTab; never starts a verification or HTTP request.
   async readCachedVideoPage(params: MissAVSearchParams): Promise<MissAVSearchPage | null> {
@@ -104,7 +91,6 @@ class MissAVClient {
   }
 
   async searchVideoPage(params: MissAVSearchParams, options: { forceRefresh?: boolean; scope?: MissAVRequestScope; allowStale?: boolean } = {}): Promise<MissAVSearchPage> {
-    this.thumbnailScope?.cancel()
     const caller = options.scope || new MissAVRequestScope()
     await this.waitForVerification(caller)
     caller.assertActive()
@@ -237,7 +223,6 @@ class MissAVClient {
 
   beginSiteVerification(): () => void {
     if (this.verificationGate) throw new Error("访问线路验证正在进行。")
-    this.thumbnailScope?.cancel()
     this.clearRecentVideoDetails()
     this.fastDetailPolicy.clear()
     let release!: () => void
@@ -259,7 +244,6 @@ class MissAVClient {
         if (cached) cached.expiresAt = Date.now() + SEARCH_PAGE_CACHE_TTL_MS
       }
       this.verificationGate = null
-      this.thumbnailAccessRevision += 1
       gate.release()
     }
   }
@@ -286,8 +270,6 @@ class MissAVClient {
   }
 
   clearSearchPageCache(): void {
-    this.thumbnailScope?.cancel()
-    this.thumbnailAccessRevision += 1
     this.clearRecentVideoDetails()
     this.fastDetailPolicy.clear()
     this.searchPageCache.clear()
@@ -299,6 +281,14 @@ class MissAVClient {
   private clearRecentVideoDetails(): void {
     this.recentVideoDetails.clear()
     this.recentDetailGeneration += 1
+    this.detailCacheRevision += 1
+  }
+
+  hasRecentVideoDetail(item: MissAVVideoItem | string): boolean {
+    const watchUrl = typeof item === "string" ? this.watchUrl(item) : SiteHTML.normalizeMissAVUrl(item.detailPath)
+    if (new URL(watchUrl).origin !== new URL(getMissAVBaseURL()).origin) return false
+    const recent = this.recentVideoDetails.get(watchUrl)
+    return Boolean(recent && Date.now() - recent.savedAt >= 0 && Date.now() - recent.savedAt < RECENT_VIDEO_DETAIL_TTL_MS)
   }
 
   clearVerificationCollections(): void {
@@ -313,15 +303,8 @@ class MissAVClient {
     this.collectionPaths.set(origin, { ...this.collectionPaths.get(origin), ...links })
   }
 
-  async getVideo(item: MissAVVideoItem | string, options: { scope?: MissAVRequestScope; trace?: MissAVDetailTrace; preferRecent?: boolean; background?: boolean } = {}): Promise<MissAVVideoDetail> {
+  async getVideo(item: MissAVVideoItem | string, options: { scope?: MissAVRequestScope; trace?: MissAVDetailTrace; preferRecent?: boolean } = {}): Promise<MissAVVideoDetail> {
     const scope = options.scope || new MissAVRequestScope()
-    let releaseThumbnail: (() => void) | undefined
-    if (options.background) {
-      releaseThumbnail = this.trackThumbnailWork(scope)
-    } else {
-      this.foregroundDetails += 1
-      this.thumbnailScope?.cancel()
-    }
     let trace = options.trace
     try {
       trace ||= createMissAVDetailTrace(typeof item === "string" ? this.watchUrl(item) : SiteHTML.normalizeMissAVUrl(item.detailPath))
@@ -330,9 +313,6 @@ class MissAVClient {
       if (!scope.cancelled) trace?.mark("failed")
       else if (isMissAVRequestCancelled(error)) trace?.mark("cancelled")
       throw error
-    } finally {
-      if (options.background) releaseThumbnail?.()
-      else this.foregroundDetails -= 1
     }
   }
 

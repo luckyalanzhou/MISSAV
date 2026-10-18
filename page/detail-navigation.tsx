@@ -4,6 +4,7 @@ import { ACCENT } from "../design"
 import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
 import { MissAVPlaybackPreparation } from "../playback-preparation"
 import { startPlaybackPolling } from "../playback-polling"
+import { detailPrefetch } from "../detail-prefetch"
 
 // Every list waits for playable detail before changing native navigation state.
 // Repeated taps share the visible preparation; another selection cancels its owner.
@@ -30,6 +31,7 @@ export function useDetailNavigation() {
   }
   async function open(video: MissAVVideoItem) {
     if (request.current?.path === video.detailPath) return
+    detailPrefetch.cancelAll()
     cancel()
     const current = generation.current
     const scope = new MissAVRequestScope()
