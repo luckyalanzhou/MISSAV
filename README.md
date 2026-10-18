@@ -1,26 +1,26 @@
 # MISSAV for Scripting
 
-在 iPhone/iPad 的 Scripting 应用中浏览、搜索和播放 MISSAV 内容，并为作品关联本地中文字幕。
+适用于 iPhone/iPad Scripting 应用的 MISSAV 浏览与播放脚本。
+
+## 功能
+
+- 栏目浏览、作品搜索与系统播放器播放。
+- 播放进度保存与继续观看。
+- 简体、繁体中文字幕搜索、下载与自动关联。
+- 支持 Scripting Home Tab。
 
 ## 使用
 
-1. 使用 Scripting 3.2.1 或更新版本导入本项目。
-2. 运行 `index.tsx` 打开完整脚本页面；也可以将 `home_screen_default_ui.tsx` 设置为 Scripting Home Tab。
-3. 如果栏目提示需要 Cloudflare 验证，在设置中点击“验证访问线路”，等待目标栏目出现作品后返回。
-4. 进入详情页后选择当前可用播放源，点击后使用系统播放器播放。
-5. 在详情页按番号搜索字幕。下载的简体/繁体 SRT 会自动关联当前作品。
+1. 在 Scripting 3.2.1 或更新版本中导入并运行本项目。
+2. 浏览或搜索作品，进入详情页选择画质播放；字幕可在详情页搜索下载。
+3. 如需 Cloudflare 验证，在设置中点击“验证访问线路”完成验证。
 
-## 本机数据
+Home Tab 入口：`home_screen_default_ui.tsx`。
 
-- 浏览记录、播放记录和播放进度保存在 `missav-library.db`。
-- 字幕保存在应用文稿目录的 `MISSAV Subtitles` 文件夹，与脚本源码分离；设计上可跨脚本重建保留，但最终仍需在设备上确认 Scripting 的文件容器行为。
-- 栏目快照和字幕搜索结果使用有上限的 SQLite 缓存；已下载字幕数量不受缓存上限影响。
-- 播放地址具有时效性，不会作为长期数据保存。
+## 数据存储
 
-## 说明
+浏览记录、播放进度和缓存保存在本机。字幕保存在应用文稿目录的 `MISSAV Subtitles` 文件夹，下载数量不限。
 
-- 主脚本与 Home Tab 使用同一套本地数据库和缓存初始化。
-- 网站是否要求再次验证由 Cloudflare、当前网络、域名和会话状态共同决定，脚本不能保证永久免验证。
-- 源码和回归检查不能替代 iPhone 上的网页、Cloudflare、原生播放器和字幕显示验收。
+## 许可证
 
-项目版本以 `script.json` 为准。
+[MIT License](LICENSE)。许可证仅适用于本项目代码，不涵盖第三方网站内容。
