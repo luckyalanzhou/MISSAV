@@ -1,4 +1,4 @@
-import { Button, Dialog, HStack, Image, List, Pasteboard, Picker, ProgressView, Section, Text, VStack, useState } from "scripting"
+import { Button, Dialog, HStack, Image, List, Pasteboard, Picker, ProgressView, Script, Section, Text, VStack, useState } from "scripting"
 import { getMissAVAccessDiagnostics, type MissAVAccessDiagnostic } from "../../site/access/access-diagnostics"
 import { openMissAVSiteVerification } from "../../site/access/site-verification"
 import { ACCENT } from "../design"
@@ -85,6 +85,9 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     : verificationState === "accessible" ? "checkmark.circle.fill"
       : lastCheckedAt ? "exclamationmark.triangle.fill" : "questionmark.circle"
   const verificationColor = verificationState === "accessible" ? ACCENT : "secondaryLabel"
+  const scriptMetadata = Script.metadata
+  const version = scriptMetadata.version || "未知"
+  const author = scriptMetadata.author?.name || "未设置"
 
   return <List listStyle="insetGroup" navigationTitle="设置" navigationBarTitleDisplayMode="large">
     <Section header={<Text>访问站点</Text>} footer={<Text>线路检查只确认本次测试栏目是否可访问，不代表所有栏目都已通过验证。其他栏目提示验证时，可先完成检查；仍无法访问可切换域名，设置将应用于浏览、搜索、详情和播放。</Text>}>
@@ -111,7 +114,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     </Section>
 
     <Section header={<Text>关于</Text>}>
-      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="play.rectangle.fill" foregroundStyle={ACCENT} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">版本 1.0.0</Text></VStack></HStack>
+      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="play.rectangle.fill" foregroundStyle={ACCENT} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{`版本 ${version}`}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{`作者 ${author}`}</Text></VStack></HStack>
     </Section>
   </List>
 }
