@@ -10,7 +10,7 @@ export function MediaArtwork(props: { video: MissAVVideoItem; width?: number; he
   const visible = useRef(false)
   const stopPrefetch = () => { subscription.current?.(); subscription.current = null }
   const startPrefetch = () => {
-    if (!props.prefetch || subscription.current) return
+    if (props.prefetch === false || subscription.current) return
     subscription.current = detailPrefetch.watch(props.video)
   }
   useEffect(() => {

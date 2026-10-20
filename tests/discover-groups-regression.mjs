@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
 globalThis.Storage = { get: () => undefined, set: () => {} }
 const client = await import(compile("../client.ts"))
+const { MissAVListingRequest } = await import(compile("../listing-request.ts"))
 const states = []
 const requests = []
 let hook = 0
@@ -33,6 +34,9 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "scripting") return scripting
   if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
   if (specifier === "../client") return mockClient
+  if (specifier === "../listing-request") return { MissAVListingRequest: class extends MissAVListingRequest {
+    constructor() { super((params, options) => mockClient.missavClient.searchVideoPage(params, options)) }
+  } }
   if (specifier === "../design") return { ACCENT: "pink", PAGE_BOTTOM_PADDING: 24, PAGE_PADDING: 16, SECTION_SPACING: 20, PageBackground: "PageBackground" }
   if (specifier === "./detail") return { DetailPage: "DetailPage" }
   if (specifier === "./detail-navigation") return { DetailPreparationStatus: "DetailPreparationStatus", useDetailNavigation: () => ({ selected: null, pending: null, isPresented: { value: false, setValue() {} }, cancel() {}, open() {} }) }

@@ -9,6 +9,7 @@ import { isMatchingWebViewURL, loadWebViewPage, type WebViewDocument } from "./w
 import { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
 import { withMissAVDeadline } from "./request-deadline"
 import { createMissAVDetailTrace, type MissAVDetailTrace } from "./detail-loading"
+import { MissAVAccessSession } from "./access-session"
 export { MissAVRequestScope, isMissAVRequestCancelled } from "./request-scope"
 import { defaultMissAVCollectionSort, isMissAVDirectoryCollection, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, type MissAVCollection, type MissAVFilter, type MissAVSort } from "./collections"
 
@@ -73,13 +74,19 @@ class MissAVClient {
   private searchPageCache = new Map<string, CachedSearchPage>()
   private searchPageRequests = new Map<string, PendingSearchPage>()
   private searchRequestId = 0
-  private activePageScopes = new Set<MissAVRequestScope>()
-  private verificationGate: { promise: Promise<void>; release: () => void; cachedKeys: Set<string> } | null = null
+  private access = new MissAVAccessSession()
+  private verifiedCacheKeys: Set<string> | null = null
   private recentVideoDetails = new Map<string, { savedAt: number; value: MissAVVideoDetail }>()
   private recentDetailOrigin = ""
   private recentDetailGeneration = 0
   private fastDetailPolicy = new Map<string, { failures: number; lastFailureAt: number; skipUntil: number }>()
-  detailCacheRevision = 0
+  detailContext(): string {
+    const origin = new URL(getMissAVBaseURL()).origin
+    if (origin !== this.recentDetailOrigin) { this.recentDetailOrigin = origin; this.clearRecentVideoDetails() }
+    return `${origin}|${this.access.revision}`
+  }
+  canPrefetchDetail(): boolean { return !this.access.verifying && this.searchPageRequests.size === 0 }
+  subscribeDetailContext(listener: () => void): () => void { return this.access.subscribe(listener) }
 
   // Cache-only preview for the HomeTab; never starts a verification or HTTP request.
   async readCachedVideoPage(params: MissAVSearchParams): Promise<MissAVSearchPage | null> {
@@ -217,34 +224,32 @@ class MissAVClient {
   }
 
   private async waitForVerification(scope: MissAVRequestScope): Promise<void> {
-    scope.assertActive()
-    while (this.verificationGate) { await scope.waitFor(this.verificationGate.promise); scope.assertActive() }
+    await this.access.wait(scope)
   }
 
   beginSiteVerification(): () => void {
-    if (this.verificationGate) throw new Error("访问线路验证正在进行。")
-    this.clearRecentVideoDetails()
+    const finishAccess = this.access.beginVerification()
+    this.recentVideoDetails.clear()
+    this.recentDetailGeneration += 1
     this.fastDetailPolicy.clear()
-    let release!: () => void
-    const gate = { promise: new Promise<void>(resolve => { release = resolve }), release: () => release(), cachedKeys: new Set<string>() }
-    this.verificationGate = gate
+    const cachedKeys = new Set<string>()
+    this.verifiedCacheKeys = cachedKeys
     for (const task of this.searchPageRequests.values()) task.scope.cancel()
-    for (const scope of this.activePageScopes) scope.cancel()
     this.searchPageRequests.clear()
     // Keep unrelated successful pages. Only challenged routes are invalidated.
     for (const failedURL of this.verificationRequests.keys()) {
       for (const key of this.searchPageCache.keys()) if (isMatchingWebViewURL(key, failedURL)) this.searchPageCache.delete(key)
     }
     return () => {
-      if (this.verificationGate !== gate) return
+      if (this.verifiedCacheKeys !== cachedKeys) return
       // A later interactive check must not let earlier verified pages expire
       // before the post-verification refresh can consume them.
-      for (const key of gate.cachedKeys) {
+      for (const key of cachedKeys) {
         const cached = this.searchPageCache.get(key)
         if (cached) cached.expiresAt = Date.now() + SEARCH_PAGE_CACHE_TTL_MS
       }
-      this.verificationGate = null
-      gate.release()
+      this.verifiedCacheKeys = null
+      finishAccess()
     }
   }
 
@@ -263,7 +268,7 @@ class MissAVClient {
       if (!isMatchingWebViewURL(key, probe.url)) continue
       if (this.searchPageCache.size >= MAX_CACHED_SEARCH_PAGES && !this.searchPageCache.has(key)) this.searchPageCache.delete(this.searchPageCache.keys().next().value!)
       this.searchPageCache.set(key, { expiresAt: Date.now() + SEARCH_PAGE_CACHE_TTL_MS, value: copySearchPage(value) })
-      this.verificationGate?.cachedKeys.add(key)
+      this.verifiedCacheKeys?.add(key)
     }
     for (const key of this.verificationRequests.keys()) if (isMatchingWebViewURL(key, probe.url)) this.verificationRequests.delete(key)
     return true
@@ -281,10 +286,11 @@ class MissAVClient {
   private clearRecentVideoDetails(): void {
     this.recentVideoDetails.clear()
     this.recentDetailGeneration += 1
-    this.detailCacheRevision += 1
+    this.access.invalidate()
   }
 
   hasRecentVideoDetail(item: MissAVVideoItem | string): boolean {
+    this.detailContext()
     const watchUrl = typeof item === "string" ? this.watchUrl(item) : SiteHTML.normalizeMissAVUrl(item.detailPath)
     if (new URL(watchUrl).origin !== new URL(getMissAVBaseURL()).origin) return false
     const recent = this.recentVideoDetails.get(watchUrl)
@@ -321,8 +327,7 @@ class MissAVClient {
     if (!videoCode) throw new Error("缺少 MISSAV 视频标识符。")
     const watchUrl = typeof item === "string" ? this.watchUrl(videoCode) : SiteHTML.normalizeMissAVUrl(item.detailPath)
     scope.assertActive()
-    const origin = new URL(getMissAVBaseURL()).origin
-    if (origin !== this.recentDetailOrigin) { this.clearRecentVideoDetails(); this.recentDetailOrigin = origin }
+    this.detailContext()
     if (preferRecent) {
       // Reuse only an immediately preceding successful detail request for
       // playback. Detail-page refreshes always request the live document.
@@ -429,7 +434,7 @@ class MissAVClient {
     if (new URL(url).origin !== new URL(getMissAVBaseURL()).origin) scope.cancel()
     scope.assertActive()
     const controller = new WebViewController()
-    this.activePageScopes.add(scope)
+    const untrack = this.access.track(scope)
     let disposed = false
     const dispose = () => { if (!disposed) { disposed = true; controller.dispose() } }
     const removeCancellation = scope.onCancel(dispose)
@@ -507,7 +512,7 @@ class MissAVClient {
         clearance: cookieResult?.clearance, expiresInSeconds: cookieResult?.expiresInSeconds,
         attempted: cookieResult?.attempted, accepted: cookieResult?.accepted, confirmed: cookieResult?.confirmed,
         elapsedMs: Date.now() - started, cookieMs, loadMs, captureMs, loaded, finished, challengeObserved })
-      const cleanup = () => { removeCancellation(); this.activePageScopes.delete(scope); dispose() }
+      const cleanup = () => { removeCancellation(); untrack(); dispose() }
       if (backgroundCapture) void backgroundCapture.then(cleanup)
       else cleanup()
     }

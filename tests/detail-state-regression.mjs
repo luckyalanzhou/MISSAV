@@ -39,6 +39,8 @@ new Function("require", "module", "exports", compiled)(specifier => {
   if (specifier === "../subtitle-search-code") return subtitleSearchCode
   if (specifier === "../playback-polling") return { startPlaybackPolling: () => () => {} }
   if (specifier === "./detail-navigation") return {}
+  if (specifier === "./subtitle-search") return { SubtitleSearchPage: function SubtitleSearchPage() {} }
+  if (specifier === "../listing-request") return {}
   if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo: (_, options) => {
     detailReads++; detailScope = options.scope
     return options.scope.waitFor(new Promise(resolve => { finishDetail = resolve }))

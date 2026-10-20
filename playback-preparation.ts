@@ -5,6 +5,36 @@ import { withMissAVDeadline } from "./request-deadline"
 
 export type PreparedPlaybackData = { progress: MissAVPlaybackProgress | null; subtitles: SubtitleTrack | null }
 
+// Navigation owns a selection, rather than coordinating two preparation
+// lifetimes itself. The selected preparation survives a cancelled next tap.
+export class MissAVPlaybackSelection {
+  private pending: MissAVPlaybackPreparation | null = null
+  private selected: MissAVPlaybackPreparation | null = null
+  begin(video: MissAVVideoItem): MissAVPlaybackPreparation {
+    this.pending?.dispose()
+    this.pending = new MissAVPlaybackPreparation(video)
+    return this.pending
+  }
+  accept(preparation: MissAVPlaybackPreparation, detail: MissAVVideoDetail): void {
+    if (this.pending !== preparation) return
+    preparation.prepareSource(detail)
+    this.selected?.dispose()
+    this.selected = preparation
+    this.pending = null
+  }
+  abandon(preparation: MissAVPlaybackPreparation): void {
+    if (this.pending !== preparation) return
+    this.pending = null
+    preparation.dispose()
+  }
+  dispose(): void {
+    this.pending?.dispose()
+    this.selected?.dispose()
+    this.pending = null
+    this.selected = null
+  }
+}
+
 // One selected work owns one default-quality resource. No list-wide media loads.
 export class MissAVPlaybackPreparation {
   readonly data: PreparedPlaybackData = { progress: null, subtitles: null }

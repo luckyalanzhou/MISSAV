@@ -1,8 +1,8 @@
 import { Button, HStack, ProgressView, Text, VStack, useEffect, useObservable, useRef, useState } from "scripting"
-import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem } from "../client"
+import { MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem } from "../client"
 import { ACCENT } from "../design"
 import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
-import { MissAVPlaybackPreparation } from "../playback-preparation"
+import { MissAVPlaybackSelection, type MissAVPlaybackPreparation } from "../playback-preparation"
 import { startPlaybackPolling } from "../playback-polling"
 import { detailPrefetch } from "../detail-prefetch"
 
@@ -18,12 +18,12 @@ export function useDetailNavigation() {
   const requestStartedAt = useRef<number | null>(null)
   const request = useRef<{ path: string; scope: MissAVRequestScope; preparation: MissAVPlaybackPreparation; trace: MissAVDetailTrace } | null>(null)
   const latestTrace = useRef<MissAVDetailTrace | null>(null)
-  const selectedOwner = useRef<MissAVPlaybackPreparation | null>(null)
+  const selection = useRef(new MissAVPlaybackSelection())
   function cancel() {
     ++generation.current
     request.current?.trace.mark("cancelled")
     request.current?.scope.cancel()
-    request.current?.preparation.dispose()
+    if (request.current) selection.current.abandon(request.current.preparation)
     request.current = null
     requestStartedAt.current = null
     setPending(null)
@@ -31,11 +31,10 @@ export function useDetailNavigation() {
   }
   async function open(video: MissAVVideoItem) {
     if (request.current?.path === video.detailPath) return
-    detailPrefetch.cancelAll()
     cancel()
     const current = generation.current
     const scope = new MissAVRequestScope()
-    const preparation = new MissAVPlaybackPreparation(video)
+    const preparation = selection.current.begin(video)
     const startedAt = Date.now()
     requestStartedAt.current = startedAt
     setClock(startedAt)
@@ -46,13 +45,11 @@ export function useDetailNavigation() {
     setProgress(null)
     trace.mark("entered")
     try {
-      const detail = await missavClient.getVideo(video, { scope, preferRecent: true, trace })
+      const detail = await detailPrefetch.load(video, { scope, trace })
       if (current !== generation.current || scope.cancelled) return
       if (!detail.sources.length) throw new Error("此作品暂未返回可用播放地址，请重试。")
       trace.mark("ui-update", { sourceCount: detail.sources.length })
-      preparation.prepareSource(detail)
-      selectedOwner.current?.dispose()
-      selectedOwner.current = preparation
+      selection.current.accept(preparation, detail)
       setSelected({ video, detail, preparation, trace, navigationID: current })
       request.current = null
       setPending(null)
@@ -60,7 +57,7 @@ export function useDetailNavigation() {
       trace.mark("completed", { sourceCount: detail.sources.length })
     } catch (reason) {
       if (!isMissAVRequestCancelled(reason)) trace.mark("failed")
-      preparation.dispose()
+      selection.current.abandon(preparation)
       if (current === generation.current && !isMissAVRequestCancelled(reason)) {
         await Dialog.alert({ title: "作品加载失败", message: reason instanceof Error ? reason.message : String(reason) })
       }
@@ -80,7 +77,7 @@ export function useDetailNavigation() {
     if (!pending) return
     return startPlaybackPolling(() => setClock(Date.now()), 1000)
   }, [pending?.detailPath])
-  useEffect(() => () => { cancel(); selectedOwner.current?.dispose() }, [])
+  useEffect(() => () => { cancel(); selection.current.dispose() }, [])
   const elapsedMs = pending && requestStartedAt.current !== null ? Math.max(0, clock - requestStartedAt.current) : progress?.elapsedMs ?? 0
   return { selected, pending, progress, elapsedMs, isPresented, open, cancel, copyDiagnostics }
 }

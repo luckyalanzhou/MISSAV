@@ -26,7 +26,13 @@ new Function("require", "module", "exports", babelTransform(readFileSync(path, "
     copyMissAVDetailReport: async () => {},
   }
   if (specifier === "../playback-polling") return { startPlaybackPolling: () => () => {} }
-  if (specifier === "../playback-preparation") return { MissAVPlaybackPreparation: class { prepareSource() {} dispose() {} } }
+  if (specifier === "../playback-preparation") return { MissAVPlaybackSelection: class {
+    begin() { return { prepareSource() {}, dispose() {} } }
+    accept() {} abandon() {} dispose() {}
+  } }
+  if (specifier === "../detail-prefetch") return { detailPrefetch: { load(video, options) {
+    return options.scope.waitFor(new Promise((resolve, reject) => pending.push({ video, resolve, reject })))
+  } } }
   if (specifier === "../client") return { ...requestTypes, missavClient: { getVideo(video, options) {
     return options.scope.waitFor(new Promise((resolve, reject) => pending.push({ video, resolve, reject })))
   } } }

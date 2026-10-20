@@ -1,10 +1,11 @@
 import { Button, HStack, Image, LazyVGrid, Menu, ProgressView, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
-import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../client"
+import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../client"
 import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard } from "./components/media_cards"
 import { StateView } from "./components/state_view"
+import { MissAVListingRequest } from "../listing-request"
 
 const collections = MISSAV_COLLECTION_OPTIONS.map(item => ({ ...item }))
 const filters = MISSAV_FILTER_OPTIONS.map(item => ({ ...item }))
@@ -29,9 +30,8 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
   const selected = detailNavigation.selected
   const detailPresented = detailNavigation.isPresented
   const firstLoad = useRef(false)
-  const generation = useRef(0)
   const loadingMorePage = useRef<number | null>(null)
-  const requestScope = useRef<MissAVRequestScope | null>(null)
+  const listingRequest = useRef(new MissAVListingRequest())
   const query = useRef<{ page: number; collection: MissAVCollection; filter: MissAVFilter; sort: MissAVSort; categoryPath: string }>({ page: 1, collection: initialCollection, filter: "", sort: defaultCollectionSort(initialCollection), categoryPath: "" })
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
 
@@ -48,10 +48,6 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
     const sameCollection = nextQuery.collection === previousQuery.collection && nextQuery.filter === previousQuery.filter && nextQuery.sort === previousQuery.sort && nextQuery.categoryPath === previousQuery.categoryPath
     const appendPage = !forceRefresh && sameCollection && nextQuery.page > previousQuery.page && (items.length > 0 || categories.length > 0)
     if (appendPage && loadingMorePage.current === nextQuery.page) return
-    const gen = ++generation.current
-    requestScope.current?.cancel()
-    const scope = new MissAVRequestScope()
-    requestScope.current = scope
     if (appendPage) loadingMorePage.current = nextQuery.page
     query.current = nextQuery
     // Reflect the requested category immediately so a slow request doesn't
@@ -60,27 +56,26 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
     setCategoryPath(nextQuery.categoryPath)
     if (queryChanged && !appendPage) { setItems([]); setCategories([]); setHasNext(true); setFailedPage(null) }
     setLoading(true); setError(null)
-    try {
-      const result = await missavClient.searchVideoPage(nextQuery, { forceRefresh, scope, allowStale: true })
-      if (gen !== generation.current) return
-      if (appendPage) {
-        setItems(current => mergeUnique(current, result.items, item => item.videoCode))
-        setCategories(current => mergeUnique(current, result.categories || [], item => item.path))
-      } else {
-        setItems(result.items); setCategories(result.categories || [])
-      }
-      setHasNext(result.hasNext); setPage(result.page); setFailedPage(null)
-      setError(result.refreshError || null)
-    } catch (reason) {
-      if (gen === generation.current && !isMissAVRequestCancelled(reason)) {
+    await listingRequest.current.load(nextQuery, { forceRefresh, allowStale: true }, {
+      loaded: result => {
+        if (appendPage) {
+          setItems(current => mergeUnique(current, result.items, item => item.videoCode))
+          setCategories(current => mergeUnique(current, result.categories || [], item => item.path))
+        } else {
+          setItems(result.items); setCategories(result.categories || [])
+        }
+        setHasNext(result.hasNext); setPage(result.page); setFailedPage(null)
+        setError(result.refreshError || null)
+      },
+      failed: reason => {
         if (appendPage) { query.current = previousQuery; setPage(previousQuery.page); setFailedPage(nextQuery.page) }
         setError(reason instanceof Error ? reason.message : String(reason))
-      }
-    }
-    finally {
-      if (appendPage && loadingMorePage.current === nextQuery.page) loadingMorePage.current = null
-      if (gen === generation.current) { setLoading(false); requestScope.current = null }
-    }
+      },
+      settled: () => {
+        loadingMorePage.current = null
+        setLoading(false)
+      },
+    })
   }
   function loadNextPageIfNeeded() {
     if (!hasNext || loading || error || failedPage !== null || (!items.length && !categories.length)) return
@@ -92,7 +87,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
     void load({ page: 1, collection: value, categoryPath: "", filter: "", sort: defaultCollectionSort(value) })
   }
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
-  useEffect(() => () => { ++generation.current; requestScope.current?.cancel() }, [])
+  useEffect(() => () => listingRequest.current.cancel(), [])
   useEffect(() => { if (props.accessRevision && firstLoad.current) void load() }, [props.accessRevision])
   useEffect(() => { if (items.length || categories.length) scrollProxy.current?.scrollTo("discover-results-top", "top") }, [collection, filter, sort, categoryPath])
   const subcollections = collectionOptionsForGroup(group)

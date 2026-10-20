@@ -1,20 +1,18 @@
-import { Button, Divider, HStack, Image, LazyVStack, ProgressView, QuickLook, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
+import { Button, Divider, HStack, Image, ProgressView, ScrollView, ScrollViewReader, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../client"
 import { ACCENT, Badge, MEDIA_HERO_RADIUS, PAGE_BOTTOM_PADDING, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, PageBackground, SECONDARY_ACTION_HEIGHT, SECTION_SPACING, SectionHeading } from "../design"
 import { chooseAndPresentMissAVPlayer } from "../player"
 import { rememberMissAVDetail } from "../storage"
-import { hasMissAVSubtitle, isMissAVSubtitleEnabled, saveMissAVSubtitle, setMissAVSubtitleEnabled } from "../subtitles"
-import { downloadSubtitleCatFile, searchSubtitleCatFiles, type SubtitleCatSearchResult, type SubtitleCatSubtitleFile } from "../subtitlecat"
+import { hasMissAVSubtitle, isMissAVSubtitleEnabled, setMissAVSubtitleEnabled } from "../subtitles"
 import { MediaArtwork } from "./components/media_cards"
 import { StateView } from "./components/state_view"
 import { VideoRowList } from "./components/video_row"
-import { SubtitleFileRow } from "./components/subtitle_file_row"
-import { withMissAVDeadline } from "../request-deadline"
+import { SubtitleSearchPage } from "./subtitle-search"
 import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../detail-loading"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import type { MissAVPlaybackPreparation } from "../playback-preparation"
-import { extractSubtitleSearchCode } from "../subtitle-search-code"
 import { startPlaybackPolling } from "../playback-polling"
+import { MissAVListingRequest } from "../listing-request"
 
 export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: MissAVVideoDetail; initialTrace?: MissAVDetailTrace; preparation?: MissAVPlaybackPreparation; onHistoryChanged: () => void }) {
   const [detail, setDetail] = useState<MissAVVideoDetail | null>(props.initialDetail ?? null)
@@ -197,185 +195,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   </ScrollView></ZStack>
 }
 
-function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (videoCode: string) => void; onClose: () => void }) {
-  const [query, setQuery] = useState(() => extractSubtitleSearchCode(props.videoCode))
-  const [title, setTitle] = useState("")
-  const [files, setFiles] = useState<SubtitleCatSubtitleFile[]>([])
-  const [sourceStatus, setSourceStatus] = useState<string[]>([])
-  const [hasSuccessfulSource, setHasSuccessfulSource] = useState(false)
-  const [hasIncompleteResults, setHasIncompleteResults] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [downloadingId, setDownloadingId] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [hasSearched, setHasSearched] = useState(false)
-  const [searchProgress, setSearchProgress] = useState("")
-  const searchSession = useRef<{ controller: WebViewController | null; cancelled: boolean } | null>(null)
-  const subtitleOperation = useRef(false)
-  const active = useRef(true)
-
-  function closeSearch() { active.current = false; stopSearch(); setLoading(false); props.onClose() }
-
-  function appear() {
-    active.current = true
-    if (!hasSearched && !loading) void search(props.videoCode)
-  }
-
-  function disappear() {
-    active.current = false
-    stopSearch()
-    setLoading(false)
-  }
-
-  function stopSearch() {
-    const session = searchSession.current
-    searchSession.current = null
-    if (session) {
-      session.cancelled = true
-      try { session.controller?.dismiss() } catch { /* The native window may already be closing. */ }
-    }
-  }
-
-  async function search(value = query, forceRefresh = false) {
-    const code = extractSubtitleSearchCode(value)
-    if (!code || loading || downloadingId || subtitleOperation.current || !active.current) return
-    stopSearch()
-    const session = { controller: null as WebViewController | null, cancelled: false }
-    searchSession.current = session
-    setQuery(code)
-    setLoading(true)
-    setError(null)
-    setFiles([])
-    setSourceStatus([])
-    setHasSuccessfulSource(false)
-    setHasIncompleteResults(false)
-    setTitle("")
-    setHasSearched(false)
-    setSearchProgress("正在搜索匹配条目…")
-    const updateResults = (result: SubtitleCatSearchResult) => {
-      if (searchSession.current !== session) return
-      setTitle(code)
-      setFiles(result.files)
-      setSourceStatus([`Subtitle Cat：${result.files.length} 个文件，${result.searchResultCount} 个匹配条目${result.failedDetailCount ? `，${result.failedDetailCount} 个详情页未能读取` : ""}`])
-      setHasSuccessfulSource(result.processedDetailCount > result.failedDetailCount || result.searchResultCount === 0)
-      setHasIncompleteResults(result.failedDetailCount > 0 || result.processedDetailCount < result.searchResultCount)
-      const cacheHits = (result.metrics?.searchCacheHits || 0) + (result.metrics?.detailCacheHits || 0)
-      setSearchProgress(`已读取 ${result.processedDetailCount}/${result.searchResultCount} 个匹配条目${cacheHits ? ` · 复用 ${cacheHits} 项缓存` : ""}`)
-      setHasSearched(true)
-    }
-    try {
-      const result = await searchSubtitleCatFiles(code, {
-        isCancelled: () => session.cancelled || searchSession.current !== session,
-        onControllerChange: controller => {
-          session.controller = controller
-          if (controller && session.cancelled) controller.dismiss()
-        },
-        onProgress: updateResults,
-        forceRefresh,
-      })
-      if (searchSession.current !== session) return
-      updateResults(result)
-    } catch (reason) {
-      if (searchSession.current === session) {
-        setTitle(code)
-        setHasSearched(true)
-        setHasIncompleteResults(true)
-        setError(reason instanceof Error ? reason.message : String(reason))
-      }
-    } finally {
-      if (searchSession.current === session) {
-        searchSession.current = null
-        setLoading(false)
-      }
-    }
-  }
-
-  async function download(file: SubtitleCatSubtitleFile) {
-    if (!file.isFree || file.isDemo || subtitleOperation.current || !active.current) return
-    subtitleOperation.current = true
-    const fileKey = `${file.source}:${file.id}`
-    pauseSearchForSubtitle()
-    setDownloadingId(fileKey)
-    setError(null)
-    try {
-      const content = await downloadSubtitleCatFile(file)
-      if (!active.current) return
-      // Search text is editable and may differ from this detail page's work.
-      // Always save under the displayed video's identity so its playback path
-      // and the subtitle folder use the same association key.
-      const associatedCode = props.videoCode
-      await saveMissAVSubtitle(associatedCode, content)
-      if (!active.current) return
-      props.onDownloaded(associatedCode)
-      closeSearch()
-    } catch (reason) {
-      if (active.current) setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { subtitleOperation.current = false; setDownloadingId(null) }
-  }
-
-  async function preview(file: SubtitleCatSubtitleFile) {
-    if (!file.isFree || file.isDemo || subtitleOperation.current || !active.current) return
-    subtitleOperation.current = true
-    pauseSearchForSubtitle()
-    setDownloadingId(`${file.source}:${file.id}`)
-    setError(null)
-    try {
-      const content = await downloadSubtitleCatFile(file)
-      if (active.current) await QuickLook.previewText(content)
-    } catch (reason) {
-      if (active.current) setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { subtitleOperation.current = false; setDownloadingId(null) }
-  }
-
-  function pauseSearchForSubtitle() {
-    if (!searchSession.current) return
-    stopSearch()
-    setLoading(false)
-    setHasIncompleteResults(true)
-    setSearchProgress("已停止剩余搜索，可预览或下载已载入的字幕")
-  }
-
-  useEffect(() => {
-    return () => {
-      active.current = false
-      stopSearch()
-    }
-  }, [])
-
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="systemBackground" navigationTitle="按番号搜索字幕" navigationBarTitleDisplayMode="inline">
-    <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
-      <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onAppear={appear} onDisappear={disappear}>
-        <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-          <Text font="caption" foregroundStyle="secondaryLabel">仅搜索简体中文和繁体中文字幕</Text>
-          <HStack spacing={8} padding={{ horizontal: 12 }} frame={{ maxWidth: "infinity", minHeight: 50 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
-            <TextField title="番号" prompt="例如 SSIS-655" value={query} onChanged={setQuery} onSubmit={() => { void search() }} autocorrectionDisabled frame={{ maxWidth: "infinity" }} />
-            <Button action={() => { void search() }} disabled={loading || Boolean(downloadingId) || !query.trim()} buttonStyle="borderedProminent" tint={ACCENT} accessibilityLabel="搜索字幕">
-              {loading ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="magnifyingglass" />}
-            </Button>
-          </HStack>
-          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。点击语言名称可预览文本，预览不会关联字幕。下载的完整 SRT 保存在文稿目录的 MISSAV Subtitles 文件夹中，保存数量不限，并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
-          {error ? <VStack spacing={8} alignment="leading" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
-            <Text font="subheadline" foregroundStyle="systemRed" multilineTextAlignment="leading">{error}</Text>
-            <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} action={() => { void search() }} />
-          </VStack> : undefined}
-          {loading && !hasSearched ? <HStack spacing={10} frame={{ maxWidth: "infinity", minHeight: 100 }}><ProgressView tint={ACCENT} /><Text font="subheadline" foregroundStyle="secondaryLabel">正在按番号搜索…</Text></HStack> : undefined}
-          {hasSearched ? <HStack spacing={8}>{loading ? <ProgressView tint={ACCENT} /> : undefined}<Text font="caption" foregroundStyle="secondaryLabel">{searchProgress}</Text></HStack> : undefined}
-          {hasSearched ? <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}>
-            <Text font="headline" fontWeight="semibold">{title || `番号 ${query}`}</Text>
-            <Text font="caption" foregroundStyle="secondaryLabel">{hasSuccessfulSource ? `${loading ? "已" : "共"}找到 ${files.length} 个可下载中文字幕文件；仅包含简体中文和繁体中文。${hasIncompleteResults && !loading ? " 部分详情页未能读取，结果可能不完整。" : ""}` : loading ? "正在读取字幕详情，有结果后立即显示。" : "Subtitle Cat 搜索没有成功完成，当前无法判断该番号是否有中文字幕。"}</Text>
-            {sourceStatus.map((status, index) => <Text key={`subtitle-source-${index}`} font="caption" foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"} multilineTextAlignment="leading">{status}</Text>)}
-            {files.length ? <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>{files.map((file, index) => <VStack key={`${file.source}-${file.id}`} spacing={0} frame={{ maxWidth: "infinity" }}>
-              {index ? <Divider /> : undefined}
-              <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} onPreview={file => { void preview(file) }} />
-            </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{loading ? "搜索仍在进行，请稍候…" : !hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有中文字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载中文字幕，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的简体或繁体中文字幕。可以修改番号后重新搜索。"}</Text>}
-            {hasIncompleteResults && hasSuccessfulSource ? <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading || Boolean(downloadingId)} action={() => { void search() }} /> : undefined}
-            <Button title="刷新搜索" systemImage="arrow.clockwise.circle" disabled={loading || Boolean(downloadingId)} action={() => { void search(query, true) }} />
-          </VStack> : undefined}
-          {!loading && !hasSearched && !error ? <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">将自动搜索当前作品番号；也可以编辑番号后搜索其他字幕。</Text> : undefined}
-        </VStack>
-      </ScrollView>
-    </VStack>
-  </ZStack>
-}
 
 function normalizeSubtitleAssociationCode(value: string): string {
   return value.trim().toUpperCase().replace(/\s+/g, "-").replace(/[^A-Z0-9_-]/g, "")
@@ -395,21 +214,18 @@ function TagSearchPage(props: { tag: string; onHistoryChanged: () => void }) {
   const detailNavigation = useDetailNavigation()
   const selected = detailNavigation.selected
   const detailPresented = detailNavigation.isPresented
-  const generation = useRef(0)
-  const requestScope = useRef<MissAVRequestScope | null>(null)
+  const listingRequest = useRef(new MissAVListingRequest())
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
   async function load(nextPage = 1) {
-    const current = ++generation.current
-    requestScope.current?.cancel()
-    const scope = new MissAVRequestScope()
-    requestScope.current = scope
     setLoading(true); setError(null)
-    try { const result = await missavClient.searchVideoPage({ query: props.tag, page: nextPage, sort: "released_at", filter: "" }, { scope }); if (current !== generation.current) return; setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1) }
-    catch (reason) { if (current === generation.current && !isMissAVRequestCancelled(reason)) setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { if (current === generation.current) { setLoading(false); requestScope.current = null } }
+    await listingRequest.current.load({ query: props.tag, page: nextPage, sort: "released_at", filter: "" }, {}, {
+      loaded: result => { setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1) },
+      failed: reason => setError(reason instanceof Error ? reason.message : String(reason)),
+      settled: () => setLoading(false),
+    })
   }
   useEffect(() => { void load(1) }, [props.tag])
-  useEffect(() => () => { ++generation.current; requestScope.current?.cancel() }, [props.tag])
+  useEffect(() => () => listingRequest.current.cancel(), [props.tag])
   useEffect(() => { if (resultsRevision) scrollProxy.current?.scrollTo("tag-results-top", "top") }, [resultsRevision])
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}><PageBackground /><ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle={props.tag} navigationBarTitleDisplayMode="inline" refreshable={() => load(page)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}><VStack key="tag-results-top" spacing={18} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}><VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><HStack spacing={7}><Image systemName="tag.fill" foregroundStyle={ACCENT} /><Text font="title2" fontWeight="bold">{props.tag}</Text></HStack><Text font="footnote" foregroundStyle="secondaryLabel">{`相关作品 · 第 ${page} 页 · ${items.length} 个结果`}</Text></VStack>{loading && !items.length ? <StateView title="正在搜索标签" loading presentation="section" /> : error && !items.length ? <StateView title="标签搜索失败" description={error} kind="error" action={() => { void load(page) }} /> : !items.length ? <StateView title="暂无相关作品" description="未找到带有此标签的作品。" systemImage="tag.slash" /> : <VideoRowList items={items} status={() => `标签 · ${props.tag}`} statusSystemImage="tag" onOpen={open} />}{error && items.length ? <StateView title="刷新失败" description="正在显示上次成功的结果。" kind="error" action={() => { void load(page) }} presentation="row" /> : undefined}{items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load(page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load(page + 1) }} /></HStack> : undefined}</VStack></ScrollView>}}</ScrollViewReader></ZStack>

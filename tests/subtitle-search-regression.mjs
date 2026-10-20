@@ -4,13 +4,12 @@ import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { fileURLToPath } from "node:url"
 import { compileProductionModule as compile } from "./production-module.mjs"
-const deadline = await import(compile("../request-deadline.ts"))
-const detailLoading = await import(compile("../detail-loading.ts"))
 const subtitleSearchCode = await import(compile("../subtitle-search-code.ts"))
+const subtitleSearchSession = await import(compile("../subtitle-search-session.ts"))
 
 const require = createRequire(import.meta.url)
 const { babelTransform } = require(process.argv[2] || "playwright/lib/transform/babelBundle.js")
-const path = fileURLToPath(new URL("../page/detail.tsx", import.meta.url))
+const path = fileURLToPath(new URL("../page/subtitle-search.tsx", import.meta.url))
 const source = readFileSync(path, "utf8")
 const compiled = babelTransform(source, path, false, [], [], "scripting").code
 const jsx = (type, props) => ({ type, props: props || {} })
@@ -28,7 +27,9 @@ function harness(videoCode = "FNS-258") {
   const associated = []
   const previews = []
   const heldDownloads = []
+  const heldPreviews = []
   let holdDownloads = false
+  let holdPreviews = false
   let hook = 0
   let mounted = false
   let dismissed = 0
@@ -39,7 +40,10 @@ function harness(videoCode = "FNS-258") {
   }
   const scripting = {
     ...Object.fromEntries(["Button", "Divider", "HStack", "Image", "LazyVStack", "NavigationStack", "ProgressView", "ScrollView", "Text", "TextField", "VStack", "ZStack"].map(name => [name, name])),
-    QuickLook: { previewText: async content => previews.push(content) },
+    QuickLook: { previewText: async content => {
+      previews.push(content)
+      if (holdPreviews) await new Promise(resolve => heldPreviews.push(resolve))
+    } },
     useState: initial => {
       const index = hook++
       if (!(index in states)) states[index] = typeof initial === "function" ? initial() : initial
@@ -55,10 +59,8 @@ function harness(videoCode = "FNS-258") {
   new Function("require", "module", "exports", "WebViewController", `${compiled}\nmodule.exports.SearchPage = SubtitleSearchPage;`)(specifier => {
     if (specifier === "scripting") return scripting
     if (specifier === "scripting/jsx-runtime") return { jsx, jsxs: jsx }
-    if (specifier === "../request-deadline") return deadline
-    if (specifier === "../detail-loading") return detailLoading
     if (specifier === "../subtitle-search-code") return subtitleSearchCode
-    if (specifier === "../playback-polling") return { startPlaybackPolling: () => () => {} }
+    if (specifier === "../subtitle-search-session") return subtitleSearchSession
     if (specifier === "../subtitlecat") return {
       searchSubtitleCatFiles: (code, options) => new Promise((resolve, reject) => {
         const request = { code, options, controller: null,
@@ -71,7 +73,7 @@ function harness(videoCode = "FNS-258") {
     }
     if (specifier === "../subtitles") return { saveMissAVSubtitle: async (...args) => saved.push(args) }
     if (specifier === "./components/subtitle_file_row") return { SubtitleFileRow: "SubtitleFileRow" }
-    if (["../client", "../design", "../player", "../storage", "./detail-navigation", "./components/media_cards", "./components/state_view", "./components/video_row"].includes(specifier)) return {}
+    if (specifier === "../design") return {}
     throw new Error(`Unexpected subtitle-search dependency: ${specifier}`)
   }, module, module.exports, Controller)
   function render() {
@@ -90,6 +92,10 @@ function harness(videoCode = "FNS-258") {
   function unmount() { cleanups.forEach(cleanup => cleanup?.()); cleanups = [] }
   return { render, pending, controllers, saved, associated, previews,
     holdDownloads() { holdDownloads = true },
+    holdPreviews() { holdPreviews = true },
+    finishPreview() { heldPreviews.shift()() },
+    disappear() { render().find(node => node.type === "ScrollView").props.onDisappear() },
+    appear() { render().find(node => node.type === "ScrollView").props.onAppear() },
     finishDownload() { heldDownloads.shift()("fixture SRT") },
     mount() {
       const nodes = render()
@@ -149,6 +155,11 @@ assert.match(texts(nodes), /网络暂时不可用/)
 assert.match(texts(nodes), /不能据此认定没有中文字幕/)
 assert.ok(nodes.some(node => node.type === "Button" && node.props.title === "重试搜索"))
 assert.equal(failed.controllers.length, 0)
+nodes.find(node => node.type === "Button" && node.props.title === "重试搜索").props.action()
+assert.equal(failed.pending.length, 2, "Retry starts a new search after failure")
+resolveSearch(failed)
+await settle()
+assert.match(texts(failed.render()), /共找到 1 个可下载中文字幕文件/)
 
 const empty = harness()
 empty.mount()
@@ -205,6 +216,31 @@ await settle()
 assert.equal(previewPage.saved.length, 1, "Guard repeated taps before the next native render")
 assert.deepEqual(previewPage.associated, ["FNS-258"])
 console.log("PASS: native text preview without saving, query-independent import, double-tap guard")
+
+const partialPreview = harness()
+partialPreview.mount()
+const interrupted = partialPreview.pending[0]
+const previewController = partialPreview.startWebView()
+interrupted.options.onProgress({ files: [file], searchResultCount: 3, processedDetailCount: 1, failedDetailCount: 0 })
+partialPreview.holdPreviews()
+partialPreview.render().find(node => node.type === "SubtitleFileRow").props.onPreview(file)
+await settle()
+assert.equal(interrupted.options.isCancelled(), true, "Preview pauses the unfinished search")
+assert.equal(previewController.dismissed, true)
+partialPreview.disappear()
+partialPreview.appear()
+partialPreview.finishPreview()
+await settle()
+interrupted.options.onProgress({ files: [], searchResultCount: 3, processedDetailCount: 3, failedDetailCount: 0 })
+interrupted.reject(new Error("late search failure"))
+await settle()
+assert.match(texts(partialPreview.render()), /已停止剩余搜索/)
+assert.doesNotMatch(texts(partialPreview.render()), /late search failure/)
+assert.equal(partialPreview.pending.length, 1, "Returning from preview retains partial results without restarting search")
+partialPreview.render().find(node => node.type === "SubtitleFileRow").props.onDownload(file)
+await settle()
+assert.deepEqual(partialPreview.saved, [["FNS-258", "fixture SRT"]], "Returning from native preview permits the next download")
+console.log("PASS: partial preview pauses search, ignores late failure and permits download after native return")
 
 for (const action of ["onDownload", "onPreview"]) {
   const late = harness()

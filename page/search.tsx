@@ -1,10 +1,11 @@
 import { Button, Divider, HStack, Image, LazyHStack, LazyVGrid, LazyVStack, Picker, ProgressView, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
-import { defaultMissAVCollectionSort, missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVCollection, type MissAVVideoItem } from "../client"
+import { defaultMissAVCollectionSort, missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "../client"
 import { ACCESSORY_ALIGNMENT_WIDTH, ACCENT, MEDIA_ROW_HEIGHT, MEDIA_ROW_RADIUS, MEDIA_ROW_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaArtwork, MediaTile } from "./components/media_cards"
 import { StateView } from "./components/state_view"
+import { MissAVListingRequest } from "../listing-request"
 
 type ResultSource = { kind: "query"; query: string } | { kind: "collection"; collection: MissAVCollection; title: string }
 type SearchResultLayout = "list" | "cover"
@@ -40,9 +41,8 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
   const detailNavigation = useDetailNavigation()
   const selected = detailNavigation.selected
   const detailPresented = detailNavigation.isPresented
-  const generation = useRef(0)
   const loadedDiscovery = useRef(false)
-  const requestScope = useRef<MissAVRequestScope | null>(null)
+  const listingRequest = useRef(new MissAVListingRequest())
   const discoveryScope = useRef<MissAVRequestScope | null>(null)
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
 
@@ -61,23 +61,20 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
   }
 
   async function loadResults(nextSource: ResultSource, nextPage = 1, forceRefresh = false) {
-    const gen = ++generation.current
-    requestScope.current?.cancel()
-    const scope = new MissAVRequestScope()
-    requestScope.current = scope
     const sourceChanged = !source || source.kind !== nextSource.kind || (source.kind === "query" ? source.query !== (nextSource.kind === "query" ? nextSource.query : "") : source.collection !== (nextSource.kind === "collection" ? nextSource.collection : ""))
     setLoading(true); setError(null); setSource(nextSource)
     if (sourceChanged) { setItems([]); setHasNext(false); setPage(1) }
-    try {
-      const result = nextSource.kind === "query"
-        ? await missavClient.searchVideoPage({ query: nextSource.query, page: nextPage, sort: "released_at", filter: "" }, { forceRefresh, scope, allowStale: true })
-        : await missavClient.searchVideoPage({ collection: nextSource.collection, page: nextPage, sort: defaultMissAVCollectionSort(nextSource.collection), filter: "" }, { forceRefresh, scope, allowStale: true })
-      if (gen !== generation.current) return
-      setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1)
-      setError(result.refreshError || null)
-    } catch (reason) {
-      if (gen === generation.current && !isMissAVRequestCancelled(reason)) setError(reason instanceof Error ? reason.message : String(reason))
-    } finally { if (gen === generation.current) { setLoading(false); requestScope.current = null } }
+    const params = nextSource.kind === "query"
+      ? { query: nextSource.query, page: nextPage, sort: "released_at" as const, filter: "" as const }
+      : { collection: nextSource.collection, page: nextPage, sort: defaultMissAVCollectionSort(nextSource.collection), filter: "" as const }
+    await listingRequest.current.load(params, { forceRefresh, allowStale: true }, {
+      loaded: result => {
+        setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1)
+        setError(result.refreshError || null)
+      },
+      failed: reason => setError(reason instanceof Error ? reason.message : String(reason)),
+      settled: () => setLoading(false),
+    })
   }
 
   function dismissKeyboard() {
@@ -88,7 +85,7 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
   function runSearch() {
     const query = keyword.trim()
     dismissKeyboard()
-    if (!query) { ++generation.current; requestScope.current?.cancel(); setLoading(false); setError("请输入番号、女优或作品标题。"); setSource({ kind: "query", query: "" }); setItems([]); setPage(1); setHasNext(false); return }
+    if (!query) { listingRequest.current.cancel(); setLoading(false); setError("请输入番号、女优或作品标题。"); setSource({ kind: "query", query: "" }); setItems([]); setPage(1); setHasNext(false); return }
     void loadResults({ kind: "query", query }, 1, true)
   }
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
@@ -96,8 +93,8 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
     const next: SearchResultLayout = value === "cover" ? "cover" : "list"
     setResultLayout(next)
   }
-  function showDiscovery() { ++generation.current; requestScope.current?.cancel(); setSource(null); setItems([]); setError(null); setLoading(false) }
-  useEffect(() => () => { ++generation.current; requestScope.current?.cancel(); discoveryScope.current?.cancel() }, [])
+  function showDiscovery() { listingRequest.current.cancel(); setSource(null); setItems([]); setError(null); setLoading(false) }
+  useEffect(() => () => { listingRequest.current.cancel(); discoveryScope.current?.cancel() }, [])
   useEffect(() => { if (resultsRevision) scrollProxy.current?.scrollTo("results-top", "top") }, [resultsRevision])
   useEffect(() => { Storage.set(SEARCH_RESULT_LAYOUT_KEY, resultLayout) }, [resultLayout])
 
