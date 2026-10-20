@@ -159,7 +159,7 @@ export async function searchSubtitleCatFiles(value: string, options: SubtitleCat
     throw new Error(`Subtitle Cat 搜索到 ${entries.length} 个匹配条目，但详情页暂时无法读取，请重试。`)
   }
   const result = snapshot()
-  console.log("Subtitle Cat search metrics", { videoCode, ...result.metrics, matchedDetails: entries.length, processedDetailCount, failedDetailCount })
+  console.log("Subtitle Cat search metrics", { ...result.metrics, matchedDetails: entries.length, processedDetailCount, failedDetailCount })
   return result
 }
 
