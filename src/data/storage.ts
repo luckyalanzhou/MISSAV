@@ -1,0 +1,37 @@
+import type { MissAVVideoDetail, MissAVVideoItem, MissAVVideoSource } from "../site/client"
+import {
+  clearBrowseHistory,
+  clearPlaybackHistory,
+  loadBrowseHistory,
+  loadAllPlaybackHistory,
+  loadPlaybackHistory,
+  loadPlaybackProgress,
+  recordBrowse,
+  recordPlayback,
+  savePlaybackProgress,
+  saveVideoDetail,
+  saveVideoDetailAndRecordBrowse,
+  type MissAVBrowseRecord,
+  type MissAVPlaybackRecord,
+  type MissAVPlaybackProgress,
+} from "./database"
+
+export type { MissAVBrowseRecord, MissAVPlaybackRecord, MissAVPlaybackProgress }
+export const loadMissAVHistory = loadPlaybackHistory
+export const loadAllMissAVHistory = loadAllPlaybackHistory
+export const loadMissAVPlaybackProgress = loadPlaybackProgress
+export const loadMissAVBrowseHistory = loadBrowseHistory
+export const recordMissAVPlayback = recordPlayback
+export const saveMissAVPlaybackProgress = savePlaybackProgress
+export const recordMissAVBrowse = recordBrowse
+export const saveMissAVVideoDetail = saveVideoDetail
+export const clearMissAVHistory = clearPlaybackHistory
+export const clearMissAVBrowseHistory = clearBrowseHistory
+
+export async function rememberMissAVDetail(video: MissAVVideoItem, detail: MissAVVideoDetail): Promise<void> {
+  await saveVideoDetailAndRecordBrowse(video, detail)
+}
+
+export async function rememberMissAVPlayback(video: MissAVVideoItem, source: MissAVVideoSource): Promise<void> {
+  await recordPlayback(video, source)
+}

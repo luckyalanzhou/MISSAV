@@ -1,7 +1,7 @@
 import { Navigation, Script } from "scripting"
-import { HomePage } from "./page"
-import { installMissAVLifecycle } from "./lifecycle"
-import { initializeMissAVRuntime } from "./runtime"
+import { HomePage } from "./src/ui/pages"
+import { installMissAVLifecycle } from "./src/app/lifecycle"
+import { initializeMissAVRuntime } from "./src/app/runtime"
 
 async function main() {
   let removeLifecycleListeners: (() => void) | undefined
