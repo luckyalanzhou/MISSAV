@@ -1,7 +1,7 @@
 import { missavClient, type MissAVVideoDetail, type MissAVVideoItem } from "../../site/client"
 import { resolveMissAVURL } from "../../site/domain"
 import { MissAVRequestScope, isMissAVRequestCancelled } from "../../core/request/request-scope"
-import type { MissAVDetailTrace } from "./detail-loading"
+import type { MissAVDetailTrace } from "../../site/detail-trace"
 import { subscribeMissAVLifecycle } from "../../app/lifecycle"
 
 type LoadOptions = { scope: MissAVRequestScope; trace?: MissAVDetailTrace }
