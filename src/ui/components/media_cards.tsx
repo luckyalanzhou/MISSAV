@@ -1,11 +1,12 @@
-import { Button, HStack, Image, LazyHStack, ScrollView, Text, VStack, ZStack, useEffect, useRef } from "scripting"
+import { Button, HStack, Image, LazyHStack, ProgressView, ScrollView, Text, VStack, ZStack, useEffect, useRef } from "scripting"
 import type { MissAVVideoItem } from "../../site/client"
 import { detailPrefetch } from "../../features/detail/detail-prefetch"
 import { ACCENT, MEDIA_HERO_RADIUS, MEDIA_RADIUS, MEDIA_TILE_HEIGHT, MEDIA_TILE_WIDTH, SECTION_CONTENT_SPACING, SectionHeading } from "../design"
 
-export function MediaArtwork(props: { video: MissAVVideoItem; width?: number; height: number; radius?: number; prefetch?: boolean }) {
+export function MediaArtwork(props: { video: MissAVVideoItem; width?: number; height?: number; radius?: number; prefetch?: boolean }) {
   const radius = props.radius ?? MEDIA_RADIUS
   const key = props.video.videoCode.toLowerCase()
+  const frame = props.width ? { width: props.width, ...(props.height !== undefined ? { height: props.height } : {}) } : { maxWidth: "infinity" as const, ...(props.height !== undefined ? { height: props.height } : {}) }
   const subscription = useRef<(() => void) | null>(null)
   const visible = useRef(false)
   const stopPrefetch = () => { subscription.current?.(); subscription.current = null }
@@ -17,9 +18,9 @@ export function MediaArtwork(props: { video: MissAVVideoItem; width?: number; he
     if (visible.current) startPrefetch()
     return stopPrefetch
   }, [key, props.prefetch])
-  return <ZStack frame={{ ...(props.width ? { width: props.width } : { maxWidth: "infinity" }), height: props.height }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: radius, style: "continuous" }}
+  return <ZStack frame={frame} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: radius, style: "continuous" }}
     onAppear={() => { visible.current = true; startPrefetch() }} onDisappear={() => { visible.current = false; stopPrefetch() }}>
-    {props.video.coverUrl ? <Image imageUrl={props.video.coverUrl} resizable aspectRatio={{ value: 16 / 9, contentMode: "fill" }} frame={{ ...(props.width ? { width: props.width } : { maxWidth: "infinity" }), height: props.height }} clipped /> : <Image systemName="play.rectangle" font="title2" foregroundStyle="tertiaryLabel" />}
+    {props.video.coverUrl ? <Image imageUrl={props.video.coverUrl} resizable aspectRatio={{ value: 16 / 9, contentMode: "fill" }} frame={frame} clipped /> : <Image systemName="play.rectangle" font="title2" foregroundStyle="tertiaryLabel" />}
   </ZStack>
 }
 
@@ -30,25 +31,27 @@ export function MediaShelf(props: { title: string; subtitle?: string; items: Mis
   </VStack>
 }
 
-export function MediaTile(props: { video: MissAVVideoItem; status?: string; statusSystemImage?: string; onOpen: (video: MissAVVideoItem) => void }) {
+export function MediaTile(props: { video: MissAVVideoItem; status?: string; statusSystemImage?: string; progressFraction?: number; onOpen: (video: MissAVVideoItem) => void }) {
   const metadata = [props.video.videoCode.toUpperCase(), props.video.duration].filter(Boolean).join(" · ")
-  return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ width: MEDIA_TILE_WIDTH }} contentShape="rect" accessibilityLabel={[props.video.title, metadata, props.status, "打开详情"].filter(Boolean).join("，")}>
+  const progressLabel = props.progressFraction !== undefined ? `已播放 ${Math.round(props.progressFraction * 100)}%` : undefined
+  return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ width: MEDIA_TILE_WIDTH }} contentShape="rect" accessibilityLabel={[props.video.title, metadata, props.status, progressLabel, "打开详情"].filter(Boolean).join("，")}>
     <VStack spacing={7} alignment="leading" frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }}>
       <MediaArtwork video={props.video} width={MEDIA_TILE_WIDTH} height={MEDIA_TILE_HEIGHT} />
       <Text font="subheadline" fontWeight="semibold" lineLimit={2} frame={{ width: MEDIA_TILE_WIDTH, minHeight: 38, alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>
       <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }}>{metadata}</Text>
       {props.status ? <HStack spacing={4} frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }}><Image systemName={props.statusSystemImage || "clock.arrow.circlepath"} font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{props.status}</Text></HStack> : props.video.badge ? <HStack spacing={4} frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }}><Image systemName="sparkles" font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={1}>{props.video.badge}</Text></HStack> : undefined}
+      {props.progressFraction !== undefined ? <ProgressView value={props.progressFraction} total={1} progressViewStyle="linear" tint={ACCENT} accessibilityLabel={progressLabel} /> : undefined}
     </VStack>
   </Button>
 }
 
 export function MediaShelfCard(props: { video: MissAVVideoItem; status?: string; onOpen: (video: MissAVVideoItem) => void }) { return <MediaTile {...props} /> }
 
-export function MediaGridCard(props: { video: MissAVVideoItem; status?: string; onOpen: (video: MissAVVideoItem) => void }) {
+export function MediaGridCard(props: { video: MissAVVideoItem; status?: string; responsiveArtwork?: boolean; onOpen: (video: MissAVVideoItem) => void }) {
   const metadata = [props.video.videoCode.toUpperCase(), props.video.duration].filter(Boolean).join(" · ")
   return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ maxWidth: "infinity" }} contentShape="rect" accessibilityLabel={[props.video.title, metadata, props.status].filter(Boolean).join("，")}>
     <VStack spacing={7} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      <MediaArtwork video={props.video} height={96} />
+      <MediaArtwork video={props.video} height={props.responsiveArtwork ? undefined : 96} />
       <Text font="subheadline" fontWeight="semibold" lineLimit={2} frame={{ maxWidth: "infinity", minHeight: 38, alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>
       <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{metadata}</Text>
       {props.video.badge ? <HStack spacing={4}><Image systemName="sparkles" font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={1}>{props.video.badge}</Text></HStack> : props.status ? <Text font="caption2" fontWeight="semibold" lineLimit={2}>{props.status}</Text> : undefined}
