@@ -1,4 +1,4 @@
-import { Picker, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
+import { Button, Picker, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import type { MissAVVideoItem } from "../../site/client"
 import { formatMissAVContinueWatching } from "../../features/playback/playback-progress"
 import { PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
@@ -20,9 +20,12 @@ type LibrarySegment = "playback" | "browse"
 type LibraryData = {
   playback: MissAVPlaybackRecord[]
   browse: MissAVBrowseRecord[]
+  hasMorePlayback: boolean
+  hasMoreBrowse: boolean
 }
 
-const emptyData: LibraryData = { playback: [], browse: [] }
+const LIBRARY_PAGE_SIZE = 100
+const emptyData: LibraryData = { playback: [], browse: [], hasMorePlayback: false, hasMoreBrowse: false }
 
 const segmentMetadata: Record<LibrarySegment, { title: string; subtitle: string; emptyTitle: string; emptyDescription: string; emptyIcon: string }> = {
   playback: {
@@ -45,21 +48,36 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
   const [segment, setSegment] = useState<LibrarySegment>("playback")
   const [data, setData] = useState<LibraryData>(emptyData)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
   const [clearError, setClearError] = useState<string | null>(null)
   const [clearing, setClearing] = useState<"playback" | "browse" | null>(null)
   const detailNavigation = useDetailNavigation()
   const selected = detailNavigation.selected
   const detailPresented = detailNavigation.isPresented
   const generation = useRef(0)
+  const loadingMoreRef = useRef(false)
 
   async function load() {
     const current = ++generation.current
+    loadingMoreRef.current = false
+    setLoadingMore(false)
+    setLoadMoreError(null)
     setLoading(true)
     setError(null)
     try {
-      const [playback, browse] = await Promise.all([loadMissAVHistory(), loadMissAVBrowseHistory()])
-      if (current === generation.current) setData(previous => ({ ...previous, playback, browse }))
+      const [playback, browse] = await Promise.all([
+        loadMissAVHistory(LIBRARY_PAGE_SIZE + 1),
+        loadMissAVBrowseHistory(LIBRARY_PAGE_SIZE + 1),
+      ])
+      if (current === generation.current) setData(previous => ({
+        ...previous,
+        playback: playback.slice(0, LIBRARY_PAGE_SIZE),
+        browse: browse.slice(0, LIBRARY_PAGE_SIZE),
+        hasMorePlayback: playback.length > LIBRARY_PAGE_SIZE,
+        hasMoreBrowse: browse.length > LIBRARY_PAGE_SIZE,
+      }))
     } catch (reason) {
       if (current === generation.current) setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -68,6 +86,37 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
   }
 
   async function refresh() { await load() }
+
+  async function loadMore() {
+    const requestedSegment = segment
+    if (loadingMoreRef.current) return
+    loadingMoreRef.current = true
+    setLoadingMore(true)
+    setLoadMoreError(null)
+    const current = generation.current
+    try {
+      if (requestedSegment === "playback") {
+        const records = await loadMissAVHistory(LIBRARY_PAGE_SIZE + 1, data.playback.length)
+        if (current === generation.current && requestedSegment === segment) setData(previous => ({
+          ...previous,
+          playback: [...previous.playback, ...records.slice(0, LIBRARY_PAGE_SIZE).filter(item => !previous.playback.some(existing => existing.videoCode === item.videoCode))],
+          hasMorePlayback: records.length > LIBRARY_PAGE_SIZE,
+        }))
+      } else {
+        const records = await loadMissAVBrowseHistory(LIBRARY_PAGE_SIZE + 1, data.browse.length)
+        if (current === generation.current && requestedSegment === segment) setData(previous => ({
+          ...previous,
+          browse: [...previous.browse, ...records.slice(0, LIBRARY_PAGE_SIZE).filter(item => !previous.browse.some(existing => existing.videoCode === item.videoCode))],
+          hasMoreBrowse: records.length > LIBRARY_PAGE_SIZE,
+        }))
+      }
+    } catch (reason) {
+      if (current === generation.current) setLoadMoreError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      loadingMoreRef.current = false
+      setLoadingMore(false)
+    }
+  }
 
   useEffect(() => { void load() }, [props.historyRevision])
 
@@ -80,7 +129,7 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
     setClearing("playback"); setClearError(null)
     try {
       await clearMissAVHistory()
-      setData(current => ({ ...current, playback: [] }))
+      setData(current => ({ ...current, playback: [], hasMorePlayback: false }))
       props.onHistoryChanged()
     } catch {
       setClearError("无法清除播放记录，请稍后重试。")
@@ -92,7 +141,7 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
     setClearing("browse"); setClearError(null)
     try {
       await clearMissAVBrowseHistory()
-      setData(current => ({ ...current, browse: [] }))
+      setData(current => ({ ...current, browse: [], hasMoreBrowse: false }))
       props.onHistoryChanged()
     } catch {
       setClearError("无法清除浏览记录，请稍后重试。")
@@ -101,6 +150,7 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
 
   const metadata = segmentMetadata[segment]
   const items = segment === "playback" ? data.playback.map(item => item.video) : data.browse.map(item => item.video)
+  const hasMore = segment === "playback" ? data.hasMorePlayback : data.hasMoreBrowse
   const statuses = segment === "playback"
     ? new Map(data.playback.map(item => [item.videoCode, formatMissAVContinueWatching(item.positionSeconds)]))
     : segment === "browse"
@@ -134,6 +184,7 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
 
         {segment === "playback" && data.playback.length ? <DestructiveMenu title="清空播放记录" confirmationTitle="确认清空播放记录" description="删除全部本机播放记录，不会影响浏览记录。" action={clearPlayback} busy={clearing === "playback"} /> : undefined}
         {segment === "browse" && data.browse.length ? <DestructiveMenu title="清空浏览记录" confirmationTitle="确认清空浏览记录" description="删除全部本机浏览记录，不会影响播放记录。" action={clearBrowse} busy={clearing === "browse"} /> : undefined}
+        {clearError ? <StateView title="清除失败" description={clearError} kind="error" presentation="row" /> : undefined}
 
         {loading && !items.length
           ? <StateView title="正在加载资料库" loading presentation="section" />
@@ -143,7 +194,8 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
                 ? <VideoRowList items={items} status={video => statuses?.get(video.videoCode)} statusSystemImage={statusSystemImage} onOpen={open} />
                 : <StateView title={metadata.emptyTitle} description={metadata.emptyDescription} systemImage={metadata.emptyIcon} action={props.onDiscover} actionTitle="浏览视频" />}
 
-        {clearError ? <StateView title="清除失败" description={clearError} kind="error" presentation="row" /> : undefined}
+        {loadMoreError ? <StateView title="加载更多失败" description={loadMoreError} kind="error" action={() => { void loadMore() }} presentation="row" /> : undefined}
+        {hasMore && items.length ? <Button title={loadingMore ? "正在加载…" : "加载更多"} systemImage={loadingMore ? "hourglass" : "chevron.down"} disabled={loadingMore} action={() => { void loadMore() }} /> : undefined}
         <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">浏览记录和播放记录不会上传。</Text>
       </VStack>
     </ScrollView>

@@ -75,9 +75,9 @@ function browseRecordStep(videoCode: string) {
   return { sql: `INSERT INTO browse_history (video_code, first_viewed_at, last_viewed_at, view_count) VALUES (?, ?, ?, 1)
     ON CONFLICT(video_code) DO UPDATE SET last_viewed_at=excluded.last_viewed_at, view_count=browse_history.view_count+1`, args: [videoCode, now, now] }
 }
-export async function loadBrowseHistory(limit = 100): Promise<MissAVBrowseRecord[]> {
+export async function loadBrowseHistory(limit = 100, offset = 0): Promise<MissAVBrowseRecord[]> {
   const db = await getMissAVDatabase()
-  return (await db.fetchAll<BrowseRow>(`SELECT v.video_code, v.title, v.detail_path, v.cover_url, v.duration, v.badge, h.last_viewed_at, h.view_count FROM browse_history h JOIN videos v USING(video_code) ORDER BY h.last_viewed_at DESC LIMIT ?`, [limit])).map(row => ({ videoCode: row.video_code, video: rowToVideo(row), lastViewedAt: row.last_viewed_at, viewCount: row.view_count }))
+  return (await db.fetchAll<BrowseRow>(`SELECT v.video_code, v.title, v.detail_path, v.cover_url, v.duration, v.badge, h.last_viewed_at, h.view_count FROM browse_history h JOIN videos v USING(video_code) ORDER BY h.last_viewed_at DESC LIMIT ? OFFSET ?`, [limit, Math.max(0, offset)])).map(row => ({ videoCode: row.video_code, video: rowToVideo(row), lastViewedAt: row.last_viewed_at, viewCount: row.view_count }))
 }
 
 export async function recordPlayback(video: MissAVVideoItem, source: MissAVVideoSource): Promise<void> {
@@ -85,13 +85,14 @@ export async function recordPlayback(video: MissAVVideoItem, source: MissAVVideo
   await db.transaction([videoUpsertStep(video), { sql: `INSERT INTO playback_history (video_code, first_played_at, last_played_at, play_count, quality_label) VALUES (?, ?, ?, 1, ?)
     ON CONFLICT(video_code) DO UPDATE SET last_played_at=excluded.last_played_at, play_count=playback_history.play_count+1, quality_label=excluded.quality_label`, args: [video.videoCode, now, now, source.label] }])
 }
-async function readPlaybackHistory(limit?: number): Promise<MissAVPlaybackRecord[]> {
+async function readPlaybackHistory(limit?: number, offset = 0): Promise<MissAVPlaybackRecord[]> {
   const db = await getMissAVDatabase()
   const sql = `SELECT v.video_code, v.title, v.detail_path, v.cover_url, v.duration, v.badge, h.last_played_at, h.quality_label, p.position_seconds, p.duration_seconds
-    FROM playback_history h JOIN videos v USING(video_code) LEFT JOIN playback_progress p USING(video_code) ORDER BY h.last_played_at DESC${limit === undefined ? "" : " LIMIT ?"}`
-  return (await db.fetchAll<PlaybackRow>(sql, limit === undefined ? [] : [limit])).map(row => ({ sourceId: "builtin.missav", videoCode: row.video_code, video: rowToVideo(row), lastPlayedAt: row.last_played_at, qualityLabel: row.quality_label, positionSeconds: row.position_seconds ?? undefined, durationSeconds: row.duration_seconds ?? undefined }))
+    FROM playback_history h JOIN videos v USING(video_code) LEFT JOIN playback_progress p USING(video_code) ORDER BY h.last_played_at DESC${limit === undefined ? offset > 0 ? " LIMIT -1 OFFSET ?" : "" : " LIMIT ? OFFSET ?"}`
+  const args = limit === undefined ? offset > 0 ? [offset] : [] : [limit, Math.max(0, offset)]
+  return (await db.fetchAll<PlaybackRow>(sql, args)).map(row => ({ sourceId: "builtin.missav", videoCode: row.video_code, video: rowToVideo(row), lastPlayedAt: row.last_played_at, qualityLabel: row.quality_label, positionSeconds: row.position_seconds ?? undefined, durationSeconds: row.duration_seconds ?? undefined }))
 }
-export function loadPlaybackHistory(limit = 100): Promise<MissAVPlaybackRecord[]> { return readPlaybackHistory(limit) }
+export function loadPlaybackHistory(limit = 100, offset = 0): Promise<MissAVPlaybackRecord[]> { return readPlaybackHistory(limit, offset) }
 export function loadAllPlaybackHistory(): Promise<MissAVPlaybackRecord[]> { return readPlaybackHistory() }
 export async function loadPlaybackProgress(videoCode: string): Promise<MissAVPlaybackProgress | null> {
   const db = await getMissAVDatabase()
