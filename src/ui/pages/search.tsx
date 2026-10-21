@@ -108,7 +108,7 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="搜索" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} scrollDismissesKeyboard="interactively" onAppear={() => { void loadDiscoveryOnce() }} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="results-top" spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        <HStack spacing={10} padding={{ horizontal: 14 }} frame={{ maxWidth: "infinity", minHeight: 52 }} background={liquidGlassAvailable ? undefined : "tertiarySystemFill"} glassEffect={liquidGlassAvailable} contentShape="capsule">
+        <HStack spacing={10} padding={{ horizontal: 14 }} frame={{ maxWidth: "infinity", minHeight: 48 }} background={liquidGlassAvailable ? undefined : "tertiarySystemFill"} glassEffect={liquidGlassAvailable} clipShape={liquidGlassAvailable ? undefined : "capsule"} contentShape="capsule">
           <Image systemName="magnifyingglass" foregroundStyle="secondaryLabel" />
           <TextField key={`search-input-${inputEpoch}`} title="搜索" prompt="番号、女优或作品标题" value={keyword} onChanged={setKeyword} onSubmit={runSearch} onFocus={() => setInputFocused(true)} onBlur={() => setInputFocused(false)} frame={{ maxWidth: "infinity" }} />
           {keyword.length ? <Button action={() => setKeyword("")} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="rect" accessibilityLabel="清除搜索词"><Image systemName="xmark.circle.fill" foregroundStyle="tertiaryLabel" /></Button> : undefined}
@@ -130,12 +130,12 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
                 <Text tag="list">列表</Text>
                 <Text tag="cover">大封面</Text>
               </Picker>
-              <Button title="浏览分类" systemImage="square.grid.2x2" action={showDiscovery} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ minHeight: 44, alignment: "trailing" }} />
+              <Button title="浏览分类" systemImage="square.grid.2x2" action={showDiscovery} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44, alignment: "trailing" }} />
             </VStack>
           </VStack>
           {loading && !items.length ? <StateView title={source.kind === "query" ? `正在搜索“${source.query}”` : `正在加载${source.title}`} description="正在载入作品列表。" loading presentation="section" /> : source.kind === "query" && !source.query ? <StateView title="输入搜索内容" description="请输入番号、女优或作品标题，然后开始搜索。" kind="empty" systemImage="magnifyingglass" /> : error && !items.length ? <StateView title="加载失败" description={error} kind="error" action={() => { void loadResults(source, failedPage ?? page, true) }} /> : !items.length ? <StateView title="未找到结果" description="请尝试其他番号、女优、作品标题或浏览分类。" kind="empty" systemImage="magnifyingglass" action={showDiscovery} actionTitle="浏览分类" /> : <SearchResultList items={items} layout={resultLayout} onOpen={open} />}
-          {error && items.length ? <HStack spacing={8} frame={{ maxWidth: "infinity" }}><Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }}>{error}</Text><Button title="重试" systemImage="arrow.clockwise" tint={ACCENT} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ minHeight: 44 }} action={() => { void loadResults(source, failedPage ?? page, true) }} /></HStack> : undefined}
-          {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ minHeight: 44 }} action={() => { void loadResults(source, page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} buttonStyle={glassButtonStyle(true)} buttonBorderShape="capsule" frame={{ minHeight: 44 }} action={() => { void loadResults(source, page + 1) }} /></HStack> : undefined}
+          {error && items.length ? <HStack spacing={8} frame={{ maxWidth: "infinity" }}><Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }}>{error}</Text><Button title="重试" systemImage="arrow.clockwise" tint="secondarySystemFill" foregroundStyle="label" buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" frame={{ minHeight: 44 }} action={() => { void loadResults(source, failedPage ?? page, true) }} /></HStack> : undefined}
+          {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => { void loadResults(source, page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} buttonStyle={glassButtonStyle(true)} buttonBorderShape="capsule" controlSize="small" frame={{ minHeight: 44 }} action={() => { void loadResults(source, page + 1) }} /></HStack> : undefined}
         </VStack>}
         </VStack>
       </VStack>
@@ -156,10 +156,10 @@ function DiscoveryContent(props: { popular: MissAVVideoItem[]; popularLoading: b
     </VStack>
     <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
       <Text font="title2" fontWeight="bold">浏览分类</Text>
-      <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{discoveryCollections.map(item => <Button key={item.collection} action={() => props.onSelectCollection(item.collection, item.title)} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="regular" frame={{ minHeight: 44 }} accessibilityLabel={`${item.title}，${item.subtitle}`}>
-        <HStack spacing={8} padding={{ horizontal: 12, vertical: 8 }} frame={{ minHeight: 44 }} contentShape="capsule">
-          <Image systemName={item.systemImage} font="caption" foregroundStyle={ACCENT} />
-          <Text font="subheadline" fontWeight="semibold" lineLimit={1}>{item.title}</Text>
+      <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{discoveryCollections.map(item => <Button key={item.collection} action={() => props.onSelectCollection(item.collection, item.title)} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }} accessibilityLabel={`${item.title}，${item.subtitle}`}>
+        <HStack spacing={6} contentShape="capsule">
+          <Image systemName={item.systemImage} font="caption2" foregroundStyle="secondaryLabel" />
+          <Text font="footnote" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>{item.title}</Text>
         </HStack>
       </Button>)}</LazyHStack></ScrollView>
     </VStack>
