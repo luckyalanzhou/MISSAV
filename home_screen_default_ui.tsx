@@ -1,6 +1,6 @@
 import { Button, HStack, Image, LazyHStack, LazyVGrid, NavigationLink, NavigationStack, ScrollView, Script, Text, Toolbar, ToolbarItem, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "./src/site/client"
-import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "./src/ui/design"
+import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "./src/ui/design"
 import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "./src/data/storage"
 import { formatMissAVContinueWatching } from "./src/features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "./src/features/home/home-screen-data"
@@ -87,7 +87,7 @@ export default function MISSAVHomeScreenView() {
     <PageBackground />
     <ScrollView navigationTitle="MISSAV" navigationBarTitleDisplayMode="inline" toolbar={toolbar} scrollEdgeEffectHidden={{ edges: "top", hidden: true }} refreshable={() => loader.current?.refresh() || Promise.resolve()} navigationDestination={{ isPresented: detailNavigation.isPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={bumpHistory} /> : <VStack /> }}>
       <VStack spacing={22} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 12, bottom: PAGE_BOTTOM_PADDING }}>
-        <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle="plain"><HomeSearchEntry /></NavigationLink>
+        <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeSearchEntry /></NavigationLink>
 
         {data.recent.length ? <VStack spacing={8} alignment="leading">
           <HStack spacing={8}>
@@ -100,17 +100,17 @@ export default function MISSAVHomeScreenView() {
 
         <VStack spacing={12} alignment="leading">
           <Text font="title3" fontWeight="bold">快速浏览</Text>
-          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${domainRevision}`} initialCollection={item.collection} {...common} />} buttonStyle="plain"><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
+          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${domainRevision}`} initialCollection={item.collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
         </VStack>
 
         <HStack spacing={12}>
-          <Button action={openDiscover} buttonStyle="plain" frame={{ maxWidth: "infinity" }} navigationDestination={{ isPresented: discoverPresented, content: <DiscoverPage key={`home-discover-${domainRevision}`} {...common} /> }}><HomeAction title="浏览" systemImage="square.grid.2x2" /></Button>
-          <NavigationLink destination={<HomeHistoryRoute kind="library" revision={historyRevision} domainRevision={domainRevision} {...common} />} buttonStyle="plain" frame={{ maxWidth: "infinity" }}><HomeAction title="资料库" systemImage="play.square.stack" /></NavigationLink>
+          <Button action={openDiscover} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ maxWidth: "infinity" }} navigationDestination={{ isPresented: discoverPresented, content: <DiscoverPage key={`home-discover-${domainRevision}`} {...common} /> }}><HomeAction title="浏览" systemImage="square.grid.2x2" /></Button>
+          <NavigationLink destination={<HomeHistoryRoute kind="library" revision={historyRevision} domainRevision={domainRevision} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ maxWidth: "infinity" }}><HomeAction title="资料库" systemImage="play.square.stack" /></NavigationLink>
         </HStack>
 
         {onlineSection("latest", "最近更新", "new")}
         {onlineSection("trending", "今日热门", "today-hot")}
-        <NavigationLink destination={<HomeHistoryRoute kind="recommendations" revision={historyRevision} domainRevision={domainRevision} {...common} />} buttonStyle="plain"><HomeAction title="为你推荐" systemImage="sparkles" /></NavigationLink>
+        <NavigationLink destination={<HomeHistoryRoute kind="recommendations" revision={historyRevision} domainRevision={domainRevision} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeAction title="为你推荐" systemImage="sparkles" /></NavigationLink>
       </VStack>
     </ScrollView>
   </ZStack></NavigationStack>
@@ -126,7 +126,7 @@ function HomeHistoryRoute(props: { kind: "library" | "recommendations"; revision
 }
 
 function HomeAction(props: { title: string; systemImage: string }) {
-  return <HStack spacing={10} padding={12} frame={{ maxWidth: "infinity", minHeight: 50 }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12 }} contentShape="rect" accessibilityLabel={props.title}>
+  return <HStack spacing={10} padding={12} frame={{ maxWidth: "infinity", minHeight: 50 }} contentShape="capsule" accessibilityLabel={props.title}>
     <Image systemName={props.systemImage} foregroundStyle={ACCENT} />
     <Text font="subheadline" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }}>{props.title}</Text>
     <Image systemName="chevron.right" font="caption2" foregroundStyle="tertiaryLabel" />

@@ -12,7 +12,7 @@ export const HOME_QUICK_COLLECTIONS: Array<{ group: MissAVCollectionGroup; title
 ]
 
 export function HomeSearchEntry(props: { title?: string }) {
-  return <HStack spacing={10} padding={{ horizontal: 14, vertical: 12 }} frame={{ maxWidth: "infinity", minHeight: 50 }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: MEDIA_RADIUS, style: "continuous" }} contentShape="rect" accessibilityLabel={props.title || "搜索番号、女优或作品"}>
+  return <HStack spacing={10} padding={{ horizontal: 14, vertical: 12 }} frame={{ maxWidth: "infinity", minHeight: 50 }} contentShape="capsule" accessibilityLabel={props.title || "搜索番号、女优或作品"}>
     <Image systemName="magnifyingglass" foregroundStyle="systemPink" />
     <Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }}>{props.title || "搜索番号、女优或作品"}</Text>
     <Image systemName="chevron.right" font="caption2" foregroundStyle="tertiaryLabel" />
@@ -20,7 +20,7 @@ export function HomeSearchEntry(props: { title?: string }) {
 }
 
 export function HomeQuickCollectionChip(props: { title: string; image: string }) {
-  return <HStack spacing={8} padding={{ horizontal: 13, vertical: 10 }} frame={{ minHeight: 44 }} background="secondarySystemBackground" clipShape="capsule" contentShape="capsule" accessibilityLabel={`浏览${props.title}`}>
+  return <HStack spacing={8} padding={{ horizontal: 13, vertical: 10 }} frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={`浏览${props.title}`}>
     <Image systemName={props.image} font="caption" foregroundStyle="systemPink" />
     <Text font="subheadline" fontWeight="semibold" lineLimit={1}>{props.title}</Text>
   </HStack>

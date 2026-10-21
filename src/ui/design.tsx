@@ -1,4 +1,4 @@
-import { Button, Color, HStack, Image, Text, VStack, ZStack } from "scripting"
+import { Button, Color, Device, HStack, Image, Text, VStack, ZStack } from "scripting"
 
 export const ACCENT: Color = "systemPink"
 export const PAGE_BACKGROUND: Color = "systemBackground"
@@ -26,6 +26,12 @@ export const MEDIA_ROW_WIDTH = 112
 export const MEDIA_ROW_HEIGHT = 63
 export const MEDIA_TILE_WIDTH = 184
 export const MEDIA_TILE_HEIGHT = 104
+
+export function glassButtonStyle(prominent = false): "glass" | "glassProminent" | "bordered" | "borderedProminent" {
+  const glassAvailable = typeof Device !== "undefined" && Number.parseInt(Device.systemVersion, 10) >= 26
+  if (glassAvailable) return prominent ? "glassProminent" : "glass"
+  return prominent ? "borderedProminent" : "bordered"
+}
 
 export function PageBackground() {
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={PAGE_BACKGROUND} />
