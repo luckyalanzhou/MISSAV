@@ -1,9 +1,10 @@
-import { Button, Divider, HStack, Image, LazyHStack, LazyVGrid, LazyVStack, Picker, ProgressView, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
+import { Button, HStack, Image, LazyHStack, LazyVGrid, LazyVStack, Picker, ProgressView, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { defaultMissAVCollectionSort, missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "../../site/client"
-import { ACCESSORY_ALIGNMENT_WIDTH, ACCENT, MEDIA_ROW_HEIGHT, MEDIA_ROW_RADIUS, MEDIA_ROW_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
+import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
-import { MediaArtwork, MediaTile } from "../components/media_cards"
+import { MediaGridCard, MediaTile } from "../components/media_cards"
+import { VideoRowList } from "../components/video_row"
 import { StateView } from "../components/state_view"
 import { MissAVListingRequest } from "../../site/listing/listing-request"
 
@@ -142,27 +143,8 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
 }
 
 function SearchResultList(props: { items: MissAVVideoItem[]; layout: SearchResultLayout; onOpen: (video: MissAVVideoItem) => void }) {
-  return <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>
-    {props.items.map((video, index) => <VStack key={video.videoCode} spacing={0} frame={{ maxWidth: "infinity" }}>
-      <SearchResultCard video={video} layout={props.layout} onOpen={props.onOpen} />
-      {index < props.items.length - 1 ? <Divider padding={props.layout === "cover" ? { vertical: 16 } : undefined} /> : undefined}
-    </VStack>)}
-  </LazyVStack>
-}
-
-function SearchResultCard(props: { video: MissAVVideoItem; layout: SearchResultLayout; onOpen: (video: MissAVVideoItem) => void }) {
-  const metadata = [props.video.videoCode.toUpperCase(), props.video.duration].filter(Boolean).join(" · ")
-  const accessibility = [props.video.title, metadata, props.video.badge, "打开详情"].filter(Boolean).join("，")
-  const details = <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-    <Text font="headline" fontWeight="semibold" lineLimit={3} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>
-    <Text font={props.layout === "cover" ? "subheadline" : "caption"} foregroundStyle="secondaryLabel" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{metadata}</Text>
-    {props.video.badge ? <HStack spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}><Image systemName="sparkles" font="caption2" foregroundStyle={ACCENT} /><Text font="caption" fontWeight="semibold" lineLimit={1}>{props.video.badge}</Text></HStack> : undefined}
-  </VStack>
-  return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ maxWidth: "infinity" }} contentShape="rect" accessibilityLabel={accessibility}>
-    {props.layout === "cover"
-      ? <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><MediaArtwork video={props.video} radius={14} />{details}</VStack>
-      : <HStack spacing={12} alignment="center" padding={{ vertical: 11 }} frame={{ maxWidth: "infinity", minHeight: 86 }}><MediaArtwork video={props.video} width={MEDIA_ROW_WIDTH} height={MEDIA_ROW_HEIGHT} radius={MEDIA_ROW_RADIUS} />{details}<Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" frame={{ width: ACCESSORY_ALIGNMENT_WIDTH, maxHeight: "infinity", alignment: "center" }} /></HStack>}
-  </Button>
+  if (props.layout === "list") return <VideoRowList items={props.items} onOpen={props.onOpen} />
+  return <LazyVStack spacing={16} frame={{ maxWidth: "infinity" }}>{props.items.map(video => <MediaGridCard key={video.videoCode} video={video} responsiveArtwork onOpen={props.onOpen} />)}</LazyVStack>
 }
 
 function DiscoveryContent(props: { popular: MissAVVideoItem[]; popularLoading: boolean; onOpen: (video: MissAVVideoItem) => void; onSelectCollection: (collection: MissAVCollection, title: string) => void }) {
