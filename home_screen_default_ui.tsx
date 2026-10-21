@@ -94,7 +94,7 @@ export default function MISSAVHomeScreenView() {
 
         <VStack spacing={12} alignment="leading">
           <SectionHeading title="快速浏览" subtitle="直达常用栏目" />
-          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${domainRevision}`} initialCollection={item.collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }}><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
+          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${domainRevision}`} initialCollection={item.collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="regular" tint="secondarySystemFill" frame={{ minHeight: 44 }}><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
         </VStack>
 
         <HStack spacing={12}>

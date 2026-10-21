@@ -175,10 +175,10 @@ function CategoryChip(props: { title: string; active: boolean; level: "primary" 
   const primary = props.level === "primary"
   const prominent = primary && props.active
   const glassAvailable = supportsLiquidGlass()
-  return <Button action={props.action} buttonStyle={glassAvailable ? prominent ? "glassProminent" : "glass" : prominent ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" controlSize="small" tint={props.active ? ACCENT : "secondarySystemFill"} frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
-    <HStack spacing={6} fixedSize={{ horizontal: true, vertical: false }}>
+  return <Button action={props.action} buttonStyle={glassAvailable ? prominent ? "glassProminent" : "glass" : prominent ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" controlSize="regular" tint={props.active ? ACCENT : "secondarySystemFill"} frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
+    <HStack spacing={8} fixedSize={{ horizontal: true, vertical: false }}>
       {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle={prominent ? "white" : ACCENT} /> : undefined}
-      <Text font={primary ? "footnote" : "caption"} fontWeight={props.active ? "semibold" : "regular"} foregroundStyle={prominent ? "white" : props.active ? ACCENT : "label"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
+      <Text font={primary ? "subheadline" : "footnote"} fontWeight={props.active ? "semibold" : "regular"} foregroundStyle={prominent ? "white" : props.active ? ACCENT : "label"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
     </HStack>
   </Button>
 }

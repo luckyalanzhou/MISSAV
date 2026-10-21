@@ -21,7 +21,7 @@ export function HomeSearchEntry(props: { title?: string }) {
 
 export function HomeQuickCollectionChip(props: { title: string; image: string }) {
   return <HStack spacing={6} contentShape="capsule" accessibilityLabel={`浏览${props.title}`}>
-    <Image systemName={props.image} font="caption2" foregroundStyle="secondaryLabel" />
+    <Image systemName={props.image} font="caption" foregroundStyle="secondaryLabel" />
     <Text font="footnote" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>{props.title}</Text>
   </HStack>
 }
