@@ -1,10 +1,11 @@
-import { Button, HStack, Image, LazyHStack, LazyVGrid, NavigationLink, NavigationStack, ProgressView, ScrollView, Script, Text, Toolbar, ToolbarItem, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
+import { Button, HStack, Image, LazyHStack, LazyVGrid, NavigationLink, NavigationStack, ScrollView, Script, Text, Toolbar, ToolbarItem, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "./src/site/client"
 import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "./src/ui/design"
-import { loadAllMissAVHistory, loadMissAVBrowseHistory, type MissAVPlaybackRecord } from "./src/data/storage"
+import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "./src/data/storage"
 import { formatMissAVContinueWatching } from "./src/features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "./src/features/home/home-screen-data"
-import { MediaArtwork, MediaGridCard, MediaTile } from "./src/ui/components/media_cards"
+import { MediaGridCard, MediaTile } from "./src/ui/components/media_cards"
+import { ContinueWatchingCard, HOME_QUICK_COLLECTIONS, HomeQuickCollectionChip, HomeSearchEntry } from "./src/ui/components/home_components"
 import { StateView } from "./src/ui/components/state_view"
 import { DetailPage } from "./src/ui/pages/detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./src/ui/pages/detail-navigation"
@@ -86,17 +87,21 @@ export default function MISSAVHomeScreenView() {
     <PageBackground />
     <ScrollView navigationTitle="MISSAV" navigationBarTitleDisplayMode="inline" toolbar={toolbar} scrollEdgeEffectHidden={{ edges: "top", hidden: true }} refreshable={() => loader.current?.refresh() || Promise.resolve()} navigationDestination={{ isPresented: detailNavigation.isPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={bumpHistory} /> : <VStack /> }}>
       <VStack spacing={22} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 12, bottom: PAGE_BOTTOM_PADDING }}>
-        <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle="plain"><HomeAction title="搜索番号、女优或作品" systemImage="magnifyingglass" /></NavigationLink>
+        <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle="plain"><HomeSearchEntry /></NavigationLink>
 
         {data.recent.length ? <VStack spacing={8} alignment="leading">
           <HStack spacing={8}>
             <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }}>继续观看</Text>
-            <Text font="caption" foregroundStyle="secondaryLabel">显示 {data.recent.length} 部</Text>
-            {data.recent.length > 2 ? <Image systemName="arrow.left.and.right" font="caption2" foregroundStyle="tertiaryLabel" accessibilityLabel="可左右滑动" /> : undefined}
+            <Text font="caption" foregroundStyle="secondaryLabel">{data.recent.length} 部</Text>
           </HStack>
-          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={12} alignment="top">{data.recent.map(record => <ContinueWatchingCard key={record.videoCode} record={record} onOpen={open} />)}</LazyHStack></ScrollView>
+          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top">{data.recent.map(record => <ContinueWatchingCard key={record.videoCode} video={record.video} resumeLabel={formatMissAVContinueWatching(record.positionSeconds)} progressFraction={playbackProgressFraction(record)} onOpen={open} />)}</LazyHStack></ScrollView>
         </VStack> : undefined}
         {data.errors.history ? <Text font="footnote" foregroundStyle="secondaryLabel">{data.errors.history}</Text> : undefined}
+
+        <VStack spacing={12} alignment="leading">
+          <Text font="title3" fontWeight="bold">快速浏览</Text>
+          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${domainRevision}`} initialCollection={item.collection} {...common} />} buttonStyle="plain"><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
+        </VStack>
 
         <HStack spacing={12}>
           <Button action={openDiscover} buttonStyle="plain" frame={{ maxWidth: "infinity" }} navigationDestination={{ isPresented: discoverPresented, content: <DiscoverPage key={`home-discover-${domainRevision}`} {...common} /> }}><HomeAction title="浏览" systemImage="square.grid.2x2" /></Button>
@@ -126,21 +131,4 @@ function HomeAction(props: { title: string; systemImage: string }) {
     <Text font="subheadline" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }}>{props.title}</Text>
     <Image systemName="chevron.right" font="caption2" foregroundStyle="tertiaryLabel" />
   </HStack>
-}
-
-function ContinueWatchingCard(props: { record: MissAVPlaybackRecord; onOpen: (video: MissAVVideoItem) => void }) {
-  const cardWidth = 160
-  const video = props.record.video
-  const progress = playbackProgressFraction(props.record)
-  const metadata = [video.videoCode.toUpperCase(), video.duration].filter(Boolean).join(" · ")
-  const status = formatMissAVContinueWatching(props.record.positionSeconds)
-  return <Button action={() => props.onOpen(video)} buttonStyle="plain" frame={{ width: cardWidth }} contentShape="rect" accessibilityLabel={[video.title, metadata, status, "继续播放"].filter(Boolean).join("，")}>
-    <VStack spacing={5} alignment="leading" frame={{ width: cardWidth, alignment: "leading" }}>
-      <MediaArtwork video={video} width={cardWidth} height={90} />
-      <Text font="subheadline" fontWeight="semibold" lineLimit={2} frame={{ width: cardWidth, minHeight: 36, alignment: "leading" }} multilineTextAlignment="leading">{video.title}</Text>
-      <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ width: cardWidth, alignment: "leading" }}>{metadata}</Text>
-      <HStack spacing={4} frame={{ width: cardWidth, alignment: "leading" }}><Image systemName="clock.arrow.circlepath" font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{status}</Text></HStack>
-    {progress !== undefined ? <ProgressView value={progress} total={1} progressViewStyle="linear" tint={ACCENT} accessibilityLabel={`已播放 ${Math.round(progress * 100)}%`} /> : undefined}
-    </VStack>
-  </Button>
 }

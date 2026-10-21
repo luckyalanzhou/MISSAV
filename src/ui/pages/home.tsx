@@ -1,23 +1,17 @@
 import { HStack, Image, LazyHStack, LazyVGrid, NavigationLink, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
-import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVCollectionGroup, type MissAVVideoItem } from "../../site/client"
-import { loadAllMissAVHistory, loadMissAVBrowseHistory, type MissAVPlaybackRecord } from "../../data/storage"
+import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "../../site/client"
+import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "../../data/storage"
 import { formatMissAVContinueWatching } from "../../features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "../../features/home/home-screen-data"
 import { ACCENT, ActionRow, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
 import { MediaGridCard, MediaTile } from "../components/media_cards"
+import { ContinueWatchingCard, HOME_QUICK_COLLECTIONS, HomeQuickCollectionChip, HomeSearchEntry } from "../components/home_components"
 import { StateView } from "../components/state_view"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { DiscoverPage } from "./discover"
 import { RecommendationsPage } from "./recommendations"
-
-const quickCollections: Array<{ group: MissAVCollectionGroup; title: string; image: string; collection: MissAVCollection }> = [
-  { group: "subtitles", title: "中文字幕", image: "captions.bubble", collection: "chinese-subtitle" },
-  { group: "japanese", title: "日本 AV", image: "play.rectangle", collection: "new" },
-  { group: "amateur", title: "素人", image: "person", collection: "siro" },
-  { group: "uncensored", title: "无码影片", image: "lock.open", collection: "uncensored-leak" },
-  { group: "asian", title: "亚洲 AV", image: "film", collection: "madou" },
-]
+import { SearchPage } from "./search"
 
 export function MediaHomePage(props: { revision: number; accessRevision?: number; onHistoryChanged: () => void; onDiscover: () => void; toolbar?: any }) {
   const [data, setData] = useState(emptyHomeScreenData)
@@ -71,15 +65,16 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
     <PageBackground />
     <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack spacing={24} alignment="leading" padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
+        <VStack padding={{ horizontal: PAGE_PADDING }}><NavigationLink destination={<SearchPage key={`home-search-${props.accessRevision || 0}`} onHistoryChanged={props.onHistoryChanged} />} buttonStyle="plain"><HomeSearchEntry /></NavigationLink></VStack>
         {continueWatching.length || data.errors.history ? <VStack spacing={12} alignment="leading">
           <VStack spacing={3} padding={{ horizontal: PAGE_PADDING }}><SectionHeading title="继续观看" subtitle={continueWatching.length ? `${continueWatching.length} 部未看完` : undefined} level="primary" /></VStack>
-          {continueWatching.length ? <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top" padding={{ horizontal: PAGE_PADDING }}>{continueWatching.map(record => <ContinueWatchingCard key={record.videoCode} record={record} onOpen={open} />)}</LazyHStack></ScrollView> : undefined}
+          {continueWatching.length ? <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top" padding={{ horizontal: PAGE_PADDING }}>{continueWatching.map(record => <ContinueWatchingCard key={record.videoCode} video={record.video} resumeLabel={formatMissAVContinueWatching(record.positionSeconds)} progressFraction={playbackProgressFraction(record)} onOpen={open} />)}</LazyHStack></ScrollView> : undefined}
           {data.errors.history ? <VStack padding={{ horizontal: PAGE_PADDING }}><StateView title="播放记录读取失败" description={data.errors.history} kind="error" action={() => { void loader.current?.loadLocal() }} actionTitle="重试" presentation="row" /></VStack> : undefined}
         </VStack> : undefined}
 
         <VStack spacing={12} alignment="leading">
           <VStack padding={{ horizontal: PAGE_PADDING }}><SectionHeading title="快速浏览" subtitle="直达常用栏目" /></VStack>
-          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>{quickCollections.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${props.accessRevision || 0}`} initialCollection={item.collection} onHistoryChanged={props.onHistoryChanged} />} buttonStyle="plain"><CategoryShortcut title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
+          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${props.accessRevision || 0}`} initialCollection={item.collection} onHistoryChanged={props.onHistoryChanged} />} buttonStyle="plain"><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
         </VStack>
 
         {onlineSection("latest", "最近更新", "new")}
@@ -92,16 +87,4 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
       </VStack>
     </ScrollView>
   </ZStack>
-}
-
-function CategoryShortcut(props: { title: string; image: string }) {
-  return <HStack spacing={8} padding={{ horizontal: 13, vertical: 10 }} frame={{ minHeight: 44 }} background="secondarySystemBackground" clipShape="capsule" contentShape="capsule" accessibilityLabel={`浏览${props.title}`}>
-    <Image systemName={props.image} font="caption" foregroundStyle={ACCENT} />
-    <Text font="subheadline" fontWeight="semibold" lineLimit={1}>{props.title}</Text>
-  </HStack>
-}
-
-function ContinueWatchingCard(props: { record: MissAVPlaybackRecord; onOpen: (video: MissAVVideoItem) => void }) {
-  const progress = playbackProgressFraction(props.record)
-  return <MediaTile video={props.record.video} status={formatMissAVContinueWatching(props.record.positionSeconds)} progressFraction={progress} onOpen={props.onOpen} />
 }
