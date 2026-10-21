@@ -156,8 +156,8 @@ function DiscoveryContent(props: { popular: MissAVVideoItem[]; popularLoading: b
     </VStack>
     <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
       <Text font="title2" fontWeight="bold">浏览分类</Text>
-      <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{discoveryCollections.map(item => <Button key={item.collection} action={() => props.onSelectCollection(item.collection, item.title)} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="regular" tint="secondarySystemFill" frame={{ minHeight: 44 }} accessibilityLabel={`${item.title}，${item.subtitle}`}>
-        <HStack spacing={8} contentShape="capsule">
+      <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{discoveryCollections.map(item => <Button key={item.collection} action={() => props.onSelectCollection(item.collection, item.title)} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="regular" tint="systemFill" frame={{ minHeight: 46 }} accessibilityLabel={`${item.title}，${item.subtitle}`}>
+        <HStack spacing={8} padding={{ horizontal: 3 }} contentShape="capsule">
           <Image systemName={item.systemImage} font="caption" foregroundStyle="secondaryLabel" />
           <Text font="footnote" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>{item.title}</Text>
         </HStack>
