@@ -11,8 +11,11 @@ export function DestructiveMenu(props: {
   return <Menu
     buttonStyle={glassButtonStyle()}
     buttonBorderShape="capsule"
-    label={<HStack spacing={6} padding={{ horizontal: 10, vertical: 8 }} frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={props.busy ? "正在清除记录" : `更多操作：${props.title}。${props.description}`}>
-      {props.busy ? <ProgressView progressViewStyle="circular" tint="systemRed" /> : <Image systemName="ellipsis" font="headline" foregroundStyle="secondaryLabel" />}
+    controlSize="small"
+    tint="secondarySystemFill"
+    frame={{ minHeight: 44 }}
+    label={<HStack spacing={6} contentShape="capsule" accessibilityLabel={props.busy ? "正在清除记录" : `更多操作：${props.title}。${props.description}`}>
+      {props.busy ? <ProgressView progressViewStyle="circular" tint="systemRed" /> : <Image systemName="ellipsis" font="caption" foregroundStyle="secondaryLabel" />}
       <Text font="footnote" fontWeight="semibold" foregroundStyle="secondaryLabel">{props.busy ? "清除中" : "更多"}</Text>
     </HStack>}
     menuIndicator="hidden"

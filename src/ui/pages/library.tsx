@@ -171,9 +171,9 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
       }}
     >
       <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        <HStack spacing={9} frame={{ maxWidth: "infinity" }} accessibilityLabel="选择资料库类型">
-          <Button title="播放记录" action={() => setSegment("playback")} buttonStyle={glassButtonStyle(segment === "playback")} buttonBorderShape="capsule" tint={segment === "playback" ? ACCENT : undefined} frame={{ maxWidth: "infinity", minHeight: 44 }} accessibilityLabel={`播放记录${segment === "playback" ? "，已选择" : ""}`} />
-          <Button title="浏览记录" action={() => setSegment("browse")} buttonStyle={glassButtonStyle(segment === "browse")} buttonBorderShape="capsule" tint={segment === "browse" ? ACCENT : undefined} frame={{ maxWidth: "infinity", minHeight: 44 }} accessibilityLabel={`浏览记录${segment === "browse" ? "，已选择" : ""}`} />
+        <HStack spacing={9} frame={{ maxWidth: "infinity", alignment: "leading" }} accessibilityLabel="选择资料库类型">
+          <Button title="播放记录" systemImage={segment === "playback" ? "checkmark" : undefined} action={() => setSegment("playback")} buttonStyle={glassButtonStyle(segment === "playback")} buttonBorderShape="capsule" controlSize="small" font="footnote" tint={segment === "playback" ? ACCENT : "secondarySystemFill"} foregroundStyle={segment === "playback" ? "white" : "label"} frame={{ minHeight: 44 }} accessibilityLabel={`播放记录${segment === "playback" ? "，已选择" : ""}`} />
+          <Button title="浏览记录" systemImage={segment === "browse" ? "checkmark" : undefined} action={() => setSegment("browse")} buttonStyle={glassButtonStyle(segment === "browse")} buttonBorderShape="capsule" controlSize="small" font="footnote" tint={segment === "browse" ? ACCENT : "secondarySystemFill"} foregroundStyle={segment === "browse" ? "white" : "label"} frame={{ minHeight: 44 }} accessibilityLabel={`浏览记录${segment === "browse" ? "，已选择" : ""}`} />
         </HStack>
 
         <HStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
