@@ -1,6 +1,6 @@
 import { Button, Color, Device, HStack, Image, Text, VStack, ZStack } from "scripting"
 
-export const ACCENT: Color = "systemPink"
+export const ACCENT: Color = "systemBlue"
 export const PAGE_BACKGROUND: Color = "systemBackground"
 
 // 4.0 geometry: reading content follows a leading axis; controls and page states

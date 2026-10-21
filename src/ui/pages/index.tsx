@@ -4,6 +4,7 @@ import { DiscoverPage } from "./discover"
 import { LibraryPage } from "./library"
 import { SearchPage } from "./search"
 import { SettingsPage } from "./settings"
+import { ACCENT } from "../design"
 
 export function HomePage(props: { onClose: () => void }) {
   const selection = useObservable<number>(0)
@@ -29,7 +30,7 @@ export function HomePage(props: { onClose: () => void }) {
   </Toolbar>
   const localRevision = historyRevision.value
   return <NavigationStack>
-    <TabView selection={selection} tint="systemPink" tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="onScrollDown" toolbar={toolbar}>
+    <TabView selection={selection} tint={ACCENT} tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="onScrollDown" toolbar={toolbar}>
       <Tab title="首页" systemImage="house" value={0}><MediaHomePage key={`home-${domainRevision.value}`} accessRevision={accessRevision.value} revision={localRevision} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
       <Tab title="浏览" systemImage="square.grid.2x2" value={1}><DiscoverPage key={`discover-${domainRevision.value}`} accessRevision={accessRevision.value} onHistoryChanged={bumpHistory} /></Tab>
       <Tab title="资料库" systemImage="play.square.stack" value={2}><LibraryPage historyRevision={historyRevision.value} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
