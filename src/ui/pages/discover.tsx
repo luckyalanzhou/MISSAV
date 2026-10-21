@@ -24,6 +24,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
   const [items, setItems] = useState<MissAVVideoItem[]>([])
   const [hasNext, setHasNext] = useState(true)
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [failedPage, setFailedPage] = useState<number | null>(null)
   const detailNavigation = useDetailNavigation()
@@ -48,13 +49,15 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
     const sameCollection = nextQuery.collection === previousQuery.collection && nextQuery.filter === previousQuery.filter && nextQuery.sort === previousQuery.sort && nextQuery.categoryPath === previousQuery.categoryPath
     const appendPage = !forceRefresh && sameCollection && nextQuery.page > previousQuery.page && (items.length > 0 || categories.length > 0)
     if (appendPage && loadingMorePage.current === nextQuery.page) return
-    if (appendPage) loadingMorePage.current = nextQuery.page
+    loadingMorePage.current = appendPage ? nextQuery.page : null
     query.current = nextQuery
     // Reflect the requested category immediately so a slow request doesn't
     // make a successful tap look like it was ignored.
     setPage(nextQuery.page); setCollection(nextQuery.collection); setFilter(nextQuery.filter); setSort(nextQuery.sort)
     setCategoryPath(nextQuery.categoryPath)
-    if (queryChanged && !appendPage) { setItems([]); setCategories([]); setHasNext(true); setFailedPage(null) }
+    const preserveResults = forceRefresh && sameCollection && (items.length > 0 || categories.length > 0)
+    if (queryChanged && !appendPage && !preserveResults) { setItems([]); setCategories([]); setHasNext(true); setFailedPage(null) }
+    setLoadingMore(appendPage)
     setLoading(true); setError(null)
     await listingRequest.current.load(nextQuery, { forceRefresh, allowStale: true }, {
       loaded: result => {
@@ -73,6 +76,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
       },
       settled: () => {
         loadingMorePage.current = null
+        setLoadingMore(false)
         setLoading(false)
       },
     })
@@ -115,25 +119,25 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           {categoryPath ? <Button title={`返回${collections.find(item => item.value === collection)?.title || "分类"}`} systemImage="chevron.left" action={() => selectCollection(collection)} /> : undefined}
           {!directoryMode ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
-            <Menu label={<OptionChip title={filterTitle} systemImage="line.3.horizontal.decrease" />}>{filters.map(item => <Button key={item.value || "all"} title={item.title} systemImage={item.value === filter ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, filter: item.value }) }} />)}</Menu>
-            <Menu label={<OptionChip title={sortTitle} systemImage="arrow.up.arrow.down" />}>{sorts.map(item => <Button key={item.value} title={item.title} systemImage={item.value === sort ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, sort: item.value }) }} />)}</Menu>
+            <Menu label={<OptionChip title={filterTitle} systemImage="line.3.horizontal.decrease" accessibilityLabel={`筛选：${filterTitle}`} />}>{filters.map(item => <Button key={item.value || "all"} title={item.title} systemImage={item.value === filter ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, filter: item.value }) }} />)}</Menu>
+            <Menu label={<OptionChip title={sortTitle} systemImage="arrow.up.arrow.down" accessibilityLabel={`排序：${sortTitle}`} />}>{sorts.map(item => <Button key={item.value} title={item.title} systemImage={item.value === sort ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, sort: item.value }) }} />)}</Menu>
             <Spacer />
-            {loading && items.length ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : undefined}
+            {loading && (items.length || categories.length) && !loadingMore ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : undefined}
           </HStack> : undefined}
 
-          {directoryMode ? <DirectoryContent categories={categories} loading={loading} error={error} onRetry={() => { void load({}, true) }} onLoadMore={loadNextPageIfNeeded} onSelect={item => { setCategoryTitle(item.title); void load({ page: 1, categoryPath: item.path, filter: "", sort: "released_at" }) }} /> : loading && items.length === 0 ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 360 }} /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load({}, true) }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection, filter: "", sort: defaultCollectionSort(collection) }, true) }} actionTitle="重置筛选" /> : <>
+          {directoryMode ? <DirectoryContent categories={categories} loading={loading} error={error} onRetry={() => { void load({}, true) }} onLoadMore={loadNextPageIfNeeded} onSelect={item => { setCategoryTitle(item.title); void load({ page: 1, categoryPath: item.path, filter: "", sort: "released_at" }) }} /> : loading && items.length === 0 ? <StateView title={`正在加载${title}`} description="正在载入栏目内容。" loading presentation="section" /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load({}, true) }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection, filter: "", sort: defaultCollectionSort(collection) }, true) }} actionTitle="重置筛选" /> : <>
             <HStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
               <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{title}</Text>
               <Text font="subheadline" foregroundStyle="tertiaryLabel" frame={{ alignment: "trailing" }}>{`本页 ${items.length} 部`}</Text>
             </HStack>
-            <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 14 }]} spacing={20}>{items.map((video, index) => index === items.length - 1 ? <VStack key={`discover-load-more-${video.videoCode}`} onAppear={loadNextPageIfNeeded}><MediaGridCard video={video} onOpen={open} /></VStack> : <MediaGridCard key={video.videoCode} video={video} onOpen={open} />)}</LazyVGrid>
+            <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 14 }]} spacing={20}>{items.map((video, index) => index === items.length - 1 ? <VStack key={`discover-load-more-${video.videoCode}`} onAppear={loadNextPageIfNeeded}><MediaGridCard video={video} responsiveArtwork onOpen={open} /></VStack> : <MediaGridCard key={video.videoCode} video={video} responsiveArtwork onOpen={open} />)}</LazyVGrid>
           </>}
 
           {error && (items.length || categories.length) ? <HStack spacing={8} frame={{ maxWidth: "infinity" }}>
             <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }}>{failedPage !== null ? "加载更多失败" : error}</Text>
             <Button title="重试" systemImage="arrow.clockwise" tint={ACCENT} action={() => { void load({ page: failedPage ?? page }, failedPage === null) }} />
           </HStack> : undefined}
-          {loading && (items.length || categories.length) ? <HStack spacing={8} frame={{ maxWidth: "infinity" }}><ProgressView progressViewStyle="circular" tint={ACCENT} /><Text font="footnote" foregroundStyle="secondaryLabel">正在加载更多…</Text></HStack> : undefined}
+          {loading && loadingMore ? <HStack spacing={8} frame={{ maxWidth: "infinity" }}><ProgressView progressViewStyle="circular" tint={ACCENT} /><Text font="footnote" foregroundStyle="secondaryLabel">正在加载更多…</Text></HStack> : undefined}
           {!loading && !error && !hasNext && (items.length || categories.length) ? <Text font="footnote" foregroundStyle="tertiaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">已经到底了</Text> : undefined}
         </VStack>
       </VStack>
@@ -142,7 +146,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
 }
 
 function DirectoryContent(props: { categories: MissAVCategoryItem[]; loading: boolean; error: string | null; onRetry: () => void; onLoadMore: () => void; onSelect: (item: MissAVCategoryItem) => void }) {
-  if (props.loading && !props.categories.length) return <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 360 }} />
+  if (props.loading && !props.categories.length) return <StateView title="正在加载分类" description="正在载入可选类别。" loading presentation="section" />
   if (props.error && !props.categories.length) return <StateView title="分类加载失败" description={props.error} kind="error" action={props.onRetry} />
   if (!props.categories.length) return <StateView title="暂无分类" description="网页暂未返回可选择的分类。" kind="empty" action={props.onRetry} actionTitle="重试" />
   return <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 240 }, spacing: 12 }]} spacing={12}>
@@ -175,8 +179,8 @@ function CategoryChip(props: { title: string; active: boolean; action: () => voi
   </Button>
 }
 
-function OptionChip(props: { title: string; systemImage: string }) {
-  return <HStack spacing={6} padding={{ horizontal: 11, vertical: 7 }} fixedSize={{ horizontal: true, vertical: false }} background="secondarySystemBackground" clipShape="capsule">
+function OptionChip(props: { title: string; systemImage: string; accessibilityLabel: string }) {
+  return <HStack spacing={6} padding={{ horizontal: 11, vertical: 7 }} frame={{ minHeight: 44 }} fixedSize={{ horizontal: true, vertical: false }} background="secondarySystemBackground" clipShape="capsule" accessibilityLabel={props.accessibilityLabel}>
     <Image systemName={props.systemImage} font="caption" foregroundStyle="secondaryLabel" />
     <Text font="footnote" fontWeight="semibold" lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
     <Image systemName="chevron.down" font="caption2" foregroundStyle="tertiaryLabel" />
