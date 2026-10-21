@@ -1,4 +1,5 @@
 import { Button, HStack, Image, Menu, ProgressView, Text } from "scripting"
+import { glassButtonStyle } from "../design"
 
 export function DestructiveMenu(props: {
   title: string
@@ -8,7 +9,9 @@ export function DestructiveMenu(props: {
   busy?: boolean
 }) {
   return <Menu
-    label={<HStack spacing={6} padding={{ horizontal: 10, vertical: 8 }} frame={{ minHeight: 44 }} background="secondarySystemBackground" clipShape="capsule" contentShape="capsule" accessibilityLabel={props.busy ? "正在清除记录" : `更多操作：${props.title}。${props.description}`}>
+    buttonStyle={glassButtonStyle()}
+    buttonBorderShape="capsule"
+    label={<HStack spacing={6} padding={{ horizontal: 10, vertical: 8 }} frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={props.busy ? "正在清除记录" : `更多操作：${props.title}。${props.description}`}>
       {props.busy ? <ProgressView progressViewStyle="circular" tint="systemRed" /> : <Image systemName="ellipsis" font="headline" foregroundStyle="secondaryLabel" />}
       <Text font="footnote" fontWeight="semibold" foregroundStyle="secondaryLabel">{props.busy ? "清除中" : "更多"}</Text>
     </HStack>}

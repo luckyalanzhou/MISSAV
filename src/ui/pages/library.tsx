@@ -1,7 +1,7 @@
-import { Button, HStack, Picker, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
+import { Button, HStack, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import type { MissAVVideoItem } from "../../site/client"
 import { formatMissAVContinueWatching } from "../../features/playback/playback-progress"
-import { PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
+import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import {
   clearMissAVBrowseHistory,
   clearMissAVHistory,
@@ -171,10 +171,10 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
       }}
     >
       <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        <Picker title="历史类型" pickerStyle="segmented" value={segment} onChanged={value => setSegment(value === "browse" ? "browse" : "playback")} frame={{ maxWidth: "infinity" }}>
-          <Text tag="playback">播放记录</Text>
-          <Text tag="browse">浏览记录</Text>
-        </Picker>
+        <HStack spacing={9} frame={{ maxWidth: "infinity" }} accessibilityLabel="选择资料库类型">
+          <Button title="播放记录" action={() => setSegment("playback")} buttonStyle={glassButtonStyle(segment === "playback")} buttonBorderShape="capsule" tint={segment === "playback" ? ACCENT : undefined} frame={{ maxWidth: "infinity", minHeight: 44 }} accessibilityLabel={`播放记录${segment === "playback" ? "，已选择" : ""}`} />
+          <Button title="浏览记录" action={() => setSegment("browse")} buttonStyle={glassButtonStyle(segment === "browse")} buttonBorderShape="capsule" tint={segment === "browse" ? ACCENT : undefined} frame={{ maxWidth: "infinity", minHeight: 44 }} accessibilityLabel={`浏览记录${segment === "browse" ? "，已选择" : ""}`} />
+        </HStack>
 
         <HStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
           <VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
@@ -197,7 +197,7 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
                 : <StateView title={metadata.emptyTitle} description={metadata.emptyDescription} systemImage={metadata.emptyIcon} action={props.onDiscover} actionTitle="浏览视频" />}
 
         {loadMoreError ? <StateView title="加载更多失败" description={loadMoreError} kind="error" action={() => { void loadMore() }} presentation="row" /> : undefined}
-        {hasMore && items.length ? <Button title={loadingMore ? "正在加载…" : "加载更多"} systemImage={loadingMore ? "hourglass" : "chevron.down"} disabled={loadingMore} action={() => { void loadMore() }} /> : undefined}
+        {hasMore && items.length ? <Button title={loadingMore ? "正在加载…" : "加载更多"} systemImage={loadingMore ? "hourglass" : "chevron.down"} disabled={loadingMore} buttonStyle={glassButtonStyle(true)} buttonBorderShape="capsule" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 48 }} action={() => { void loadMore() }} /> : undefined}
         <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">浏览记录和播放记录不会上传。</Text>
       </VStack>
     </ScrollView>
