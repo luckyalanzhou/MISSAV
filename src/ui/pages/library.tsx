@@ -182,10 +182,6 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
           <Text font="footnote" foregroundStyle="secondaryLabel" contentTransition="numericText" frame={{ maxWidth: "infinity", alignment: "leading" }}>{`${items.length} 部作品 · 仅保存在本机`}</Text>
         </VStack>
 
-        {segment === "playback" && data.playback.length ? <DestructiveMenu title="清空播放记录" confirmationTitle="确认清空播放记录" description="删除全部本机播放记录，不会影响浏览记录。" action={clearPlayback} busy={clearing === "playback"} /> : undefined}
-        {segment === "browse" && data.browse.length ? <DestructiveMenu title="清空浏览记录" confirmationTitle="确认清空浏览记录" description="删除全部本机浏览记录，不会影响播放记录。" action={clearBrowse} busy={clearing === "browse"} /> : undefined}
-        {clearError ? <StateView title="清除失败" description={clearError} kind="error" presentation="row" /> : undefined}
-
         {loading && !items.length
           ? <StateView title="正在加载资料库" loading presentation="section" />
           : error
@@ -197,6 +193,9 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
         {loadMoreError ? <StateView title="加载更多失败" description={loadMoreError} kind="error" action={() => { void loadMore() }} presentation="row" /> : undefined}
         {hasMore && items.length ? <Button title={loadingMore ? "正在加载…" : "加载更多"} systemImage={loadingMore ? "hourglass" : "chevron.down"} disabled={loadingMore} action={() => { void loadMore() }} /> : undefined}
         <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">浏览记录和播放记录不会上传。</Text>
+        {clearError ? <StateView title="清除失败" description={clearError} kind="error" presentation="row" /> : undefined}
+        {segment === "playback" && data.playback.length ? <DestructiveMenu title="清空播放记录" confirmationTitle="确认清空播放记录" description="删除全部本机播放记录，不会影响浏览记录。" action={clearPlayback} busy={clearing === "playback"} /> : undefined}
+        {segment === "browse" && data.browse.length ? <DestructiveMenu title="清空浏览记录" confirmationTitle="确认清空浏览记录" description="删除全部本机浏览记录，不会影响播放记录。" action={clearBrowse} busy={clearing === "browse"} /> : undefined}
       </VStack>
     </ScrollView>
   </ZStack>
