@@ -90,7 +90,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
   const author = scriptMetadata.author?.name || "未设置"
 
   return <List listStyle="insetGroup" navigationTitle="设置" navigationBarTitleDisplayMode="large">
-    <Section header={<Text>访问站点</Text>} footer={<Text>线路检查只确认本次测试栏目是否可访问，不代表所有栏目都已通过验证。其他栏目提示验证时，可先完成检查；仍无法访问可切换域名，设置将应用于浏览、搜索、详情和播放。</Text>}>
+    <Section header={<Text>访问站点</Text>} footer={<Text>线路检查只确认当前测试栏目可访问。其他栏目仍提示验证时，请先完成检查或切换域名；设置会应用于浏览、搜索、详情和播放。</Text>}>
       <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy}>
         {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
       </Picker>
