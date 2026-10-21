@@ -143,7 +143,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
     }
   }
 
-  const resolved = detail ?? { ...props.video, videoCode: props.video.videoCode, genres: [], sources: [] }
   const primarySource = detail?.sources[0]
   const code = props.video.videoCode.toUpperCase()
   const secondaryMetadata = [detail?.releaseDate, detail?.duration || props.video.duration, detail?.maker].filter(Boolean).join(" · ")
@@ -155,7 +154,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
 
       <VStack spacing={6} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <Text font="caption" fontWeight="bold" foregroundStyle={ACCENT} frame={{ maxWidth: "infinity", alignment: "leading" }}>{code}</Text>
-        <Text font="title2" fontWeight="bold" lineLimit={4} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{detail?.title || resolved.title}</Text>
+        <Text font="title2" fontWeight="bold" lineLimit={5} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{detail?.title || props.video.title}</Text>
         {detail?.actress ? <Text font="headline" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{detail.actress}</Text> : undefined}
         {secondaryMetadata ? <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{secondaryMetadata}</Text> : undefined}
       </VStack>
@@ -179,18 +178,14 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
       </VStack>
 
       {loading && loadProgress ? <Text font="caption" foregroundStyle="secondaryLabel">{`${MISSAV_DETAIL_STAGE_LABELS[loadProgress.stage]} · ${(Math.max(loadProgress.elapsedMs, loadStartedAt === null ? loadProgress.elapsedMs : clock - loadStartedAt) / 1000).toFixed(1)} 秒`}</Text> : undefined}
-      {detailTrace.current || loading || detailError ? <Button title={loading ? "复制当前诊断" : detailError ? "复制失败诊断" : "复制完整诊断"} systemImage="doc.on.doc" buttonStyle="plain" action={() => { void copyLoadDiagnostics() }} /> : undefined}
       {detailError && !detail ? <StateView title="详情加载失败" description={detailError} kind="error" action={() => { void load() }} /> : undefined}
       {detailError && detail ? <StateView title="刷新失败" description="正在显示上次加载的详情。" kind="error" action={() => { void load() }} presentation="row" /> : undefined}
-
-      <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity" }}>
-        <SectionHeading title="作品信息" />
-        <Text font="body" foregroundStyle="label" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{resolved.title}</Text>
-      </VStack>
 
       {detail && detail.genres.length ? <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity" }}><SectionHeading title="作品标签" subtitle="选择标签，查看相关作品" /><ScrollView axes="horizontal" scrollIndicator="hidden" frame={{ maxWidth: "infinity" }}><HStack spacing={8}><Badge title={code} active systemImage="number" />{detail.genres.map(genre => <TagButton key={genre} title={genre} action={() => searchTag(genre)} />)}</HStack></ScrollView>{detail.maker ? <Text font="footnote" foregroundStyle="secondaryLabel">{`制作：${detail.maker}`}</Text> : undefined}</VStack> : undefined}
 
       {detail && detail.sources.length > 1 ? <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity" }}><SectionHeading title="其他清晰度" subtitle="选择其他可用画质" /><VStack spacing={0} frame={{ maxWidth: "infinity" }}>{detail.sources.slice(1).map((source, index) => <VStack key={`${source.label}-${source.url}`} spacing={0} frame={{ maxWidth: "infinity" }}>{index ? <Divider /> : undefined}<SourceRow source={source} openingSource={openingSource} action={() => { void play(source) }} /></VStack>)}</VStack></VStack> : !loading && detail && !detail.sources.length ? <StateView title="暂无可用播放源" description="请下拉刷新后重试。" kind="empty" systemImage="play.slash" action={() => { void load() }} actionTitle="重新加载" /> : undefined}
+
+      {detailTrace.current || loading || detailError ? <Button title={loading ? "复制当前诊断" : detailError ? "复制失败诊断" : "复制完整诊断"} systemImage="doc.on.doc" buttonStyle="plain" action={() => { void copyLoadDiagnostics() }} /> : undefined}
     </VStack>
   </ScrollView></ZStack>
 }
