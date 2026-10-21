@@ -118,10 +118,10 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
         </ScrollView> : undefined}
 
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-          {categoryPath ? <Button title={`返回${collections.find(item => item.value === collection)?.title || "分类"}`} systemImage="chevron.left" action={() => selectCollection(collection)} /> : undefined}
+          {categoryPath ? <Button title={`返回${collections.find(item => item.value === collection)?.title || "分类"}`} systemImage="chevron.left" buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => selectCollection(collection)} /> : undefined}
           {!directoryMode ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
-            <Menu buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="small" frame={{ minHeight: 44 }} label={<OptionChip title={filterTitle} systemImage="line.3.horizontal.decrease" accessibilityLabel={`筛选：${filterTitle}`} />}>{filters.map(item => <Button key={item.value || "all"} title={item.title} systemImage={item.value === filter ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, filter: item.value }) }} />)}</Menu>
-            <Menu buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="small" frame={{ minHeight: 44 }} label={<OptionChip title={sortTitle} systemImage="arrow.up.arrow.down" accessibilityLabel={`排序：${sortTitle}`} />}>{sorts.map(item => <Button key={item.value} title={item.title} systemImage={item.value === sort ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, sort: item.value }) }} />)}</Menu>
+            <Menu buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }} label={<OptionChip title={filterTitle} systemImage="line.3.horizontal.decrease" accessibilityLabel={`筛选：${filterTitle}`} />}>{filters.map(item => <Button key={item.value || "all"} title={item.title} systemImage={item.value === filter ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, filter: item.value }) }} />)}</Menu>
+            <Menu buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }} label={<OptionChip title={sortTitle} systemImage="arrow.up.arrow.down" accessibilityLabel={`排序：${sortTitle}`} />}>{sorts.map(item => <Button key={item.value} title={item.title} systemImage={item.value === sort ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, sort: item.value }) }} />)}</Menu>
             <Spacer />
             {loading && (items.length || categories.length) && !loadingMore ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : undefined}
           </HStack> : undefined}
@@ -136,7 +136,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
 
           {error && (items.length || categories.length) ? <HStack spacing={8} frame={{ maxWidth: "infinity" }}>
             <Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }}>{failedPage !== null ? "加载更多失败" : error}</Text>
-            <Button title="重试" systemImage="arrow.clockwise" tint={ACCENT} action={() => { void load({ page: failedPage ?? page }, failedPage === null) }} />
+            <Button title="重试" systemImage="arrow.clockwise" buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => { void load({ page: failedPage ?? page }, failedPage === null) }} />
           </HStack> : undefined}
           {loading && loadingMore ? <HStack spacing={8} frame={{ maxWidth: "infinity" }}><ProgressView progressViewStyle="circular" tint={ACCENT} /><Text font="footnote" foregroundStyle="secondaryLabel">正在加载更多…</Text></HStack> : undefined}
           {!loading && !error && !hasNext && (items.length || categories.length) ? <Text font="footnote" foregroundStyle="tertiaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">已经到底了</Text> : undefined}
@@ -175,10 +175,10 @@ function CategoryChip(props: { title: string; active: boolean; level: "primary" 
   const primary = props.level === "primary"
   const prominent = primary && props.active
   const glassAvailable = supportsLiquidGlass()
-  return <Button action={props.action} buttonStyle={glassAvailable ? prominent ? "glassProminent" : "glass" : prominent ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" controlSize={primary ? "regular" : "small"} tint={props.active ? ACCENT : undefined} frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
+  return <Button action={props.action} buttonStyle={glassAvailable ? prominent ? "glassProminent" : "glass" : prominent ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
     <HStack spacing={6} fixedSize={{ horizontal: true, vertical: false }}>
-      {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle={prominent ? "white" : ACCENT} /> : undefined}
-      <Text font={primary ? "subheadline" : "footnote"} fontWeight={props.active ? "semibold" : "regular"} foregroundStyle={prominent ? "white" : props.active ? ACCENT : "label"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
+      {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle="label" /> : undefined}
+      <Text font={primary ? "footnote" : "caption"} fontWeight={props.active ? "semibold" : "regular"} foregroundStyle="label" lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
     </HStack>
   </Button>
 }
@@ -190,7 +190,7 @@ function supportsLiquidGlass(): boolean {
 function OptionChip(props: { title: string; systemImage: string; accessibilityLabel: string }) {
   return <HStack spacing={6} fixedSize={{ horizontal: true, vertical: false }} accessibilityLabel={props.accessibilityLabel}>
     <Image systemName={props.systemImage} font="caption" foregroundStyle="secondaryLabel" />
-    <Text font="footnote" fontWeight="semibold" lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
+    <Text font="footnote" fontWeight="semibold" foregroundStyle="label" lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
     <Image systemName="chevron.down" font="caption2" foregroundStyle="tertiaryLabel" />
   </HStack>
 }
