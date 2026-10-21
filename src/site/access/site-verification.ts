@@ -63,7 +63,7 @@ async function verifySiteProbes(): Promise<MissAVSiteVerificationResult> {
 
     // Never retry in the background after the user closes the challenge:
     // success requires observing a real listing in this foreground window.
-    const closedPageHTML = (await readMatchingWebViewDocument(controller, probeURL))?.html ?? null
+    const closedPageHTML = document?.html ?? null
     const closedState = classifyCloudflareHTML(closedPageHTML)
     return { status: closedState === "blocked" ? "blocked" : closedState === "challenge" ? "incomplete" : "unavailable", probe }
   } finally {
@@ -85,6 +85,7 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
   let challengeObserved = false
   let blocked = false
   let confirmedDocument: WebViewDocument | null = null
+  let lastDocument: WebViewDocument | null = null
   const presentation = controller.present({ fullscreen: true, navigationTitle: "验证访问线路" }).finally(() => { presentationClosed = true })
 
   // Let the modal become visible before navigating so Cloudflare's interactive
@@ -102,6 +103,7 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
     ])
     if (presentationClosed) break
     const document = await readMatchingWebViewDocument(controller, probeURL)
+    lastDocument = document
     const html = document?.html ?? null
     if (presentationClosed) break
 
@@ -122,6 +124,7 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
   if (!listingConfirmed) {
     try {
       const document = await readMatchingWebViewDocument(controller, probeURL)
+      lastDocument = document
       const html = document?.html ?? null
       blocked ||= classifyCloudflareHTML(html) === "blocked"
       if (classifyCloudflareHTML(html) === "challenge") challengeObserved = true
@@ -129,5 +132,5 @@ async function presentVerificationPage(controller: WebViewController, probe: Mis
       if (listingConfirmed) confirmedDocument = document
     } catch { /* The WebView may already have released its document on dismissal. */ }
   }
-  return { listingConfirmed, challengeObserved, blocked, document: confirmedDocument }
+  return { listingConfirmed, challengeObserved, blocked, document: confirmedDocument ?? lastDocument }
 }

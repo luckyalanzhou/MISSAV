@@ -42,7 +42,7 @@ export type MissAVAccessProbe = { collection: MissAVCollection; title: string; u
 
 const SEARCH_PAGE_CACHE_TTL_MS = 45_000
 const MAX_CACHED_SEARCH_PAGES = 24
-const RECENT_VIDEO_DETAIL_TTL_MS = 10_000
+const RECENT_VIDEO_DETAIL_TTL_MS = 30_000
 const MAX_RECENT_VIDEO_DETAILS = 8
 const FAST_DETAIL_FETCH_TIMEOUT_SECONDS = 1
 const FAST_DETAIL_FAILURE_LIMIT = 2
