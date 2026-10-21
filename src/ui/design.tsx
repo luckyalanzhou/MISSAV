@@ -27,8 +27,12 @@ export const MEDIA_ROW_HEIGHT = 63
 export const MEDIA_TILE_WIDTH = 184
 export const MEDIA_TILE_HEIGHT = 104
 
+export function supportsLiquidGlass(): boolean {
+  return typeof Device !== "undefined" && Number.parseInt(Device.systemVersion, 10) >= 26
+}
+
 export function glassButtonStyle(prominent = false): "glass" | "glassProminent" | "bordered" | "borderedProminent" {
-  const glassAvailable = typeof Device !== "undefined" && Number.parseInt(Device.systemVersion, 10) >= 26
+  const glassAvailable = supportsLiquidGlass()
   if (glassAvailable) return prominent ? "glassProminent" : "glass"
   return prominent ? "borderedProminent" : "bordered"
 }
