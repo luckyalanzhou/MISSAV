@@ -38,7 +38,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
   async function load(next: { page?: number; collection?: MissAVCollection; filter?: MissAVFilter; sort?: MissAVSort; categoryPath?: string } = {}, forceRefresh = false) {
     const previousQuery = query.current
     const nextQuery = {
-      page: next.page ?? previousQuery.page,
+      page: next.page ?? (forceRefresh ? 1 : previousQuery.page),
       collection: next.collection ?? previousQuery.collection,
       filter: next.filter ?? previousQuery.filter,
       sort: next.sort ?? previousQuery.sort,
@@ -88,7 +88,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
   }
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
   useEffect(() => () => listingRequest.current.cancel(), [])
-  useEffect(() => { if (props.accessRevision && firstLoad.current) void load() }, [props.accessRevision])
+  useEffect(() => { if (props.accessRevision && firstLoad.current) void load({ page: 1 }, true) }, [props.accessRevision])
   useEffect(() => { if (items.length || categories.length) scrollProxy.current?.scrollTo("discover-results-top", "top") }, [collection, filter, sort, categoryPath])
   const subcollections = collectionOptionsForGroup(group)
   const directoryMode = isMissAVDirectoryCollection(collection) && !categoryPath

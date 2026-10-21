@@ -7,7 +7,7 @@ import { createPlaybackProgressWriter } from "./playback-writer"
 import { withMissAVDeadline } from "../../core/request/request-deadline"
 import { MissAVRequestScope } from "../../core/request/request-scope"
 import { isExpiredMissAVPlaybackError } from "./playback-startup"
-import type { PreparedPlaybackData } from "./playback-preparation"
+import type { PreparedPlaybackData, PreparedPlaybackDataListener } from "./playback-preparation"
 import { recordMissAVAccessDiagnostic } from "../../site/access/access-diagnostics"
 
 export type NativePlaybackRequest = {
@@ -20,7 +20,7 @@ export type NativePlaybackRequest = {
   resumePositionSeconds?: number
   resumeDurationSeconds?: number
   subtitles?: SubtitleTrack
-  playbackData?: Promise<PreparedPlaybackData>
+  subscribePlaybackData?: (listener: PreparedPlaybackDataListener) => () => void
   subtitleDataPending?: boolean
   refreshSource?: (scope: MissAVRequestScope) => Promise<{ url: string; headers?: Record<string, string> }>
   diagnosticTarget?: string
@@ -123,16 +123,17 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     if (hasStarted && !hasEnded && !closing) saveProgress(player.currentTime, player.duration)
   })
   // Late local data can join a loading player, without delaying presentation.
-  void request.playbackData?.then(data => {
+  const applyPlaybackData = (data: PreparedPlaybackData) => {
     if (closing || playbackError) return
-    subtitleState.track = data.subtitles ?? undefined
-    subtitleState.pending = false
+    if (data.subtitles) subtitleState.track = data.subtitles
+    subtitleState.pending = Boolean(request.subtitleDataPending && !data.subtitles)
     if (data.progress) {
       request.resumePositionSeconds = data.progress.positionSeconds
       request.resumeDurationSeconds = data.progress.durationSeconds
       if (hasStarted && !resumeApplied && player.currentTime <= 3) applyResume()
     }
-  }, () => { subtitleState.pending = false })
+  }
+  const removePlaybackData = request.subscribePlaybackData?.(applyPlaybackData)
   try {
     player.onReadyToPlay = () => {
       if (hasStarted || closing || recovering || playbackError) return
@@ -168,7 +169,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
     Device.supportedInterfaceOrientations = ["landscapeLeft", "landscapeRight"]
     try {
       const presentation = Navigation.present({
-        element: <NativeOnlinePlayerModal player={player} subtitles={request.subtitles} subtitleState={request.playbackData ? subtitleState : undefined} onDismissAvailable={dismiss => {
+        element: <NativeOnlinePlayerModal player={player} subtitles={request.subtitles} subtitleState={request.subscribePlaybackData ? subtitleState : undefined} onDismissAvailable={dismiss => {
           dismissModal = dismiss
           if (playbackError) dismiss()
         }} />,
@@ -182,7 +183,7 @@ export async function presentNativeOnlinePlayer(request: NativePlaybackRequest):
       }
     } finally { Device.supportedInterfaceOrientations = previousOrientations }
   } finally {
-    closing = true; clearStartupTimer(); retryScope?.cancel(); removeLifecycle(); stopProgress()
+    closing = true; clearStartupTimer(); retryScope?.cancel(); removeLifecycle(); removePlaybackData?.(); stopProgress()
     if (hasStarted) saveProgress(hasEnded ? 0 : player.currentTime, player.duration)
     try { await withMissAVDeadline(progressWriter.flush(), 2_000, "播放进度保存超时。").catch(() => {}) }
     finally { player.stop(); player.dispose(); asset?.dispose(); mark("player-closed") }

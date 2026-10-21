@@ -34,7 +34,7 @@ export async function chooseAndPresentMissAVPlayer(video: MissAVVideoItem, selec
       resumeDurationSeconds: progress?.durationSeconds,
       subtitles,
       subtitleDataPending: Boolean(options.preparation?.subtitlePending),
-      playbackData: options.preparation?.waitForData(),
+      subscribePlaybackData: options.preparation ? listener => options.preparation!.subscribeData(listener) : undefined,
       refreshSource: async scope => {
         // Called only for a confirmed startup access/signature failure.
         const nextDetail = await missavClient.getVideo(video, { scope })

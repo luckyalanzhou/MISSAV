@@ -4,6 +4,7 @@ import { isMissAVSubtitleEnabled, loadMissAVSubtitle, type SubtitleTrack } from 
 import { withMissAVDeadline } from "../../core/request/request-deadline"
 
 export type PreparedPlaybackData = { progress: MissAVPlaybackProgress | null; subtitles: SubtitleTrack | null }
+export type PreparedPlaybackDataListener = (data: PreparedPlaybackData) => void
 
 // Navigation owns a selection, rather than coordinating two preparation
 // lifetimes itself. The selected preparation survives a cancelled next tap.
@@ -44,12 +45,15 @@ export class MissAVPlaybackPreparation {
   private closed = false
   private subtitleGeneration = 0
   private subtitleRead: Promise<void> = Promise.resolve()
+  private dataListeners = new Set<PreparedPlaybackDataListener>()
   subtitlePending = false
 
   constructor(private video: MissAVVideoItem) {
     this.ready = Promise.all([
       this.refreshSubtitles(),
-      this.optional(() => loadMissAVPlaybackProgress(video.videoCode)).then(progress => { if (!this.closed) this.data.progress = progress }),
+      this.optional(() => loadMissAVPlaybackProgress(video.videoCode), progress => {
+        if (!this.closed) this.updateData({ progress })
+      }).then(progress => { if (!this.closed) this.updateData({ progress }) }),
     ]).then(() => {}, () => {})
   }
 
@@ -60,8 +64,11 @@ export class MissAVPlaybackPreparation {
     const read = (async () => {
       try {
         if (this.closed || !isMissAVSubtitleEnabled(this.video.videoCode)) return
-        const track = await this.optional(() => loadMissAVSubtitle(this.video.videoCode))
-        if (!this.closed && current === this.subtitleGeneration) this.data.subtitles = track
+        const isCurrent = () => !this.closed && current === this.subtitleGeneration && isMissAVSubtitleEnabled(this.video.videoCode)
+        const track = await this.optional(() => loadMissAVSubtitle(this.video.videoCode), lateTrack => {
+          if (isCurrent()) this.updateData({ subtitles: lateTrack })
+        })
+        if (isCurrent()) this.updateData({ subtitles: track })
       } catch { /* Optional data must not break playback preparation. */ }
       finally { if (current === this.subtitleGeneration) this.subtitlePending = false }
     })()
@@ -72,6 +79,20 @@ export class MissAVPlaybackPreparation {
   async waitForData(): Promise<PreparedPlaybackData> {
     await Promise.all([this.ready, this.subtitleRead])
     return { ...this.data }
+  }
+
+  subscribeData(listener: PreparedPlaybackDataListener): () => void {
+    this.dataListeners.add(listener)
+    listener({ ...this.data })
+    return () => { this.dataListeners.delete(listener) }
+  }
+
+  private updateData(patch: Partial<PreparedPlaybackData>): void {
+    Object.assign(this.data, patch)
+    const snapshot = { ...this.data }
+    for (const listener of [...this.dataListeners]) {
+      try { listener(snapshot) } catch { /* One consumer cannot interrupt preparation. */ }
+    }
   }
 
   prepareSource(detail: MissAVVideoDetail, source = detail.sources[0]): void {
@@ -110,8 +131,13 @@ export class MissAVPlaybackPreparation {
 
   dispose(): void { this.closed = true; ++this.subtitleGeneration; this.releaseAsset() }
 
-  private async optional<T>(read: () => Promise<T>): Promise<T | null> {
-    try { return await withMissAVDeadline(Promise.resolve().then(read), 2_000, "本机播放数据读取超时。") }
+  private async optional<T>(read: () => Promise<T>, onLate?: (value: T) => void): Promise<T | null> {
+    let timedOut = false
+    const request = Promise.resolve().then(read).then(value => {
+      if (timedOut) onLate?.(value)
+      return value
+    })
+    try { return await withMissAVDeadline(request, 2_000, "本机播放数据读取超时。", () => { timedOut = true }) }
     catch { return null }
   }
 }
