@@ -3,7 +3,7 @@ import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVid
 import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "../../data/storage"
 import { formatMissAVContinueWatching } from "../../features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "../../features/home/home-screen-data"
-import { ACCENT, ActionRow, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
+import { ActionRow, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
 import { MediaGridCard, MediaTile } from "../components/media_cards"
 import { ContinueWatchingCard, HOME_QUICK_COLLECTIONS, HomeQuickCollectionChip, HomeSearchEntry } from "../components/home_components"
 import { StateView } from "../components/state_view"
@@ -48,7 +48,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
     const items = data[section]
     const error = data.errors[section]
     return <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      <VStack padding={{ horizontal: PAGE_PADDING }}><SectionHeading title={title} trailing={<NavigationLink destination={<DiscoverPage key={`home-all-${collection}`} initialCollection={collection} onHistoryChanged={props.onHistoryChanged} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><Text font="subheadline" foregroundStyle={ACCENT} padding={{ horizontal: 10 }} frame={{ minHeight: 44 }} contentShape="capsule">查看全部</Text></NavigationLink>} /></VStack>
+      <VStack padding={{ horizontal: PAGE_PADDING }}><SectionHeading title={title} trailing={<NavigationLink destination={<DiscoverPage key={`home-all-${collection}`} initialCollection={collection} onHistoryChanged={props.onHistoryChanged} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }}><Text font="footnote" foregroundStyle="label" lineLimit={1}>查看全部</Text></NavigationLink>} /></VStack>
       {items.length ? section === "latest"
         ? <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 12 }]} spacing={16} padding={{ horizontal: PAGE_PADDING }}>{items.map(video => <MediaGridCard key={video.videoCode} video={video} responsiveArtwork onOpen={open} />)}</LazyVGrid>
         : <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top" padding={{ horizontal: PAGE_PADDING }}>{items.map(video => <MediaTile key={video.videoCode} video={video} onOpen={open} />)}</LazyHStack></ScrollView>
@@ -65,7 +65,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
     <PageBackground />
     <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack spacing={24} alignment="leading" padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
-        <VStack padding={{ horizontal: PAGE_PADDING }}><NavigationLink destination={<SearchPage key={`home-search-${props.accessRevision || 0}`} onHistoryChanged={props.onHistoryChanged} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeSearchEntry /></NavigationLink></VStack>
+        <VStack padding={{ horizontal: PAGE_PADDING }}><NavigationLink destination={<SearchPage key={`home-search-${props.accessRevision || 0}`} onHistoryChanged={props.onHistoryChanged} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" tint="secondarySystemFill" frame={{ minHeight: 44 }}><HomeSearchEntry /></NavigationLink></VStack>
         {continueWatching.length || data.errors.history ? <VStack spacing={12} alignment="leading">
           <VStack spacing={3} padding={{ horizontal: PAGE_PADDING }}><SectionHeading title="继续观看" subtitle={continueWatching.length ? `${continueWatching.length} 部未看完` : undefined} level="primary" /></VStack>
           {continueWatching.length ? <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top" padding={{ horizontal: PAGE_PADDING }}>{continueWatching.map(record => <ContinueWatchingCard key={record.videoCode} video={record.video} resumeLabel={formatMissAVContinueWatching(record.positionSeconds)} progressFraction={playbackProgressFraction(record)} onOpen={open} />)}</LazyHStack></ScrollView> : undefined}
@@ -74,7 +74,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
 
         <VStack spacing={12} alignment="leading">
           <VStack padding={{ horizontal: PAGE_PADDING }}><SectionHeading title="快速浏览" subtitle="直达常用栏目" /></VStack>
-          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${props.accessRevision || 0}`} initialCollection={item.collection} onHistoryChanged={props.onHistoryChanged} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
+          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${props.accessRevision || 0}`} initialCollection={item.collection} onHistoryChanged={props.onHistoryChanged} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }}><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
         </VStack>
 
         {onlineSection("latest", "最近更新", "new")}

@@ -1,6 +1,6 @@
 import { Button, HStack, Image, LazyHStack, LazyVGrid, NavigationLink, NavigationStack, ScrollView, Script, Text, Toolbar, ToolbarItem, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "./src/site/client"
-import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "./src/ui/design"
+import { glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "./src/ui/design"
 import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "./src/data/storage"
 import { formatMissAVContinueWatching } from "./src/features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "./src/features/home/home-screen-data"
@@ -70,7 +70,7 @@ export default function MISSAVHomeScreenView() {
     const items = data[section]
     const error = data.errors[section]
     return <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      <SectionHeading title={title} trailing={<NavigationLink destination={<DiscoverPage key={`${collection}-${domainRevision}`} initialCollection={collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><Text font="subheadline" foregroundStyle={ACCENT} padding={{ horizontal: 10 }} frame={{ minHeight: 44 }} contentShape="capsule">查看全部</Text></NavigationLink>} />
+      <SectionHeading title={title} trailing={<NavigationLink destination={<DiscoverPage key={`${collection}-${domainRevision}`} initialCollection={collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }}><Text font="footnote" foregroundStyle="label" lineLimit={1}>查看全部</Text></NavigationLink>} />
       {items.length ? section === "latest"
         ? <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 12 }]} spacing={16}>{items.map(video => <MediaGridCard key={video.videoCode} video={video} responsiveArtwork onOpen={open} />)}</LazyVGrid>
         : <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top">{items.map(video => <MediaTile key={video.videoCode} video={video} onOpen={open} />)}</LazyHStack></ScrollView>
@@ -84,7 +84,7 @@ export default function MISSAVHomeScreenView() {
     <PageBackground />
     <ScrollView navigationTitle="MISSAV" navigationBarTitleDisplayMode="inline" toolbar={toolbar} scrollEdgeEffectHidden={{ edges: "top", hidden: true }} refreshable={() => loader.current?.refresh() || Promise.resolve()} navigationDestination={{ isPresented: detailNavigation.isPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={bumpHistory} /> : <VStack /> }}>
       <VStack spacing={24} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
-        <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeSearchEntry /></NavigationLink>
+        <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" tint="secondarySystemFill" frame={{ minHeight: 44 }}><HomeSearchEntry /></NavigationLink>
 
         {data.recent.length ? <VStack spacing={12} alignment="leading">
           <SectionHeading title="继续观看" subtitle={`${data.recent.length} 部未看完`} level="primary" />
@@ -94,17 +94,17 @@ export default function MISSAVHomeScreenView() {
 
         <VStack spacing={12} alignment="leading">
           <SectionHeading title="快速浏览" subtitle="直达常用栏目" />
-          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${domainRevision}`} initialCollection={item.collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
+          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${domainRevision}`} initialCollection={item.collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }}><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
         </VStack>
 
         <HStack spacing={12}>
-          <Button action={openDiscover} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ maxWidth: "infinity" }} navigationDestination={{ isPresented: discoverPresented, content: <DiscoverPage key={`home-discover-${domainRevision}`} {...common} /> }}><HomeAction title="浏览" systemImage="square.grid.2x2" /></Button>
-          <NavigationLink destination={<HomeHistoryRoute kind="library" revision={historyRevision} domainRevision={domainRevision} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ maxWidth: "infinity" }}><HomeAction title="资料库" systemImage="play.square.stack" /></NavigationLink>
+          <Button action={openDiscover} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ maxWidth: "infinity", minHeight: 44 }} navigationDestination={{ isPresented: discoverPresented, content: <DiscoverPage key={`home-discover-${domainRevision}`} {...common} /> }}><HomeAction title="浏览" systemImage="square.grid.2x2" /></Button>
+          <NavigationLink destination={<HomeHistoryRoute kind="library" revision={historyRevision} domainRevision={domainRevision} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ maxWidth: "infinity", minHeight: 44 }}><HomeAction title="资料库" systemImage="play.square.stack" /></NavigationLink>
         </HStack>
 
         {onlineSection("latest", "最近更新", "new")}
         {onlineSection("trending", "今日热门", "today-hot")}
-        <NavigationLink destination={<HomeHistoryRoute kind="recommendations" revision={historyRevision} domainRevision={domainRevision} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeAction title="为你推荐" systemImage="sparkles" /></NavigationLink>
+        <NavigationLink destination={<HomeHistoryRoute kind="recommendations" revision={historyRevision} domainRevision={domainRevision} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }}><HomeAction title="为你推荐" systemImage="sparkles" /></NavigationLink>
       </VStack>
     </ScrollView>
   </ZStack></NavigationStack>
@@ -120,9 +120,9 @@ function HomeHistoryRoute(props: { kind: "library" | "recommendations"; revision
 }
 
 function HomeAction(props: { title: string; systemImage: string }) {
-  return <HStack spacing={10} padding={12} frame={{ maxWidth: "infinity", minHeight: 50 }} contentShape="capsule" accessibilityLabel={props.title}>
-    <Image systemName={props.systemImage} foregroundStyle={ACCENT} />
-    <Text font="subheadline" fontWeight="semibold" frame={{ maxWidth: "infinity", alignment: "leading" }}>{props.title}</Text>
+  return <HStack spacing={8} padding={{ horizontal: 4, vertical: 2 }} frame={{ maxWidth: "infinity" }} contentShape="capsule" accessibilityLabel={props.title}>
+    <Image systemName={props.systemImage} foregroundStyle="secondaryLabel" />
+    <Text font="footnote" fontWeight="semibold" foregroundStyle="label" frame={{ maxWidth: "infinity", alignment: "leading" }}>{props.title}</Text>
     <Image systemName="chevron.right" font="caption2" foregroundStyle="tertiaryLabel" />
   </HStack>
 }
