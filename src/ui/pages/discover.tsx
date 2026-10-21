@@ -106,13 +106,13 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
       <VStack key="discover-results-top" spacing={16} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
-            {MISSAV_COLLECTION_GROUPS.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === group} action={() => { setGroup(item.value); selectCollection(item.defaultCollection) }} />)}
+            {MISSAV_COLLECTION_GROUPS.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === group} level="primary" action={() => { setGroup(item.value); selectCollection(item.defaultCollection) }} />)}
           </HStack>
         </ScrollView>
 
         {subcollections.length > 1 ? <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
-            {subcollections.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === collection} action={() => selectCollection(item.value)} />)}
+            {subcollections.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === collection} level="secondary" action={() => selectCollection(item.value)} />)}
           </HStack>
         </ScrollView> : undefined}
 
@@ -128,7 +128,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
           {directoryMode ? <DirectoryContent categories={categories} loading={loading} error={error} onRetry={() => { void load({}, true) }} onLoadMore={loadNextPageIfNeeded} onSelect={item => { setCategoryTitle(item.title); void load({ page: 1, categoryPath: item.path, filter: "", sort: "released_at" }) }} /> : loading && items.length === 0 ? <StateView title={`正在加载${title}`} description="正在载入栏目内容。" loading presentation="section" /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load({}, true) }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection, filter: "", sort: defaultCollectionSort(collection) }, true) }} actionTitle="重置筛选" /> : <>
             <HStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
               <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{title}</Text>
-              <Text font="subheadline" foregroundStyle="tertiaryLabel" frame={{ alignment: "trailing" }}>{`本页 ${items.length} 部`}</Text>
+              <Text font="subheadline" foregroundStyle="tertiaryLabel" frame={{ alignment: "trailing" }}>{`已加载 ${items.length} 部`}</Text>
             </HStack>
             <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 14 }]} spacing={20}>{items.map((video, index) => index === items.length - 1 ? <VStack key={`discover-load-more-${video.videoCode}`} onAppear={loadNextPageIfNeeded}><MediaGridCard video={video} responsiveArtwork onOpen={open} /></VStack> : <MediaGridCard key={video.videoCode} video={video} responsiveArtwork onOpen={open} />)}</LazyVGrid>
           </>}
@@ -170,11 +170,17 @@ function mergeUnique<T>(current: T[], incoming: T[], keyOf: (item: T) => string)
   return [...current, ...incoming.filter(item => { const key = keyOf(item); if (seen.has(key)) return false; seen.add(key); return true })]
 }
 
-function CategoryChip(props: { title: string; active: boolean; action: () => void }) {
+function CategoryChip(props: { title: string; active: boolean; level: "primary" | "secondary"; action: () => void }) {
+  if (props.level === "primary") return <Button action={props.action} buttonStyle="plain" frame={{ minHeight: 48 }} contentShape="rect" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
+    <HStack spacing={6} padding={{ horizontal: 10, vertical: 8 }} frame={{ minHeight: 48 }}>
+      {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle={ACCENT} /> : undefined}
+      <Text font="subheadline" fontWeight={props.active ? "bold" : "medium"} foregroundStyle={props.active ? ACCENT : "secondaryLabel"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
+    </HStack>
+  </Button>
   return <Button action={props.action} buttonStyle="plain" frame={{ minHeight: 44 }} contentShape="rect" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
-    <HStack spacing={6} padding={{ horizontal: 15, vertical: 8 }} fixedSize={{ horizontal: true, vertical: false }} background={props.active ? ACCENT : "secondarySystemBackground"} clipShape="capsule">
-      {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle="white" /> : undefined}
-      <Text font="subheadline" fontWeight={props.active ? "bold" : "medium"} foregroundStyle={props.active ? "white" : "label"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
+    <HStack spacing={6} padding={{ horizontal: 13, vertical: 7 }} fixedSize={{ horizontal: true, vertical: false }} background={props.active ? "tertiarySystemFill" : "secondarySystemBackground"} clipShape="capsule">
+      {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle={ACCENT} /> : undefined}
+      <Text font="footnote" fontWeight={props.active ? "semibold" : "regular"} foregroundStyle={props.active ? ACCENT : "secondaryLabel"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
     </HStack>
   </Button>
 }
