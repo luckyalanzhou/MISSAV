@@ -1,4 +1,4 @@
-import { Button, Color, Device, HStack, Image, Text, VStack, ZStack } from "scripting"
+import { Button, Capsule, Color, Device, HStack, Image, Text, VStack, ZStack } from "scripting"
 
 export const ACCENT: Color = "systemBlue"
 export const PAGE_BACKGROUND: Color = "systemBackground"
@@ -35,6 +35,20 @@ export function glassButtonStyle(prominent = false): "glass" | "glassProminent" 
   const glassAvailable = supportsLiquidGlass()
   if (glassAvailable) return prominent ? "glassProminent" : "glass"
   return prominent ? "borderedProminent" : "bordered"
+}
+
+export function CapsuleSurface() {
+  return <Capsule fill="white" stroke={{
+    shapeStyle: {
+      gradient: [
+        { color: "rgba(255,255,255,0.98)", location: 0 },
+        { color: "rgba(96,108,124,0.24)", location: 1 },
+      ],
+      startPoint: { x: 0.5, y: 0 },
+      endPoint: { x: 0.5, y: 1 },
+    },
+    strokeStyle: { lineWidth: 1.1 },
+  }} />
 }
 
 export function PageBackground() {

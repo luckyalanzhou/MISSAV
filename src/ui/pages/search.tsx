@@ -1,6 +1,6 @@
 import { Button, HStack, Image, LazyHStack, LazyVStack, Picker, ProgressView, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { defaultMissAVCollectionSort, missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "../../site/client"
-import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING, supportsLiquidGlass } from "../design"
+import { ACCENT, CapsuleSurface, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING, supportsLiquidGlass } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard, MediaTile } from "../components/media_cards"
@@ -156,7 +156,7 @@ function DiscoveryContent(props: { popular: MissAVVideoItem[]; popularLoading: b
     </VStack>
     <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
       <Text font="title2" fontWeight="bold">浏览分类</Text>
-      <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{discoveryCollections.map(item => <Button key={item.collection} action={() => props.onSelectCollection(item.collection, item.title)} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="regular" frame={{ minHeight: 46 }} accessibilityLabel={`${item.title}，${item.subtitle}`}>
+      <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{discoveryCollections.map(item => <Button key={item.collection} action={() => props.onSelectCollection(item.collection, item.title)} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="regular" tint="white" background={<CapsuleSurface />} frame={{ minHeight: 46 }} accessibilityLabel={`${item.title}，${item.subtitle}`}>
         <HStack spacing={8} padding={{ horizontal: 3 }} contentShape="capsule">
           <Image systemName={item.systemImage} font="caption" foregroundStyle="secondaryLabel" />
           <Text font="subheadline" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>{item.title}</Text>

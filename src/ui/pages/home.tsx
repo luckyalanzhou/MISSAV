@@ -3,7 +3,7 @@ import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVid
 import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "../../data/storage"
 import { formatMissAVContinueWatching } from "../../features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "../../features/home/home-screen-data"
-import { ActionRow, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
+import { ActionRow, CapsuleSurface, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
 import { MediaGridCard, MediaTile } from "../components/media_cards"
 import { ContinueWatchingCard, HOME_QUICK_COLLECTIONS, HomeQuickCollectionChip, HomeSearchEntry } from "../components/home_components"
 import { StateView } from "../components/state_view"
@@ -74,7 +74,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
 
         <VStack spacing={12} alignment="leading">
           <VStack padding={{ horizontal: PAGE_PADDING }}><SectionHeading title="快速浏览" subtitle="直达常用栏目" /></VStack>
-          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${props.accessRevision || 0}`} initialCollection={item.collection} onHistoryChanged={props.onHistoryChanged} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="regular" frame={{ minHeight: 46 }}><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
+          <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${props.accessRevision || 0}`} initialCollection={item.collection} onHistoryChanged={props.onHistoryChanged} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="regular" tint="white" background={<CapsuleSurface />} frame={{ minHeight: 46 }}><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
         </VStack>
 
         {onlineSection("latest", "最近更新", "new")}

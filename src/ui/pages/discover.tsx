@@ -1,6 +1,6 @@
 import { Button, Device, HStack, Image, LazyVGrid, Menu, ProgressView, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../../site/client"
-import { ACCENT, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "../design"
+import { ACCENT, CapsuleSurface, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard } from "../components/media_cards"
@@ -175,7 +175,7 @@ function CategoryChip(props: { title: string; active: boolean; level: "primary" 
   const primary = props.level === "primary"
   const prominent = primary && props.active
   const glassAvailable = supportsLiquidGlass()
-  return <Button action={props.action} buttonStyle={glassAvailable ? prominent ? "glassProminent" : "glass" : prominent ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" controlSize="regular" tint={props.active ? ACCENT : undefined} frame={{ minHeight: 46 }} contentShape="capsule" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
+  return <Button action={props.action} buttonStyle={glassAvailable ? prominent ? "glassProminent" : "glass" : prominent ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" controlSize="regular" tint={props.active ? ACCENT : "white"} background={<CapsuleSurface />} frame={{ minHeight: 46 }} contentShape="capsule" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
     <HStack spacing={8} padding={{ horizontal: 3 }} fixedSize={{ horizontal: true, vertical: false }}>
       {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle={prominent ? "white" : ACCENT} /> : undefined}
       <Text font={primary ? "subheadline" : "footnote"} fontWeight={props.active ? "semibold" : "regular"} foregroundStyle={prominent ? "white" : props.active ? ACCENT : "label"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>
