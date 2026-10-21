@@ -132,7 +132,7 @@ export function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (vi
               {loading ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="magnifyingglass" />}
             </Button>
           </HStack>
-          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">搜索 Subtitle Cat 的公开免费字幕。点击语言名称可预览文本，预览不会关联字幕。下载的完整 SRT 保存在文稿目录的 MISSAV Subtitles 文件夹中，保存数量不限，并关联到当前详情作品。修改搜索番号时，请确认字幕适用于当前作品。</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">仅显示简体和繁体中文字幕。点语言名称可预览；下载完整免费 SRT 后会自动关联当前作品。修改番号时，请确认字幕适用于当前视频。</Text>
           {error ? <VStack spacing={8} alignment="leading" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
             <Text font="subheadline" foregroundStyle="systemRed" multilineTextAlignment="leading">{error}</Text>
             <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} action={() => { void search() }} />
