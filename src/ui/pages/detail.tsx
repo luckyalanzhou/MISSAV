@@ -162,7 +162,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
       <VStack spacing={10} frame={{ maxWidth: "infinity" }}>
         {primarySource ? <Button action={() => { void play(primarySource) }} disabled={Boolean(openingSource)} buttonStyle={glassButtonStyle(true)} buttonBorderShape="capsule" controlSize="large" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: PRIMARY_ACTION_HEIGHT }} accessibilityLabel={openingSource === primarySource.url ? `正在打开 ${primarySource.label}` : `播放 ${primarySource.label}`}><HStack spacing={8}>{openingSource === primarySource.url ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="play.fill" />}<Text font="headline" fontWeight="bold">{openingSource === primarySource.url ? "正在打开" : `播放 ${primarySource.label}`}</Text></HStack></Button> : loading ? <StateView title="正在获取播放信息" loading presentation="row" /> : undefined}
         <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
-          <Button action={() => setSubtitleSearchPresented(true)} disabled={subtitleSearchPresented} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`} navigationDestination={{
+          <Button action={() => setSubtitleSearchPresented(true)} disabled={subtitleSearchPresented} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`} navigationDestination={{
             isPresented: subtitleSearchPresented,
             onChanged: setSubtitleSearchPresented,
             content: subtitleSearchPresented ? <SubtitleSearchPage videoCode={code} onClose={() => setSubtitleSearchPresented(false)} onDownloaded={downloadedCode => {
@@ -171,8 +171,8 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
               setSubtitleEnabled(true)
               void props.preparation?.refreshSubtitles()
             }} /> : <VStack />,
-          }}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>搜索字幕</Text></HStack></Button>
-          {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={subtitleEnabled ? "关闭本作品字幕显示" : "开启本作品字幕显示"}><HStack spacing={7}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text>{subtitleEnabled ? "关闭字幕" : "开启字幕"}</Text></HStack></Button> : undefined}
+          }}><HStack spacing={7}><Image systemName="magnifyingglass" foregroundStyle="secondaryLabel" /><Text font="footnote" foregroundStyle="label">搜索字幕</Text></HStack></Button>
+          {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={subtitleEnabled ? "关闭本作品字幕显示" : "开启本作品字幕显示"}><HStack spacing={7}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text font="footnote" foregroundStyle="label">{subtitleEnabled ? "关闭字幕" : "开启字幕"}</Text></HStack></Button> : undefined}
         </HStack>
         {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在文稿目录的 MISSAV Subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
       </VStack>
@@ -185,7 +185,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
 
       {detail && detail.sources.length > 1 ? <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity" }}><SectionHeading title="其他清晰度" subtitle="选择其他可用画质" /><VStack spacing={0} frame={{ maxWidth: "infinity" }}>{detail.sources.slice(1).map((source, index) => <VStack key={`${source.label}-${source.url}`} spacing={0} frame={{ maxWidth: "infinity" }}>{index ? <Divider /> : undefined}<SourceRow source={source} openingSource={openingSource} action={() => { void play(source) }} /></VStack>)}</VStack></VStack> : !loading && detail && !detail.sources.length ? <StateView title="暂无可用播放源" description="请下拉刷新后重试。" kind="empty" systemImage="play.slash" action={() => { void load() }} actionTitle="重新加载" /> : undefined}
 
-      {detailTrace.current || loading || detailError ? <Button title={loading ? "复制当前诊断" : detailError ? "复制失败诊断" : "复制完整诊断"} systemImage="doc.on.doc" buttonStyle="plain" action={() => { void copyLoadDiagnostics() }} /> : undefined}
+      {detailTrace.current || loading || detailError ? <Button title={loading ? "复制当前诊断" : detailError ? "复制失败诊断" : "复制完整诊断"} systemImage="doc.on.doc" buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => { void copyLoadDiagnostics() }} /> : undefined}
     </VStack>
   </ScrollView></ZStack>
 }
@@ -196,7 +196,7 @@ function normalizeSubtitleAssociationCode(value: string): string {
 }
 
 function TagButton(props: { title: string; action: () => void }) {
-  return <Button action={props.action} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={`搜索标签 ${props.title}`}><HStack spacing={5} padding={{ horizontal: 10, vertical: 7 }} frame={{ minHeight: 44 }} contentShape="capsule"><Image systemName="magnifyingglass" font="caption2" foregroundStyle={ACCENT} /><Text font="caption" fontWeight="semibold" lineLimit={1}>{props.title}</Text></HStack></Button>
+  return <Button action={props.action} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" frame={{ minHeight: 44 }} contentShape="capsule" accessibilityLabel={`搜索标签 ${props.title}`}><HStack spacing={5} contentShape="capsule"><Image systemName="magnifyingglass" font="caption2" foregroundStyle="secondaryLabel" /><Text font="caption" fontWeight="semibold" foregroundStyle="label" lineLimit={1}>{props.title}</Text></HStack></Button>
 }
 
 function TagSearchPage(props: { tag: string; onHistoryChanged: () => void }) {
@@ -223,7 +223,24 @@ function TagSearchPage(props: { tag: string; onHistoryChanged: () => void }) {
   useEffect(() => () => listingRequest.current.cancel(), [props.tag])
   useEffect(() => { if (resultsRevision) scrollProxy.current?.scrollTo("tag-results-top", "top") }, [resultsRevision])
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}><PageBackground /><ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle={props.tag} navigationBarTitleDisplayMode="inline" refreshable={() => load(page)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}><VStack key="tag-results-top" spacing={18} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}><VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><HStack spacing={7}><Image systemName="tag.fill" foregroundStyle={ACCENT} /><Text font="title2" fontWeight="bold">{props.tag}</Text></HStack><Text font="footnote" foregroundStyle="secondaryLabel">{`相关作品 · 第 ${page} 页 · ${items.length} 个结果`}</Text></VStack>{loading && !items.length ? <StateView title="正在搜索标签" loading presentation="section" /> : error && !items.length ? <StateView title="标签搜索失败" description={error} kind="error" action={() => { void load(page) }} /> : !items.length ? <StateView title="暂无相关作品" description="未找到带有此标签的作品。" systemImage="tag.slash" /> : <VideoRowList items={items} status={() => `标签 · ${props.tag}`} statusSystemImage="tag" onOpen={open} />}{error && items.length ? <StateView title="刷新失败" description="正在显示上次成功的结果。" kind="error" action={() => { void load(page) }} presentation="row" /> : undefined}{items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void load(page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void load(page + 1) }} /></HStack> : undefined}</VStack></ScrollView>}}</ScrollViewReader></ZStack>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
+    <PageBackground />
+    <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle={props.tag} navigationBarTitleDisplayMode="inline" refreshable={() => load(page)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+      <VStack key="tag-results-top" spacing={18} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
+        <VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+          <HStack spacing={7}><Image systemName="tag.fill" foregroundStyle={ACCENT} /><Text font="title2" fontWeight="bold">{props.tag}</Text></HStack>
+          <Text font="footnote" foregroundStyle="secondaryLabel">{`相关作品 · 第 ${page} 页 · ${items.length} 个结果`}</Text>
+        </VStack>
+        {loading && !items.length ? <StateView title="正在搜索标签" loading presentation="section" /> : error && !items.length ? <StateView title="标签搜索失败" description={error} kind="error" action={() => { void load(page) }} /> : !items.length ? <StateView title="暂无相关作品" description="未找到带有此标签的作品。" systemImage="tag.slash" /> : <VideoRowList items={items} status={() => `标签 · ${props.tag}`} statusSystemImage="tag" onOpen={open} />}
+        {error && items.length ? <StateView title="刷新失败" description="正在显示上次成功的结果。" kind="error" action={() => { void load(page) }} presentation="row" /> : undefined}
+        {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
+          <Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => { void load(page - 1) }} />
+          <Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text>
+          <Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} buttonStyle={glassButtonStyle(true)} buttonBorderShape="capsule" controlSize="small" frame={{ minHeight: 44 }} action={() => { void load(page + 1) }} />
+        </HStack> : undefined}
+      </VStack>
+    </ScrollView>}}</ScrollViewReader>
+  </ZStack>
 }
 
 function SourceRow(props: { source: MissAVVideoSource; openingSource: string | null; action: () => void }) {

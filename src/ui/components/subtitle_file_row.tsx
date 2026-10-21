@@ -22,7 +22,7 @@ export function SubtitleFileRow(props: {
       </Button> : <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{file.language}</Text>}
       <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1} accessibilityLabel={metadata} frame={{ maxWidth: "infinity", alignment: "leading" }}>{metadata}</Text>
     </VStack>
-    <Button action={() => { if (canDownload && !downloadingId) props.onDownload(file) }} disabled={!canDownload || Boolean(downloadingId)} buttonStyle={glassButtonStyle(canDownload)} buttonBorderShape="capsule" tint={ACCENT} frame={{ minWidth: 108, minHeight: MIN_HIT_SIZE }} contentShape="capsule" accessibilityLabel={canDownload ? `下载${file.source}的${file.language}字幕` : `${file.language}字幕仅供预览，无法下载`}>
+    <Button action={() => { if (canDownload && !downloadingId) props.onDownload(file) }} disabled={!canDownload || Boolean(downloadingId)} buttonStyle={glassButtonStyle(canDownload)} buttonBorderShape="capsule" controlSize="small" tint={ACCENT} frame={{ minWidth: 108, minHeight: MIN_HIT_SIZE }} contentShape="capsule" accessibilityLabel={canDownload ? `下载${file.source}的${file.language}字幕` : `${file.language}字幕仅供预览，无法下载`}>
       <HStack spacing={4}>
         {downloading ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName={canDownload ? "square.and.arrow.down" : "eye"} font="caption" />}
         <Text font="caption" fontWeight="semibold" lineLimit={1}>{downloading ? "下载中…" : canDownload ? "下载字幕" : "仅供预览"}</Text>
