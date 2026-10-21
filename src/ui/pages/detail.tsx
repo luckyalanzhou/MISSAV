@@ -151,7 +151,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}><PageBackground /><ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" onAppear={appear} onDisappear={disappear} refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, content: selectedTag ? <TagSearchPage tag={selectedTag} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
     <VStack spacing={SECTION_SPACING} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-      <MediaArtwork video={{ ...props.video, coverUrl: detail?.coverUrl || props.video.coverUrl }} height={204} radius={MEDIA_HERO_RADIUS} prefetch={false} />
+      <MediaArtwork video={{ ...props.video, coverUrl: detail?.coverUrl || props.video.coverUrl }} radius={MEDIA_HERO_RADIUS} prefetch={false} />
 
       <VStack spacing={6} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <Text font="caption" fontWeight="bold" foregroundStyle={ACCENT} frame={{ maxWidth: "infinity", alignment: "leading" }}>{code}</Text>
@@ -162,8 +162,8 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
 
       <VStack spacing={10} frame={{ maxWidth: "infinity" }}>
         {primarySource ? <Button action={() => { void play(primarySource) }} disabled={Boolean(openingSource)} buttonStyle="borderedProminent" controlSize="large" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: PRIMARY_ACTION_HEIGHT }} accessibilityLabel={openingSource === primarySource.url ? `正在打开 ${primarySource.label}` : `播放 ${primarySource.label}`}><HStack spacing={8}>{openingSource === primarySource.url ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="play.fill" />}<Text font="headline" fontWeight="bold">{openingSource === primarySource.url ? "正在打开" : `播放 ${primarySource.label}`}</Text></HStack></Button> : loading ? <StateView title="正在获取播放信息" loading presentation="row" /> : undefined}
-        {primarySource ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
-          <Button action={() => setSubtitleSearchPresented(true)} disabled={subtitleSearchPresented || Boolean(openingSource)} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`} navigationDestination={{
+        <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
+          <Button action={() => setSubtitleSearchPresented(true)} disabled={subtitleSearchPresented} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={`按番号搜索字幕 ${code}`} navigationDestination={{
             isPresented: subtitleSearchPresented,
             onChanged: setSubtitleSearchPresented,
             content: subtitleSearchPresented ? <SubtitleSearchPage videoCode={code} onClose={() => setSubtitleSearchPresented(false)} onDownloaded={downloadedCode => {
@@ -174,7 +174,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
             }} /> : <VStack />,
           }}><HStack spacing={7}><Image systemName="magnifyingglass" /><Text>搜索字幕</Text></HStack></Button>
           {subtitleAvailable ? <Button action={toggleSubtitle} buttonStyle="bordered" frame={{ maxWidth: "infinity", minHeight: SECONDARY_ACTION_HEIGHT }} accessibilityLabel={subtitleEnabled ? "关闭本作品字幕显示" : "开启本作品字幕显示"}><HStack spacing={7}><Image systemName={subtitleEnabled ? "captions.bubble.fill" : "captions.bubble"} foregroundStyle={subtitleEnabled ? ACCENT : "secondaryLabel"} /><Text>{subtitleEnabled ? "关闭字幕" : "开启字幕"}</Text></HStack></Button> : undefined}
-        </HStack> : undefined}
+        </HStack>
         {!subtitleAvailable ? <Text font="caption" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">按番号搜索并下载字幕；文件保存在文稿目录的 MISSAV Subtitles 文件夹中，自动关联到对应作品，保存数量不限。</Text> : undefined}
       </VStack>
 
