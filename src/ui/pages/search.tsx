@@ -31,6 +31,7 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
   const [source, setSource] = useState<ResultSource | null>(null)
   const [page, setPage] = useState(1)
   const [hasNext, setHasNext] = useState(false)
+  const [failedPage, setFailedPage] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [items, setItems] = useState<MissAVVideoItem[]>([])
@@ -64,15 +65,16 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
     const sourceChanged = !source || source.kind !== nextSource.kind || (source.kind === "query" ? source.query !== (nextSource.kind === "query" ? nextSource.query : "") : source.collection !== (nextSource.kind === "collection" ? nextSource.collection : ""))
     setLoading(true); setError(null); setSource(nextSource)
     if (sourceChanged) { setItems([]); setHasNext(false); setPage(1) }
+    setFailedPage(null)
     const params = nextSource.kind === "query"
       ? { query: nextSource.query, page: nextPage, sort: "released_at" as const, filter: "" as const }
       : { collection: nextSource.collection, page: nextPage, sort: defaultMissAVCollectionSort(nextSource.collection), filter: "" as const }
     await listingRequest.current.load(params, { forceRefresh, allowStale: true }, {
       loaded: result => {
-        setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1)
+        setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setFailedPage(null); setResultsRevision(value => value + 1)
         setError(result.refreshError || null)
       },
-      failed: reason => setError(reason instanceof Error ? reason.message : String(reason)),
+      failed: reason => { setFailedPage(nextPage); setError(reason instanceof Error ? reason.message : String(reason)) },
       settled: () => setLoading(false),
     })
   }
@@ -85,7 +87,7 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
   function runSearch() {
     const query = keyword.trim()
     dismissKeyboard()
-    if (!query) { listingRequest.current.cancel(); setLoading(false); setError("请输入番号、女优或作品标题。"); setSource({ kind: "query", query: "" }); setItems([]); setPage(1); setHasNext(false); return }
+    if (!query) { listingRequest.current.cancel(); setLoading(false); setFailedPage(null); setError(null); setSource({ kind: "query", query: "" }); setItems([]); setPage(1); setHasNext(false); return }
     void loadResults({ kind: "query", query }, 1, true)
   }
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
@@ -93,7 +95,7 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
     const next: SearchResultLayout = value === "cover" ? "cover" : "list"
     setResultLayout(next)
   }
-  function showDiscovery() { listingRequest.current.cancel(); setSource(null); setItems([]); setError(null); setLoading(false) }
+  function showDiscovery() { listingRequest.current.cancel(); setSource(null); setItems([]); setError(null); setFailedPage(null); setLoading(false) }
   useEffect(() => () => { listingRequest.current.cancel(); discoveryScope.current?.cancel() }, [])
   useEffect(() => { if (resultsRevision) scrollProxy.current?.scrollTo("results-top", "top") }, [resultsRevision])
   useEffect(() => { Storage.set(SEARCH_RESULT_LAYOUT_KEY, resultLayout) }, [resultLayout])
@@ -129,8 +131,8 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
               <Button title="浏览分类" systemImage="square.grid.2x2" action={showDiscovery} frame={{ maxWidth: "infinity", minHeight: 44, alignment: "trailing" }} />
             </VStack>
           </VStack>
-          {loading && !items.length ? <ProgressView tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: 260 }} /> : error && !items.length ? <StateView title={source.kind === "query" && !source.query ? "输入搜索内容" : "加载失败"} description={error} kind="error" action={source.kind === "query" && !source.query ? undefined : () => { void loadResults(source, page, true) }} /> : !items.length ? <StateView title="未找到结果" description="请尝试其他番号、女优、作品标题或浏览分类。" kind="empty" systemImage="magnifyingglass" action={showDiscovery} actionTitle="浏览分类" /> : <SearchResultList items={items} layout={resultLayout} onOpen={open} />}
-          {error && items.length ? <Text font="footnote" foregroundStyle="secondaryLabel">{error}</Text> : undefined}
+          {loading && !items.length ? <StateView title={source.kind === "query" ? `正在搜索“${source.query}”` : `正在加载${source.title}`} description="正在载入作品列表。" loading presentation="section" /> : source.kind === "query" && !source.query ? <StateView title="输入搜索内容" description="请输入番号、女优或作品标题，然后开始搜索。" kind="empty" systemImage="magnifyingglass" /> : error && !items.length ? <StateView title="加载失败" description={error} kind="error" action={() => { void loadResults(source, failedPage ?? page, true) }} /> : !items.length ? <StateView title="未找到结果" description="请尝试其他番号、女优、作品标题或浏览分类。" kind="empty" systemImage="magnifyingglass" action={showDiscovery} actionTitle="浏览分类" /> : <SearchResultList items={items} layout={resultLayout} onOpen={open} />}
+          {error && items.length ? <HStack spacing={8} frame={{ maxWidth: "infinity" }}><Text font="footnote" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }}>{error}</Text><Button title="重试" systemImage="arrow.clockwise" tint={ACCENT} action={() => { void loadResults(source, failedPage ?? page, true) }} /></HStack> : undefined}
           {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}><Button title="上一页" systemImage="chevron.left" disabled={page <= 1 || loading} action={() => { void loadResults(source, page - 1) }} /><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ maxWidth: "infinity" }} multilineTextAlignment="center">{`第 ${page} 页`}</Text><Button title="下一页" systemImage="chevron.right" tint={ACCENT} disabled={!hasNext || loading} action={() => { void loadResults(source, page + 1) }} /></HStack> : undefined}
         </VStack>}
         </VStack>
@@ -158,7 +160,7 @@ function SearchResultCard(props: { video: MissAVVideoItem; layout: SearchResultL
   </VStack>
   return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ maxWidth: "infinity" }} contentShape="rect" accessibilityLabel={accessibility}>
     {props.layout === "cover"
-      ? <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><MediaArtwork video={props.video} height={196} radius={14} />{details}</VStack>
+      ? <VStack spacing={10} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><MediaArtwork video={props.video} radius={14} />{details}</VStack>
       : <HStack spacing={12} alignment="center" padding={{ vertical: 11 }} frame={{ maxWidth: "infinity", minHeight: 86 }}><MediaArtwork video={props.video} width={MEDIA_ROW_WIDTH} height={MEDIA_ROW_HEIGHT} radius={MEDIA_ROW_RADIUS} />{details}<Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" frame={{ width: ACCESSORY_ALIGNMENT_WIDTH, maxHeight: "infinity", alignment: "center" }} /></HStack>}
   </Button>
 }
