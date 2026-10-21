@@ -1,6 +1,6 @@
 import { Button, HStack, Image, LazyHStack, LazyVGrid, NavigationLink, NavigationStack, ScrollView, Script, Text, Toolbar, ToolbarItem, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "./src/site/client"
-import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "./src/ui/design"
+import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "./src/ui/design"
 import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "./src/data/storage"
 import { formatMissAVContinueWatching } from "./src/features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "./src/features/home/home-screen-data"
@@ -70,12 +70,9 @@ export default function MISSAVHomeScreenView() {
     const items = data[section]
     const error = data.errors[section]
     return <VStack spacing={12} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      <HStack spacing={12}>
-        <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }}>{title}</Text>
-        <NavigationLink destination={<DiscoverPage key={`${collection}-${domainRevision}`} initialCollection={collection} {...common} />}><Text font="subheadline" foregroundStyle={ACCENT}>查看全部</Text></NavigationLink>
-      </HStack>
+      <SectionHeading title={title} trailing={<NavigationLink destination={<DiscoverPage key={`${collection}-${domainRevision}`} initialCollection={collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><Text font="subheadline" foregroundStyle={ACCENT} padding={{ horizontal: 10 }} frame={{ minHeight: 44 }} contentShape="capsule">查看全部</Text></NavigationLink>} />
       {items.length ? section === "latest"
-        ? <LazyVGrid columns={[{ size: { type: "flexible" }, spacing: 14 }, { size: { type: "flexible" }, spacing: 14 }]} spacing={18}>{items.map(video => <MediaGridCard key={video.videoCode} video={video} onOpen={open} />)}</LazyVGrid>
+        ? <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 12 }]} spacing={16}>{items.map(video => <MediaGridCard key={video.videoCode} video={video} responsiveArtwork onOpen={open} />)}</LazyVGrid>
         : <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top">{items.map(video => <MediaTile key={video.videoCode} video={video} onOpen={open} />)}</LazyHStack></ScrollView>
         : data.loading[section] ? <StateView title={`正在更新${title}`} loading presentation="row" />
         : <StateView title={`${title}暂时无法更新`} description={error || "可前往浏览或下拉刷新。"} kind="error" presentation="section" action={() => { void loader.current?.loadRemote(true) }} actionTitle="重试" />}
@@ -86,20 +83,17 @@ export default function MISSAVHomeScreenView() {
   return <NavigationStack><ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
     <ScrollView navigationTitle="MISSAV" navigationBarTitleDisplayMode="inline" toolbar={toolbar} scrollEdgeEffectHidden={{ edges: "top", hidden: true }} refreshable={() => loader.current?.refresh() || Promise.resolve()} navigationDestination={{ isPresented: detailNavigation.isPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={bumpHistory} /> : <VStack /> }}>
-      <VStack spacing={22} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 12, bottom: PAGE_BOTTOM_PADDING }}>
+      <VStack spacing={24} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
         <NavigationLink destination={<SearchPage key={`home-search-${domainRevision}`} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeSearchEntry /></NavigationLink>
 
-        {data.recent.length ? <VStack spacing={8} alignment="leading">
-          <HStack spacing={8}>
-            <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }}>继续观看</Text>
-            <Text font="caption" foregroundStyle="secondaryLabel">{data.recent.length} 部</Text>
-          </HStack>
+        {data.recent.length ? <VStack spacing={12} alignment="leading">
+          <SectionHeading title="继续观看" subtitle={`${data.recent.length} 部未看完`} level="primary" />
           <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={14} alignment="top">{data.recent.map(record => <ContinueWatchingCard key={record.videoCode} video={record.video} resumeLabel={formatMissAVContinueWatching(record.positionSeconds)} progressFraction={playbackProgressFraction(record)} onOpen={open} />)}</LazyHStack></ScrollView>
         </VStack> : undefined}
         {data.errors.history ? <Text font="footnote" foregroundStyle="secondaryLabel">{data.errors.history}</Text> : undefined}
 
         <VStack spacing={12} alignment="leading">
-          <Text font="title3" fontWeight="bold">快速浏览</Text>
+          <SectionHeading title="快速浏览" subtitle="直达常用栏目" />
           <ScrollView axes="horizontal" scrollIndicator="hidden"><LazyHStack spacing={9}>{HOME_QUICK_COLLECTIONS.map(item => <NavigationLink key={item.group} destination={<DiscoverPage key={`home-category-${item.group}-${domainRevision}`} initialCollection={item.collection} {...common} />} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule"><HomeQuickCollectionChip title={item.title} image={item.image} /></NavigationLink>)}</LazyHStack></ScrollView>
         </VStack>
 
