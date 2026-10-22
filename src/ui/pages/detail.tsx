@@ -14,6 +14,7 @@ import { startPlaybackPolling } from "../../features/playback/playback-polling"
 import { MissAVListingRequest } from "../../site/listing/listing-request"
 
 // Native dynamic styles keep the page responsive to system appearance changes.
+const DETAIL_CANVAS: DynamicShapeStyle = { light: "#FFFFFF", dark: "#101114" }
 const DETAIL_BACKGROUND: DynamicShapeStyle = {
   light: { gradient: [{ color: "rgba(255,255,255,0.84)", location: 0 }, { color: "#FFFFFF", location: 0.65 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
   dark: { gradient: [{ color: "rgba(16,17,20,0.82)", location: 0 }, { color: "#101114", location: 0.65 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
@@ -159,7 +160,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   const secondaryMetadata = [detail?.releaseDate, detail?.duration || props.video.duration].filter(Boolean).join(" · ")
   function searchTag(tag: string) { setSelectedTag(tag); tagSearchPresented.setValue(true) }
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={DETAIL_CANVAS}>
     <DetailBackdrop coverUrl={coverUrl} />
     <ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" onAppear={appear} onDisappear={disappear} refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, content: selectedTag ? <TagSearchPage tag={selectedTag} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
     <VStack frame={{ maxWidth: "infinity" }}>
@@ -231,7 +232,7 @@ function DetailCapsuleSurface() {
 }
 
 function DetailBackdrop(props: { coverUrl: string }) {
-  return <GeometryReader ignoresSafeArea={true}>{geometry => <ZStack frame={{ width: geometry.size.width, height: geometry.size.height }} background="systemBackground" clipped>
+  return <GeometryReader ignoresSafeArea={true}>{geometry => <ZStack frame={{ width: geometry.size.width, height: geometry.size.height }} background={DETAIL_CANVAS} clipped>
     {props.coverUrl ? <Image imageUrl={props.coverUrl} resizable aspectRatio={{ contentMode: "fill" }} frame={{ width: geometry.size.width, height: geometry.size.height }} clipped blur={36} /> : undefined}
     <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={DETAIL_BACKGROUND} />
   </ZStack>}</GeometryReader>
