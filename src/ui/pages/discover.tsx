@@ -6,6 +6,7 @@ import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigatio
 import { MediaGridCard } from "../components/media_cards"
 import { StateView } from "../components/state_view"
 import { MissAVListingRequest } from "../../site/listing/listing-request"
+import { shouldClearDiscoveryResults } from "./discover-selection"
 
 const collections = MISSAV_COLLECTION_OPTIONS.map(item => ({ ...item }))
 const filters = MISSAV_FILTER_OPTIONS.map(item => ({ ...item }))
@@ -46,8 +47,8 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
       categoryPath: next.categoryPath ?? previousQuery.categoryPath,
     }
     const queryChanged = nextQuery.page !== previousQuery.page || nextQuery.collection !== previousQuery.collection || nextQuery.filter !== previousQuery.filter || nextQuery.sort !== previousQuery.sort || nextQuery.categoryPath !== previousQuery.categoryPath
-    const sameCollection = nextQuery.collection === previousQuery.collection && nextQuery.filter === previousQuery.filter && nextQuery.sort === previousQuery.sort && nextQuery.categoryPath === previousQuery.categoryPath
-    const appendPage = !forceRefresh && sameCollection && nextQuery.page > previousQuery.page && (items.length > 0 || categories.length > 0)
+    const sameListing = nextQuery.collection === previousQuery.collection && nextQuery.filter === previousQuery.filter && nextQuery.sort === previousQuery.sort && nextQuery.categoryPath === previousQuery.categoryPath
+    const appendPage = !forceRefresh && sameListing && nextQuery.page > previousQuery.page && (items.length > 0 || categories.length > 0)
     if (appendPage && loadingMorePage.current === nextQuery.page) return
     loadingMorePage.current = appendPage ? nextQuery.page : null
     query.current = nextQuery
@@ -55,8 +56,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
     // make a successful tap look like it was ignored.
     setPage(nextQuery.page); setCollection(nextQuery.collection); setFilter(nextQuery.filter); setSort(nextQuery.sort)
     setCategoryPath(nextQuery.categoryPath)
-    const preserveResults = forceRefresh && sameCollection && (items.length > 0 || categories.length > 0)
-    if (queryChanged && !appendPage && !preserveResults) { setItems([]); setCategories([]); setHasNext(true); setFailedPage(null) }
+    if (shouldClearDiscoveryResults({ queryChanged, appendPage, forceRefresh, sameListing, hasItems: items.length > 0, hasCategories: categories.length > 0 })) { setItems([]); setCategories([]); setHasNext(true); setFailedPage(null) }
     setLoadingMore(appendPage)
     setLoading(true); setError(null)
     await listingRequest.current.load(nextQuery, { forceRefresh, allowStale: true }, {
