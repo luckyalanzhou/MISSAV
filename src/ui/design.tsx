@@ -1,7 +1,18 @@
-import { Button, Capsule, Color, Device, HStack, Image, Text, VStack, ZStack } from "scripting"
+import { Button, Capsule, Color, Device, HStack, Image, RoundedRectangle, Text, VStack, ZStack, type DynamicShapeStyle } from "scripting"
 
 export const ACCENT: Color = "systemBlue"
 export const PAGE_BACKGROUND: Color = "systemBackground"
+export const CONTENT_MAX_WIDTH = 1000
+export const READING_MAX_WIDTH = 760
+export const SURFACE: DynamicShapeStyle = { light: "#FFFFFF", dark: "#222429" }
+export const SURFACE_RIM: DynamicShapeStyle = {
+  light: { gradient: [{ color: "#FFFFFF", location: 0 }, { color: "rgba(96,108,124,0.25)", location: 1 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+  dark: { gradient: [{ color: "rgba(255,255,255,0.22)", location: 0 }, { color: "rgba(255,255,255,0.07)", location: 1 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+}
+const PAGE_CANVAS: DynamicShapeStyle = {
+  light: { gradient: [{ color: "#F0F1F4", location: 0 }, { color: "#FAFAFB", location: 1 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+  dark: { gradient: [{ color: "#1B1D22", location: 0 }, { color: "#101114", location: 1 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+}
 
 // 4.0 geometry: reading content follows a leading axis; controls and page states
 // use their own semantic center or trailing axes instead of forcing one alignment.
@@ -38,21 +49,25 @@ export function glassButtonStyle(prominent = false): "glass" | "glassProminent" 
 }
 
 export function CapsuleSurface() {
-  return <Capsule fill="white" stroke={{
-    shapeStyle: {
-      gradient: [
-        { color: "rgba(255,255,255,0.98)", location: 0 },
-        { color: "rgba(96,108,124,0.24)", location: 1 },
-      ],
-      startPoint: { x: 0.5, y: 0 },
-      endPoint: { x: 0.5, y: 1 },
-    },
-    strokeStyle: { lineWidth: 1.1 },
-  }} />
+  return <Capsule fill={SURFACE} stroke={{ shapeStyle: SURFACE_RIM, strokeStyle: { lineWidth: 1.1 } }} />
+}
+
+export function CardSurface() {
+  return <RoundedRectangle cornerRadius={18} fill={SURFACE} stroke={{ shapeStyle: SURFACE_RIM, strokeStyle: { lineWidth: 1 } }} />
+}
+
+export function PageIntro(props: { title: string; subtitle: string; systemImage: string }) {
+  return <HStack spacing={12} alignment="top" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+    <Image systemName={props.systemImage} font="title3" foregroundStyle={ACCENT} frame={{ width: 44, height: 44 }} background={<CardSurface />} />
+    <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <Text font="title2" fontWeight="bold" foregroundStyle="label">{props.title}</Text>
+      <Text font="footnote" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{props.subtitle}</Text>
+    </VStack>
+  </HStack>
 }
 
 export function PageBackground() {
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={PAGE_BACKGROUND} />
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={PAGE_CANVAS} ignoresSafeArea={true} />
 }
 
 export function Badge(props: { title: string; active?: boolean; tint?: Color; systemImage?: string }) {

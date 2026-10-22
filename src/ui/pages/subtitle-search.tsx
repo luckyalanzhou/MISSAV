@@ -1,5 +1,5 @@
-import { Button, Divider, HStack, Image, LazyVStack, ProgressView, QuickLook, ScrollView, Text, TextField, VStack, ZStack, useEffect, useRef, useState } from "scripting"
-import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, supportsLiquidGlass } from "../design"
+import { Button, HStack, Image, LazyVStack, ProgressView, QuickLook, ScrollView, Text, TextField, VStack, ZStack, useEffect, useRef, useState } from "scripting"
+import { ACCENT, CardSurface, READING_MAX_WIDTH, PageBackground, PageIntro, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING } from "../design"
 import { saveMissAVSubtitle } from "../../features/subtitles/subtitles"
 import { downloadSubtitleCatFile, searchSubtitleCatFiles, type SubtitleCatSearchResult, type SubtitleCatSubtitleFile } from "../../features/subtitles/subtitlecat"
 import { SubtitleFileRow } from "../components/subtitle_file_row"
@@ -21,7 +21,6 @@ export function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (vi
   const [searchSession] = useState(() => new SubtitleSearchSession(searchSubtitleCatFiles))
   const subtitleOperation = useRef(false)
   const active = useRef(true)
-  const liquidGlassAvailable = supportsLiquidGlass()
 
   function closeSearch() { active.current = false; searchSession.stop(); setLoading(false); props.onClose() }
 
@@ -122,19 +121,20 @@ export function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (vi
     }
   }, [])
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background="systemBackground" navigationTitle="按番号搜索字幕" navigationBarTitleDisplayMode="inline">
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} navigationTitle="按番号搜索字幕" navigationBarTitleDisplayMode="inline">
+    <PageBackground />
     <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
       <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onAppear={appear} onDisappear={disappear}>
-        <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-          <Text font="caption" foregroundStyle="secondaryLabel">仅搜索简体中文和繁体中文字幕</Text>
-          <HStack spacing={8} padding={{ horizontal: 12 }} frame={{ maxWidth: "infinity", minHeight: 48 }} background={liquidGlassAvailable ? undefined : "tertiarySystemFill"} glassEffect={liquidGlassAvailable} clipShape={liquidGlassAvailable ? undefined : "capsule"} contentShape="capsule">
+        <VStack spacing={20} alignment="leading" frame={{ maxWidth: READING_MAX_WIDTH }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
+          <PageIntro title="为作品添加字幕" subtitle={`关联作品 · ${props.videoCode.toUpperCase()}`} systemImage="captions.bubble" />
+          <HStack spacing={8} padding={{ horizontal: 14 }} frame={{ maxWidth: "infinity", minHeight: 56 }} background={<CardSurface />} contentShape="rect">
             <TextField title="番号" prompt="例如 SSIS-655" value={query} onChanged={setQuery} onSubmit={() => { void search() }} autocorrectionDisabled frame={{ maxWidth: "infinity" }} />
             <Button action={() => { void search() }} disabled={loading || Boolean(downloadingId) || !query.trim()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="capsule" accessibilityLabel="搜索字幕">
               {loading ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : <Image systemName="magnifyingglass" foregroundStyle={ACCENT} />}
             </Button>
           </HStack>
-          <Text font="caption" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">仅显示简体和繁体中文字幕。点语言名称可预览；下载完整免费 SRT 后会自动关联当前作品。修改番号时，请确认字幕适用于当前视频。</Text>
-          {error ? <VStack spacing={8} alignment="leading" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12, style: "continuous" }}>
+          <Text font="footnote" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">仅搜索简中、繁中。点语言预览，下载后自动关联上方作品；修改搜索番号不会改变关联作品。</Text>
+          {error ? <VStack spacing={8} alignment="leading" padding={16} frame={{ maxWidth: "infinity", alignment: "leading" }} background={<CardSurface />}>
             <Text font="subheadline" foregroundStyle="systemRed" multilineTextAlignment="leading">{error}</Text>
             <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => { void search() }} />
           </VStack> : undefined}
@@ -144,8 +144,7 @@ export function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (vi
             <Text font="headline" fontWeight="semibold">{title || `番号 ${query}`}</Text>
             <Text font="caption" foregroundStyle="secondaryLabel">{hasSuccessfulSource ? `${loading ? "已" : "共"}找到 ${files.length} 个可下载中文字幕文件；仅包含简体中文和繁体中文。${hasIncompleteResults && !loading ? " 部分详情页未能读取，结果可能不完整。" : ""}` : loading ? "正在读取字幕详情，有结果后立即显示。" : "Subtitle Cat 搜索没有成功完成，当前无法判断该番号是否有中文字幕。"}</Text>
             {sourceStatus.map((status, index) => <Text key={`subtitle-source-${index}`} font="caption" foregroundStyle={status.startsWith("失败") ? "systemRed" : "secondaryLabel"} multilineTextAlignment="leading">{status}</Text>)}
-            {files.length ? <LazyVStack spacing={0} frame={{ maxWidth: "infinity" }}>{files.map((file, index) => <VStack key={`${file.source}-${file.id}`} spacing={0} frame={{ maxWidth: "infinity" }}>
-              {index ? <Divider /> : undefined}
+            {files.length ? <LazyVStack spacing={8} frame={{ maxWidth: "infinity" }}>{files.map(file => <VStack key={`${file.source}-${file.id}`} spacing={0} frame={{ maxWidth: "infinity" }}>
               <SubtitleFileRow file={file} downloadingId={downloadingId} onDownload={file => { void download(file) }} onPreview={file => { void preview(file) }} />
             </VStack>)}</LazyVStack> : <Text font="subheadline" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{loading ? "搜索仍在进行，请稍候…" : !hasSuccessfulSource ? "Subtitle Cat 没有返回有效搜索结果；不能据此认定没有中文字幕，请检查网络或稍后重试。" : hasIncompleteResults ? "已读取的详情页没有返回可下载中文字幕，仍有详情页未完成搜索。请重试，暂时无法判断是否有字幕。" : "没有找到这个番号的简体或繁体中文字幕。可以修改番号后重新搜索。"}</Text>}
             {hasIncompleteResults && hasSuccessfulSource ? <Button title="重试搜索" systemImage="arrow.clockwise" disabled={loading || Boolean(downloadingId)} buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => { void search() }} /> : undefined}

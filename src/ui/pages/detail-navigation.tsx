@@ -1,6 +1,6 @@
 import { Button, HStack, ProgressView, Text, VStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem } from "../../site/client"
-import { ACCENT } from "../design"
+import { ACCENT, CardSurface, READING_MAX_WIDTH } from "../design"
 import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../../features/detail/detail-loading"
 import { MissAVPlaybackSelection, type MissAVPlaybackPreparation } from "../../features/playback/playback-preparation"
 import { startPlaybackPolling } from "../../features/playback/playback-polling"
@@ -85,14 +85,14 @@ export function useDetailNavigation() {
 export function DetailPreparationStatus({ navigation }: { navigation: ReturnType<typeof useDetailNavigation> }) {
   if (!navigation.pending) return <VStack />
   return <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 20, bottom: 24 }}>
-    <HStack spacing={12} padding={14} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 14 }}>
+    <HStack spacing={12} padding={14} frame={{ maxWidth: READING_MAX_WIDTH }} background={<CardSurface />}>
       <ProgressView tint={ACCENT} />
       <VStack spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <Text font="subheadline">{`正在准备 ${navigation.pending.videoCode.toUpperCase()}`}</Text>
         <Text font="footnote" foregroundStyle="secondaryLabel">{`${navigation.progress ? MISSAV_DETAIL_STAGE_LABELS[navigation.progress.stage] : "正在开始请求…"} · ${(navigation.elapsedMs / 1000).toFixed(1)} 秒`}</Text>
       </VStack>
-      <Button title="复制" systemImage="doc.on.doc" buttonStyle="plain" action={() => { void navigation.copyDiagnostics(navigation.pending.videoCode) }} />
-      <Button title="取消" action={navigation.cancel} />
+      <Button title="复制" systemImage="doc.on.doc" buttonStyle="plain" frame={{ minWidth: 44, minHeight: 44 }} action={() => { void navigation.copyDiagnostics(navigation.pending.videoCode) }} />
+      <Button title="取消" frame={{ minWidth: 44, minHeight: 44 }} action={navigation.cancel} />
     </HStack>
   </VStack>
 }

@@ -1,7 +1,7 @@
-import { Button, Dialog, HStack, Image, List, Pasteboard, Picker, ProgressView, Script, Section, Text, VStack, useState } from "scripting"
+import { Button, Dialog, HStack, Image, List, Pasteboard, Picker, ProgressView, Script, Section, Text, VStack, ZStack, useState } from "scripting"
 import { getMissAVAccessDiagnostics, type MissAVAccessDiagnostic } from "../../site/access/access-diagnostics"
 import { openMissAVSiteVerification } from "../../site/access/site-verification"
-import { ACCENT } from "../design"
+import { ACCENT, CardSurface, PageBackground, PageIntro, READING_MAX_WIDTH } from "../design"
 import { getMissAVBaseURL, getMissAVLandingURL, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../../site/domain"
 
 type VerificationState = "checking" | "accessible" | "incomplete" | "blocked" | "unavailable" | "load-error"
@@ -89,14 +89,15 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
   const version = scriptMetadata.version || "未知"
   const author = scriptMetadata.author?.name || "未设置"
 
-  return <List listStyle="insetGroup" navigationTitle="设置" navigationBarTitleDisplayMode="large">
-    <Section header={<Text>访问站点</Text>} footer={<Text>线路检查只确认当前测试栏目可访问。其他栏目仍提示验证时，请先完成检查或切换域名；设置会应用于浏览、搜索、详情和播放。</Text>}>
-      <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy}>
-        {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
-      </Picker>
-      <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} disabled={operationBusy} action={() => { void Safari.openURL(getMissAVLandingURL(domain)) }} />
-      <Button title={accessBusy ? "正在验证访问线路" : "验证访问线路"} systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} action={() => { void verifySiteAccess() }} />
-      <VStack spacing={6} alignment="leading" padding={{ vertical: 7 }}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+    <PageBackground />
+    <List listStyle="insetGroup" scrollContentBackground="hidden" navigationTitle="设置" navigationBarTitleDisplayMode="inline" frame={{ maxWidth: READING_MAX_WIDTH }}>
+    <Section>
+      <VStack padding={{ vertical: 8 }}><PageIntro title="站点与本机" subtitle="管理访问线路，查看本机数据与版本。" systemImage="gearshape" /></VStack>
+    </Section>
+    <Section header={<Text>访问站点</Text>} footer={<Text>线路检查仅确认测试栏目可访问。切换域名会应用于浏览、搜索、详情和播放。</Text>}>
+      <VStack spacing={6} alignment="leading" padding={{ vertical: 10 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="caption" foregroundStyle="secondaryLabel">{new URL(domain).hostname}</Text>
         <HStack spacing={8}>
           {accessBusy ? <ProgressView progressViewStyle="circular" /> : verificationIcon ? <Image systemName={verificationIcon} foregroundStyle={verificationColor} /> : undefined}
           <Text font="subheadline" fontWeight="semibold" foregroundStyle={verificationColor}>{verificationLabel}</Text>
@@ -104,7 +105,15 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
         {lastCheckedAt ? <Text font="footnote" foregroundStyle="secondaryLabel">{`本次运行最近检查：${new Date(lastCheckedAt).toLocaleString()}${lastCheckMs !== null ? ` · ${(lastCheckMs / 1000).toFixed(1)} 秒` : ""}`}</Text> : undefined}
         {accessMessage ? <Text font="footnote" foregroundStyle="secondaryLabel">{accessMessage}</Text> : undefined}
       </VStack>
-      <Button title="复制线路诊断" systemImage="doc.on.doc" action={() => { void copyDiagnostics() }} />
+      <Button title={accessBusy ? "正在验证访问线路" : "验证访问线路"} systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} frame={{ minHeight: 44 }} action={() => { void verifySiteAccess() }} />
+      <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy}>
+        {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
+      </Picker>
+      <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} disabled={operationBusy} frame={{ minHeight: 44 }} action={() => { void Safari.openURL(getMissAVLandingURL(domain)) }} />
+    </Section>
+
+    <Section header={<Text>诊断与帮助</Text>} footer={<Text>栏目提示需要验证时，先检查访问线路；遇到问题可复制诊断。</Text>}>
+      <Button title="复制线路诊断" systemImage="doc.on.doc" tint={ACCENT} frame={{ minHeight: 44 }} action={() => { void copyDiagnostics() }} />
     </Section>
 
     <Section header={<Text>本机数据</Text>} footer={<Text>浏览记录、播放记录和下载字幕仅保存在本机。清除浏览或播放记录请前往资料库；字幕文件夹目前由脚本自动管理。</Text>}>
@@ -114,9 +123,9 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     </Section>
 
     <Section header={<Text>关于</Text>}>
-      <HStack spacing={12} frame={{ minHeight: 54 }}><Image systemName="play.rectangle.fill" foregroundStyle={ACCENT} frame={{ width: 28 }} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="body" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{`版本 ${version}`}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{`作者 ${author}`}</Text></VStack></HStack>
+      <HStack spacing={12} padding={{ vertical: 8 }} frame={{ minHeight: 64 }}><Image systemName="play.rectangle.fill" font="title3" foregroundStyle={ACCENT} frame={{ width: 44, height: 44 }} background={<CardSurface />} /><VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="headline" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{`版本 ${version}`}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{`作者 ${author}`}</Text></VStack></HStack>
     </Section>
-  </List>
+  </List></ZStack>
 }
 
 function latestVerification(host: string): MissAVAccessDiagnostic | undefined {
@@ -131,11 +140,11 @@ function formatDiagnostic(entry: MissAVAccessDiagnostic): string {
 }
 
 function InfoRow(props: { icon: string; title: string; detail: string }) {
-  return <HStack spacing={12} frame={{ minHeight: 54 }}>
-    <Image systemName={props.icon} foregroundStyle="secondaryLabel" frame={{ width: 28 }} />
-    <VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+  return <HStack spacing={12} padding={{ vertical: 6 }} frame={{ minHeight: 60 }}>
+    <Image systemName={props.icon} foregroundStyle={ACCENT} frame={{ width: 28 }} />
+    <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
       <Text font="body" fontWeight="semibold">{props.title}</Text>
-      <Text font="subheadline" foregroundStyle="secondaryLabel">{props.detail}</Text>
+      <Text font="footnote" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{props.detail}</Text>
     </VStack>
   </HStack>
 }

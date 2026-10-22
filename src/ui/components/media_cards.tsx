@@ -1,7 +1,7 @@
 import { Button, HStack, Image, LazyHStack, ProgressView, ScrollView, Text, VStack, ZStack, useEffect, useRef } from "scripting"
 import type { MissAVVideoItem } from "../../site/client"
 import { detailPrefetch } from "../../features/detail/detail-prefetch"
-import { ACCENT, MEDIA_HERO_RADIUS, MEDIA_RADIUS, MEDIA_TILE_HEIGHT, MEDIA_TILE_WIDTH, SECTION_CONTENT_SPACING, SectionHeading } from "../design"
+import { ACCENT, CardSurface, MEDIA_HERO_RADIUS, MEDIA_RADIUS, MEDIA_TILE_HEIGHT, MEDIA_TILE_WIDTH, SECTION_CONTENT_SPACING, SectionHeading } from "../design"
 
 export function MediaArtwork(props: { video: MissAVVideoItem; width?: number; height?: number; radius?: number; prefetch?: boolean }) {
   const radius = props.radius ?? MEDIA_RADIUS
@@ -35,12 +35,14 @@ export function MediaTile(props: { video: MissAVVideoItem; status?: string; stat
   const metadata = [props.video.videoCode.toUpperCase(), props.video.duration].filter(Boolean).join(" · ")
   const progressLabel = props.progressFraction !== undefined ? `已播放 ${Math.round(props.progressFraction * 100)}%` : undefined
   return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ width: MEDIA_TILE_WIDTH }} contentShape="rect" accessibilityLabel={[props.video.title, metadata, props.status, progressLabel, "打开详情"].filter(Boolean).join("，")}>
-    <VStack spacing={7} alignment="leading" frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }}>
+    <VStack spacing={0} alignment="leading" frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }} background={<CardSurface />}>
       <MediaArtwork video={props.video} width={MEDIA_TILE_WIDTH} height={MEDIA_TILE_HEIGHT} />
-      <Text font="subheadline" fontWeight="semibold" lineLimit={2} frame={{ width: MEDIA_TILE_WIDTH, minHeight: 38, alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>
-      <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }}>{metadata}</Text>
-      {props.status ? <HStack spacing={4} frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }}><Image systemName={props.statusSystemImage || "clock.arrow.circlepath"} font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{props.status}</Text></HStack> : props.video.badge ? <HStack spacing={4} frame={{ width: MEDIA_TILE_WIDTH, alignment: "leading" }}><Image systemName="sparkles" font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={1}>{props.video.badge}</Text></HStack> : undefined}
+      <VStack spacing={6} alignment="leading" padding={10} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <Text font="subheadline" fontWeight="semibold" foregroundStyle="label" lineLimit={2} frame={{ maxWidth: "infinity", minHeight: 38, alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>
+      <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{metadata}</Text>
+      {props.status ? <HStack spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}><Image systemName={props.statusSystemImage || "clock.arrow.circlepath"} font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{props.status}</Text></HStack> : props.video.badge ? <HStack spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" }}><Image systemName="sparkles" font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={1}>{props.video.badge}</Text></HStack> : undefined}
       {props.progressFraction !== undefined ? <ProgressView value={props.progressFraction} total={1} progressViewStyle="linear" tint={ACCENT} accessibilityLabel={progressLabel} /> : undefined}
+      </VStack>
     </VStack>
   </Button>
 }
@@ -50,11 +52,13 @@ export function MediaShelfCard(props: { video: MissAVVideoItem; status?: string;
 export function MediaGridCard(props: { video: MissAVVideoItem; status?: string; responsiveArtwork?: boolean; onOpen: (video: MissAVVideoItem) => void }) {
   const metadata = [props.video.videoCode.toUpperCase(), props.video.duration].filter(Boolean).join(" · ")
   return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ maxWidth: "infinity" }} contentShape="rect" accessibilityLabel={[props.video.title, metadata, props.status].filter(Boolean).join("，")}>
-    <VStack spacing={7} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+    <VStack spacing={0} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }} background={<CardSurface />}>
       <MediaArtwork video={props.video} height={props.responsiveArtwork ? undefined : 96} />
-      <Text font="subheadline" fontWeight="semibold" lineLimit={2} frame={{ maxWidth: "infinity", minHeight: 38, alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>
+      <VStack spacing={6} alignment="leading" padding={10} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <Text font="subheadline" fontWeight="semibold" foregroundStyle="label" lineLimit={2} frame={{ maxWidth: "infinity", minHeight: 38, alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>
       <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{metadata}</Text>
       {props.video.badge ? <HStack spacing={4}><Image systemName="sparkles" font="caption2" foregroundStyle={ACCENT} /><Text font="caption2" fontWeight="semibold" lineLimit={1}>{props.video.badge}</Text></HStack> : props.status ? <Text font="caption2" fontWeight="semibold" lineLimit={2}>{props.status}</Text> : undefined}
+      </VStack>
     </VStack>
   </Button>
 }

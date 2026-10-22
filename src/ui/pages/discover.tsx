@@ -1,6 +1,6 @@
-import { Button, Device, HStack, Image, LazyVGrid, Menu, ProgressView, ScrollView, ScrollViewReader, Spacer, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
+import { Button, Device, FlowLayout, HStack, Image, LazyVGrid, Menu, ProgressView, ScrollView, ScrollViewReader, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../../site/client"
-import { ACCENT, CapsuleSurface, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "../design"
+import { ACCENT, CardSurface, CapsuleSurface, CONTENT_MAX_WIDTH, SURFACE, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, PageIntro } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard } from "../components/media_cards"
@@ -104,7 +104,8 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
-      <VStack key="discover-results-top" spacing={16} alignment="leading" padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
+      <VStack key="discover-results-top" spacing={20} alignment="leading" frame={{ maxWidth: CONTENT_MAX_WIDTH }} padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
+        <VStack padding={{ horizontal: PAGE_PADDING }}><PageIntro title="按栏目发现" subtitle="选择大类，再筛选作品与排列顺序。" systemImage="square.grid.2x2" /></VStack>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
             {MISSAV_COLLECTION_GROUPS.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === group} level="primary" action={() => { setGroup(item.value); selectCollection(item.defaultCollection) }} />)}
@@ -119,12 +120,11 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
 
         <VStack spacing={14} alignment="leading" padding={{ horizontal: PAGE_PADDING }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
           {categoryPath ? <Button title={`返回${collections.find(item => item.value === collection)?.title || "分类"}`} systemImage="chevron.left" buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => selectCollection(collection)} /> : undefined}
-          {!directoryMode ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>
+          {!directoryMode ? <FlowLayout spacing={10}>
             <Menu buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="regular" frame={{ minHeight: 46 }} label={<OptionChip title={filterTitle} systemImage="line.3.horizontal.decrease" accessibilityLabel={`筛选：${filterTitle}`} />}>{filters.map(item => <Button key={item.value || "all"} title={item.title} systemImage={item.value === filter ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, filter: item.value }) }} />)}</Menu>
             <Menu buttonStyle={glassAvailable ? "glass" : "bordered"} buttonBorderShape="capsule" controlSize="regular" frame={{ minHeight: 46 }} label={<OptionChip title={sortTitle} systemImage="arrow.up.arrow.down" accessibilityLabel={`排序：${sortTitle}`} />}>{sorts.map(item => <Button key={item.value} title={item.title} systemImage={item.value === sort ? "checkmark" : item.systemImage} action={() => { void load({ page: 1, sort: item.value }) }} />)}</Menu>
-            <Spacer />
             {loading && (items.length || categories.length) && !loadingMore ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : undefined}
-          </HStack> : undefined}
+          </FlowLayout> : undefined}
 
           {directoryMode ? <DirectoryContent categories={categories} loading={loading} error={error} onRetry={() => { void load({}, true) }} onLoadMore={loadNextPageIfNeeded} onSelect={item => { setCategoryTitle(item.title); void load({ page: 1, categoryPath: item.path, filter: "", sort: "released_at" }) }} /> : loading && items.length === 0 ? <StateView title={`正在加载${title}`} description="正在载入栏目内容。" loading presentation="section" /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load({}, true) }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection, filter: "", sort: defaultCollectionSort(collection) }, true) }} actionTitle="重置筛选" /> : <>
             <HStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
@@ -158,7 +158,7 @@ function DirectoryContent(props: { categories: MissAVCategoryItem[]; loading: bo
 function DirectoryCategory(props: { item: MissAVCategoryItem; onSelect: (item: MissAVCategoryItem) => void }) {
   const item = props.item
   return <Button action={() => props.onSelect(item)} buttonStyle="plain" contentShape="rect">
-      <HStack spacing={10} padding={12} frame={{ maxWidth: "infinity", minHeight: 64, alignment: "leading" }} background="secondarySystemBackground" clipShape={{ type: "rect", cornerRadius: 12 }}>
+      <HStack spacing={10} padding={14} frame={{ maxWidth: "infinity", minHeight: 72, alignment: "leading" }} background={<CardSurface />}>
         {item.coverUrl ? <Image imageUrl={item.coverUrl} resizable aspectRatio={{ value: 1, contentMode: "fill" }} frame={{ width: 44, height: 44 }} clipped /> : <Image systemName="folder" foregroundStyle={ACCENT} />}
         <Text font="subheadline" lineLimit={3} frame={{ maxWidth: "infinity", alignment: "leading" }}>{item.title}</Text>
         <Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" />
@@ -175,7 +175,7 @@ function CategoryChip(props: { title: string; active: boolean; level: "primary" 
   const primary = props.level === "primary"
   const prominent = primary && props.active
   const glassAvailable = supportsLiquidGlass()
-  return <Button action={props.action} buttonStyle={glassAvailable ? prominent ? "glassProminent" : "glass" : prominent ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" controlSize="regular" tint={props.active ? ACCENT : "white"} background={<CapsuleSurface />} frame={{ minHeight: 46 }} contentShape="capsule" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
+  return <Button action={props.action} buttonStyle={glassAvailable ? prominent ? "glassProminent" : "glass" : prominent ? "borderedProminent" : "bordered"} buttonBorderShape="capsule" controlSize="regular" tint={props.active ? ACCENT : SURFACE} background={<CapsuleSurface />} frame={{ minHeight: 46 }} contentShape="capsule" accessibilityLabel={`${props.title}${props.active ? "，已选择" : ""}`}>
     <HStack spacing={8} padding={{ horizontal: 3 }} fixedSize={{ horizontal: true, vertical: false }}>
       {props.active ? <Image systemName="checkmark" font="caption2" foregroundStyle={prominent ? "white" : ACCENT} /> : undefined}
       <Text font={primary ? "subheadline" : "footnote"} fontWeight={props.active ? "semibold" : "regular"} foregroundStyle={prominent ? "white" : props.active ? ACCENT : "label"} lineLimit={1} fixedSize={{ horizontal: true, vertical: false }}>{props.title}</Text>

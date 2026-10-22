@@ -1,5 +1,5 @@
 import { Button, HStack, Image, ProgressView, Text, VStack } from "scripting"
-import { ACCENT, glassButtonStyle, MIN_HIT_SIZE } from "../design"
+import { ACCENT, CardSurface, glassButtonStyle, MIN_HIT_SIZE } from "../design"
 import type { SubtitleCatSubtitleFile } from "../../features/subtitles/subtitlecat"
 
 type SubtitleFile = SubtitleCatSubtitleFile
@@ -15,11 +15,11 @@ export function SubtitleFileRow(props: {
   const downloading = downloadingId === `${file.source}:${file.id}`
   const metadata = [file.source, canDownload ? "完整 · 免费" : "预览", file.details].filter(Boolean).join(" · ")
 
-  return <HStack spacing={8} alignment="center" padding={{ vertical: 4 }} frame={{ maxWidth: "infinity", minHeight: MIN_HIT_SIZE }}>
+  return <HStack spacing={8} alignment="center" padding={{ horizontal: 12, vertical: 4 }} frame={{ maxWidth: "infinity", minHeight: MIN_HIT_SIZE }} background={<CardSurface />}>
     <VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      {props.onPreview && canDownload ? <Button action={() => { if (!downloadingId) props.onPreview?.(file) }} disabled={Boolean(downloadingId)} buttonStyle="plain" accessibilityLabel={`预览${file.language}字幕`}>
-        <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{file.language}</Text>
-      </Button> : <Text font="subheadline" fontWeight="semibold" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{file.language}</Text>}
+      {props.onPreview && canDownload ? <Button action={() => { if (!downloadingId) props.onPreview?.(file) }} disabled={Boolean(downloadingId)} buttonStyle="plain" frame={{ minHeight: MIN_HIT_SIZE }} accessibilityLabel={`预览${file.language}字幕`}>
+        <Text font="subheadline" fontWeight="semibold" foregroundStyle="label" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>{file.language}</Text>
+      </Button> : <Text font="subheadline" fontWeight="semibold" foregroundStyle="label" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>{file.language}</Text>}
       <Text font="caption2" foregroundStyle="secondaryLabel" lineLimit={1} accessibilityLabel={metadata} frame={{ maxWidth: "infinity", alignment: "leading" }}>{metadata}</Text>
     </VStack>
     <Button action={() => { if (canDownload && !downloadingId) props.onDownload(file) }} disabled={!canDownload || Boolean(downloadingId)} buttonStyle={glassButtonStyle(canDownload)} buttonBorderShape="capsule" controlSize="small" tint={ACCENT} frame={{ minWidth: 108, minHeight: MIN_HIT_SIZE }} contentShape="capsule" accessibilityLabel={canDownload ? `下载${file.source}的${file.language}字幕` : `${file.language}字幕仅供预览，无法下载`}>
