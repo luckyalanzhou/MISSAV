@@ -1,7 +1,7 @@
 import { HStack, ProgressView, ScrollView, Text, VStack, ZStack, useEffect, useObservable, useRef, useState } from "scripting"
 import { loadLocalRecommendations, type MissAVRecommendation } from "../../features/recommendations/recommendation"
 import type { MissAVVideoItem } from "../../site/client"
-import { READING_MAX_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, PageIntro } from "../design"
+import { READING_MAX_WIDTH, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { StateView } from "../components/state_view"
@@ -35,7 +35,6 @@ export function RecommendationsPage(props: { revision: number; onHistoryChanged:
   const reasons = new Map(items.map(item => [item.video.videoCode, item.reason]))
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}><PageBackground /><ScrollView navigationTitle="为你推荐" navigationBarTitleDisplayMode="inline" refreshable={() => load(true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}><VStack spacing={24} alignment="leading" frame={{ maxWidth: READING_MAX_WIDTH }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-    <PageIntro title="你可能会喜欢" subtitle="根据本机观看足迹生成，记录不会上传。" systemImage="sparkles" />
     {loading && items.length === 0 ? <StateView title="正在准备推荐" description="正在根据你的浏览记录和播放记录生成推荐。" loading presentation="section" /> : items.length === 0 && error ? <StateView title="暂时无法加载推荐" description={error} kind="error" action={() => { void load(true) }} presentation="section" /> : items.length === 0 ? <StateView title="暂无足够数据生成推荐" description="浏览或播放部分作品后，推荐内容将显示在这里。" systemImage="sparkles" action={props.onDiscover} actionTitle="前往浏览" presentation="section" /> : <>
       {loading ? <HStack spacing={8} padding={{ vertical: 4 }} frame={{ maxWidth: "infinity" }}><ProgressView progressViewStyle="circular" /><Text font="footnote" foregroundStyle="secondaryLabel">正在更新推荐…</Text></HStack> : undefined}
       <VideoRowList items={items.map(item => item.video)} status={video => reasons.get(video.videoCode)} statusSystemImage="sparkles" onOpen={open} />

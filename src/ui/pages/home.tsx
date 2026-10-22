@@ -3,7 +3,7 @@ import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVid
 import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "../../data/storage"
 import { formatMissAVContinueWatching } from "../../features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "../../features/home/home-screen-data"
-import { ActionRow, CardSurface, CapsuleSurface, CONTENT_MAX_WIDTH, SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, PageIntro, SectionHeading } from "../design"
+import { ActionRow, CardSurface, CapsuleSurface, CONTENT_MAX_WIDTH, SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
 import { MediaGridCard, MediaTile } from "../components/media_cards"
 import { ContinueWatchingCard, HOME_QUICK_COLLECTIONS, HomeQuickCollectionChip, HomeSearchEntry } from "../components/home_components"
 import { StateView } from "../components/state_view"
@@ -66,7 +66,6 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
     <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack spacing={28} alignment="leading" frame={{ maxWidth: CONTENT_MAX_WIDTH }} padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
         <VStack spacing={16} padding={{ horizontal: PAGE_PADDING }}>
-          <PageIntro title="发现好内容" subtitle="继续观看，或探索新的作品。" systemImage="play.rectangle" />
           <NavigationLink destination={<SearchPage key={`home-search-${props.accessRevision || 0}`} onHistoryChanged={props.onHistoryChanged} />} buttonStyle="plain" frame={{ minHeight: 56 }}><HomeSearchEntry /></NavigationLink>
         </VStack>
         {continueWatching.length || data.errors.history ? <VStack spacing={12} alignment="leading">

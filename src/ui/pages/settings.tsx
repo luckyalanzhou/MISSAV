@@ -1,7 +1,7 @@
 import { Button, Dialog, HStack, Image, List, Pasteboard, Picker, ProgressView, Script, Section, Text, VStack, ZStack, useState } from "scripting"
 import { getMissAVAccessDiagnostics, type MissAVAccessDiagnostic } from "../../site/access/access-diagnostics"
 import { openMissAVSiteVerification } from "../../site/access/site-verification"
-import { ACCENT, CardSurface, PageBackground, PageIntro, READING_MAX_WIDTH } from "../design"
+import { ACCENT, CardSurface, PageBackground, READING_MAX_WIDTH } from "../design"
 import { getMissAVBaseURL, getMissAVLandingURL, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../../site/domain"
 
 type VerificationState = "checking" | "accessible" | "incomplete" | "blocked" | "unavailable" | "load-error"
@@ -92,11 +92,8 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
     <PageBackground />
     <List listStyle="insetGroup" scrollContentBackground="hidden" navigationTitle="设置" navigationBarTitleDisplayMode="inline" frame={{ maxWidth: READING_MAX_WIDTH }}>
-    <Section>
-      <VStack padding={{ vertical: 8 }}><PageIntro title="站点与本机" subtitle="管理访问线路，查看本机数据与版本。" systemImage="gearshape" /></VStack>
-    </Section>
     <Section header={<Text>访问站点</Text>} footer={<Text>线路检查仅确认测试栏目可访问。切换域名会应用于浏览、搜索、详情和播放。</Text>}>
-      <VStack spacing={6} alignment="leading" padding={{ vertical: 10 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <VStack spacing={4} alignment="leading" padding={{ vertical: 6 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <Text font="caption" foregroundStyle="secondaryLabel">{new URL(domain).hostname}</Text>
         <HStack spacing={8}>
           {accessBusy ? <ProgressView progressViewStyle="circular" /> : verificationIcon ? <Image systemName={verificationIcon} foregroundStyle={verificationColor} /> : undefined}
@@ -123,7 +120,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     </Section>
 
     <Section header={<Text>关于</Text>}>
-      <HStack spacing={12} padding={{ vertical: 8 }} frame={{ minHeight: 64 }}><Image systemName="play.rectangle.fill" font="title3" foregroundStyle={ACCENT} frame={{ width: 44, height: 44 }} background={<CardSurface />} /><VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="headline" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{`版本 ${version}`}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{`作者 ${author}`}</Text></VStack></HStack>
+      <HStack spacing={10} padding={{ vertical: 4 }} frame={{ minHeight: 56 }}><Image systemName="play.rectangle.fill" font="title3" foregroundStyle={ACCENT} frame={{ width: 36, height: 36 }} background={<CardSurface />} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="headline" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{`版本 ${version}`}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{`作者 ${author}`}</Text></VStack></HStack>
     </Section>
   </List></ZStack>
 }
@@ -140,9 +137,9 @@ function formatDiagnostic(entry: MissAVAccessDiagnostic): string {
 }
 
 function InfoRow(props: { icon: string; title: string; detail: string }) {
-  return <HStack spacing={12} padding={{ vertical: 6 }} frame={{ minHeight: 60 }}>
+  return <HStack spacing={10} padding={{ vertical: 4 }} frame={{ minHeight: 50 }}>
     <Image systemName={props.icon} foregroundStyle={ACCENT} frame={{ width: 28 }} />
-    <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+    <VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
       <Text font="body" fontWeight="semibold">{props.title}</Text>
       <Text font="footnote" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{props.detail}</Text>
     </VStack>

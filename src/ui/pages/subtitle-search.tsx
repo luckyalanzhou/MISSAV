@@ -1,5 +1,5 @@
 import { Button, HStack, Image, LazyVStack, ProgressView, QuickLook, ScrollView, Text, TextField, VStack, ZStack, useEffect, useRef, useState } from "scripting"
-import { ACCENT, CardSurface, READING_MAX_WIDTH, PageBackground, PageIntro, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING } from "../design"
+import { ACCENT, CardSurface, READING_MAX_WIDTH, PageBackground, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING } from "../design"
 import { saveMissAVSubtitle } from "../../features/subtitles/subtitles"
 import { downloadSubtitleCatFile, searchSubtitleCatFiles, type SubtitleCatSearchResult, type SubtitleCatSubtitleFile } from "../../features/subtitles/subtitlecat"
 import { SubtitleFileRow } from "../components/subtitle_file_row"
@@ -126,7 +126,6 @@ export function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (vi
     <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
       <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onAppear={appear} onDisappear={disappear}>
         <VStack spacing={20} alignment="leading" frame={{ maxWidth: READING_MAX_WIDTH }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-          <PageIntro title="为作品添加字幕" subtitle={`关联作品 · ${props.videoCode.toUpperCase()}`} systemImage="captions.bubble" />
           <HStack spacing={8} padding={{ horizontal: 14 }} frame={{ maxWidth: "infinity", minHeight: 56 }} background={<CardSurface />} contentShape="rect">
             <TextField title="番号" prompt="例如 SSIS-655" value={query} onChanged={setQuery} onSubmit={() => { void search() }} autocorrectionDisabled frame={{ maxWidth: "infinity" }} />
             <Button action={() => { void search() }} disabled={loading || Boolean(downloadingId) || !query.trim()} buttonStyle="plain" frame={{ width: 44, height: 44 }} contentShape="capsule" accessibilityLabel="搜索字幕">

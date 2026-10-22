@@ -1,6 +1,6 @@
 import { Button, Capsule, FlowLayout, GeometryReader, HStack, Image, ProgressView, RoundedRectangle, ScrollView, ScrollViewReader, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type DynamicShapeStyle, type ScrollViewProxy } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../../site/client"
-import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, PageBackground, PageIntro, READING_MAX_WIDTH } from "../design"
+import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, PageBackground, READING_MAX_WIDTH } from "../design"
 import { chooseAndPresentMissAVPlayer } from "../../features/playback/player"
 import { rememberMissAVDetail } from "../../data/storage"
 import { hasMissAVSubtitle, isMissAVSubtitleEnabled, setMissAVSubtitleEnabled } from "../../features/subtitles/subtitles"
@@ -274,7 +274,6 @@ function TagSearchPage(props: { tag: string; onHistoryChanged: () => void }) {
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle={props.tag} navigationBarTitleDisplayMode="inline" refreshable={() => load(page)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="tag-results-top" spacing={24} alignment="leading" frame={{ maxWidth: READING_MAX_WIDTH }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        <PageIntro title={props.tag} subtitle={`相关作品 · 第 ${page} 页 · ${items.length} 个结果`} systemImage="tag" />
         {loading && !items.length ? <StateView title="正在搜索标签" loading presentation="section" /> : error && !items.length ? <StateView title="标签搜索失败" description={error} kind="error" action={() => { void load(page) }} /> : !items.length ? <StateView title="暂无相关作品" description="未找到带有此标签的作品。" systemImage="tag.slash" /> : <VideoRowList items={items} status={() => `标签 · ${props.tag}`} statusSystemImage="tag" onOpen={open} />}
         {error && items.length ? <StateView title="刷新失败" description="正在显示上次成功的结果。" kind="error" action={() => { void load(page) }} presentation="row" /> : undefined}
         {items.length ? <HStack spacing={10} frame={{ maxWidth: "infinity" }}>

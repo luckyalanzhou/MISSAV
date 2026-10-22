@@ -56,16 +56,6 @@ export function CardSurface() {
   return <RoundedRectangle cornerRadius={18} fill={SURFACE} stroke={{ shapeStyle: SURFACE_RIM, strokeStyle: { lineWidth: 1 } }} />
 }
 
-export function PageIntro(props: { title: string; subtitle: string; systemImage: string }) {
-  return <HStack spacing={12} alignment="top" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-    <Image systemName={props.systemImage} font="title3" foregroundStyle={ACCENT} frame={{ width: 44, height: 44 }} background={<CardSurface />} />
-    <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
-      <Text font="title2" fontWeight="bold" foregroundStyle="label">{props.title}</Text>
-      <Text font="footnote" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{props.subtitle}</Text>
-    </VStack>
-  </HStack>
-}
-
 export function PageBackground() {
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={PAGE_CANVAS} ignoresSafeArea={true} />
 }

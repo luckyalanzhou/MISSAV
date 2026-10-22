@@ -1,6 +1,6 @@
 import { Button, HStack, Image, LazyHStack, LazyVStack, Picker, ProgressView, ScrollView, ScrollViewReader, Text, TextField, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { defaultMissAVCollectionSort, missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "../../site/client"
-import { ACCENT, CardSurface, CapsuleSurface, READING_MAX_WIDTH, SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, PageIntro, SECTION_SPACING } from "../design"
+import { ACCENT, CardSurface, CapsuleSurface, READING_MAX_WIDTH, SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard, MediaTile } from "../components/media_cards"
@@ -107,7 +107,6 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="搜索" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} scrollDismissesKeyboard="interactively" onAppear={() => { void loadDiscoveryOnce() }} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="results-top" spacing={SECTION_SPACING} alignment="leading" frame={{ maxWidth: READING_MAX_WIDTH }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        {!source ? <PageIntro title="找到想看的" subtitle="输入番号、女优或作品名称。" systemImage="magnifyingglass" /> : undefined}
         <HStack spacing={10} padding={{ horizontal: 14 }} frame={{ maxWidth: "infinity", minHeight: 56 }} background={<CardSurface />} contentShape="rect">
           <Image systemName="magnifyingglass" foregroundStyle="secondaryLabel" />
           <TextField key={`search-input-${inputEpoch}`} title="搜索" prompt="番号、女优或作品标题" value={keyword} onChanged={setKeyword} onSubmit={runSearch} onFocus={() => setInputFocused(true)} onBlur={() => setInputFocused(false)} frame={{ maxWidth: "infinity" }} />

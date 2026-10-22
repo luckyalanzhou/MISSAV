@@ -1,6 +1,6 @@
 import { Button, Device, FlowLayout, HStack, Image, LazyVGrid, Menu, ProgressView, ScrollView, ScrollViewReader, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type ScrollViewProxy } from "scripting"
 import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../../site/client"
-import { ACCENT, CardSurface, CapsuleSurface, CONTENT_MAX_WIDTH, SURFACE, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, PageIntro } from "../design"
+import { ACCENT, CardSurface, CapsuleSurface, CONTENT_MAX_WIDTH, SURFACE, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "../design"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard } from "../components/media_cards"
@@ -105,7 +105,6 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="discover-results-top" spacing={20} alignment="leading" frame={{ maxWidth: CONTENT_MAX_WIDTH }} padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        <VStack padding={{ horizontal: PAGE_PADDING }}><PageIntro title="按栏目发现" subtitle="选择大类，再筛选作品与排列顺序。" systemImage="square.grid.2x2" /></VStack>
         <ScrollView axes="horizontal" scrollIndicator="hidden">
           <HStack spacing={9} padding={{ horizontal: PAGE_PADDING }}>
             {MISSAV_COLLECTION_GROUPS.map(item => <CategoryChip key={item.value} title={item.title} active={item.value === group} level="primary" action={() => { setGroup(item.value); selectCollection(item.defaultCollection) }} />)}

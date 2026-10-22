@@ -1,7 +1,7 @@
 import { Button, HStack, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import type { MissAVVideoItem } from "../../site/client"
 import { formatMissAVContinueWatching } from "../../features/playback/playback-progress"
-import { ACCENT, CapsuleSurface, CardSurface, READING_MAX_WIDTH, SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, PageIntro, SECTION_SPACING } from "../design"
+import { ACCENT, CapsuleSurface, CardSurface, READING_MAX_WIDTH, SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import {
   clearMissAVBrowseHistory,
   clearMissAVHistory,
@@ -171,7 +171,6 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
       }}
     >
       <VStack spacing={SECTION_SPACING} alignment="leading" frame={{ maxWidth: READING_MAX_WIDTH }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
-        <PageIntro title="你的观看足迹" subtitle="继续上次播放，或找回浏览过的作品。" systemImage="clock.arrow.circlepath" />
         <HStack spacing={9} frame={{ maxWidth: "infinity", alignment: "leading" }} accessibilityLabel="选择资料库类型">
           <Button title="播放记录" systemImage={segment === "playback" ? "checkmark" : undefined} action={() => setSegment("playback")} buttonStyle={glassButtonStyle(segment === "playback")} buttonBorderShape="capsule" controlSize="regular" font="subheadline" tint={segment === "playback" ? ACCENT : SURFACE} background={<CapsuleSurface />} foregroundStyle={segment === "playback" ? "white" : "label"} frame={{ maxWidth: "infinity", minHeight: 46 }} accessibilityLabel={`播放记录${segment === "playback" ? "，已选择" : ""}`} />
           <Button title="浏览记录" systemImage={segment === "browse" ? "checkmark" : undefined} action={() => setSegment("browse")} buttonStyle={glassButtonStyle(segment === "browse")} buttonBorderShape="capsule" controlSize="regular" font="subheadline" tint={segment === "browse" ? ACCENT : SURFACE} background={<CapsuleSurface />} foregroundStyle={segment === "browse" ? "white" : "label"} frame={{ maxWidth: "infinity", minHeight: 46 }} accessibilityLabel={`浏览记录${segment === "browse" ? "，已选择" : ""}`} />
