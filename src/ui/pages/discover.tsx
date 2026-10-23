@@ -126,10 +126,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
           </FlowLayout> : undefined}
 
           {directoryMode ? <DirectoryContent categories={categories} loading={loading} error={error} onRetry={() => { void load({}, true) }} onLoadMore={loadNextPageIfNeeded} onSelect={item => { setCategoryTitle(item.title); void load({ page: 1, categoryPath: item.path, filter: "", sort: "released_at" }) }} /> : loading && items.length === 0 ? <StateView title={`正在加载${title}`} loading presentation="row" /> : error && items.length === 0 ? <StateView title="加载失败" description={error} kind="error" action={() => { void load({}, true) }} /> : items.length === 0 ? <StateView title="暂无内容" description="当前栏目或筛选条件下暂无内容。" kind="empty" action={() => { void load({ page: 1, collection, filter: "", sort: defaultCollectionSort(collection) }, true) }} actionTitle="重置筛选" /> : <>
-            <HStack spacing={12} alignment="center" frame={{ maxWidth: "infinity" }}>
-              <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{title}</Text>
-              <Text font="subheadline" foregroundStyle="tertiaryLabel" frame={{ alignment: "trailing" }}>{`已加载 ${items.length} 部`}</Text>
-            </HStack>
+            <Text font="title2" fontWeight="bold" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{title}</Text>
             <LazyVGrid columns={[{ size: { type: "adaptive", min: 154, max: 220 }, spacing: 14 }]} spacing={20}>{items.map((video, index) => index === items.length - 1 ? <VStack key={`discover-load-more-${video.videoCode}`} onAppear={loadNextPageIfNeeded}><MediaGridCard video={video} responsiveArtwork onOpen={open} /></VStack> : <MediaGridCard key={video.videoCode} video={video} responsiveArtwork onOpen={open} />)}</LazyVGrid>
           </>}
 
