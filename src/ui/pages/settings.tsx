@@ -94,11 +94,11 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     <List listStyle="insetGroup" scrollContentBackground="hidden" navigationTitle="设置" navigationBarTitleDisplayMode="inline" frame={{ maxWidth: READING_MAX_WIDTH }}>
     <Section header={<Text>访问站点</Text>} footer={<Text>线路检查仅确认测试栏目可访问。切换域名会应用于浏览、搜索、详情和播放。</Text>}>
       <VStack spacing={4} alignment="leading" padding={{ vertical: 6 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-        <HStack spacing={8}>
+        <HStack spacing={16}>
           <Image systemName="globe" foregroundStyle="secondaryLabel" frame={{ width: 28 }} />
           <Text font="caption" foregroundStyle="secondaryLabel">{new URL(domain).hostname}</Text>
         </HStack>
-        <HStack spacing={8}>
+        <HStack spacing={16}>
           {accessBusy ? <ProgressView progressViewStyle="circular" frame={{ width: 28 }} /> : verificationIcon ? <Image systemName={verificationIcon} foregroundStyle={verificationColor} frame={{ width: 28 }} /> : <VStack frame={{ width: 28 }} />}
           <Text font="subheadline" fontWeight="semibold" foregroundStyle={verificationColor}>{verificationLabel}</Text>
         </HStack>
@@ -106,7 +106,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
         {accessMessage ? <Text font="footnote" foregroundStyle="secondaryLabel">{accessMessage}</Text> : undefined}
       </VStack>
       <Button title={accessBusy ? "正在验证访问线路" : "验证访问线路"} systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} frame={{ minHeight: 44 }} action={() => { void verifySiteAccess() }} />
-      <HStack spacing={8}>
+      <HStack spacing={16}>
         <Image systemName="network" foregroundStyle={ACCENT} frame={{ width: 28 }} />
         <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy} frame={{ maxWidth: "infinity" }}>
           {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
