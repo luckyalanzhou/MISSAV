@@ -12,7 +12,7 @@ import { useDetailNavigation } from "./detail-navigation"
 import { DiscoverPage } from "./discover"
 import { SearchPage } from "./search"
 
-export function MediaHomePage(props: { revision: number; accessRevision?: number; onHistoryChanged: () => void; onDiscover: () => void; toolbar?: any }) {
+export function MediaHomePage(props: { revision: number; accessRevision?: number; onHistoryChanged: () => void; onDiscover: () => void }) {
   const [data, setData] = useState(emptyHomeScreenData)
   const loader = useRef<HomeScreenLoader | null>(null)
   const detailNavigation = useDetailNavigation()
@@ -60,7 +60,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel}>
     <PageBackground />
-    <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["navigationBar"] }} toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollView toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["navigationBar"] }} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack spacing={28} alignment="leading" frame={{ maxWidth: CONTENT_MAX_WIDTH }} padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
         <VStack spacing={16} padding={{ horizontal: PAGE_PADDING }}>
           <NavigationLink destination={<SearchPage key={`home-search-${props.accessRevision || 0}`} onHistoryChanged={props.onHistoryChanged} />} buttonStyle="plain" frame={{ minHeight: 56 }}><HomeSearchEntry /></NavigationLink>

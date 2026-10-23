@@ -44,7 +44,7 @@ const segmentMetadata: Record<LibrarySegment, { title: string; subtitle: string;
   },
 }
 
-export function LibraryPage(props: { historyRevision: number; onHistoryChanged: () => void; onDiscover: () => void; toolbar?: any }) {
+export function LibraryPage(props: { historyRevision: number; onHistoryChanged: () => void; onDiscover: () => void }) {
   const [segment, setSegment] = useState<LibrarySegment>("playback")
   const [data, setData] = useState<LibraryData>(emptyData)
   const [loading, setLoading] = useState(true)
@@ -161,10 +161,7 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel}>
     <PageBackground />
     <ScrollView
-      navigationTitle="资料库"
-      navigationBarTitleDisplayMode="inline"
       toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["navigationBar"] }}
-      toolbar={props.toolbar}
       refreshable={refresh}
       navigationDestination={{
         isPresented: detailPresented,
