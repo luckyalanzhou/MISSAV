@@ -1,6 +1,6 @@
 import { Button, Capsule, FlowLayout, GeometryReader, HStack, Image, ProgressView, RoundedRectangle, ScrollView, ScrollViewReader, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type DynamicShapeStyle, type ScrollViewProxy } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../../site/client"
-import { ACCENT, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, PageBackground, READING_MAX_WIDTH } from "../design"
+import { ACCENT, CONTROL_RIM, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_CANVAS, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, READING_MAX_WIDTH, SECONDARY_SURFACE, SURFACE, SURFACE_RIM } from "../design"
 import { chooseAndPresentMissAVPlayer } from "../../features/playback/player"
 import { rememberMissAVDetail } from "../../data/storage"
 import { hasMissAVSubtitle, isMissAVSubtitleEnabled, setMissAVSubtitleEnabled } from "../../features/subtitles/subtitles"
@@ -13,14 +13,11 @@ import type { MissAVPlaybackPreparation } from "../../features/playback/playback
 import { startPlaybackPolling } from "../../features/playback/playback-polling"
 import { MissAVListingRequest } from "../../site/listing/listing-request"
 
-// Native dynamic styles keep the page responsive to system appearance changes.
-const DETAIL_CANVAS: DynamicShapeStyle = { light: "#FFFFFF", dark: "#101114" }
+// Keep the cover ambience local to the hero; the page itself uses the shared canvas.
 const DETAIL_BACKGROUND: DynamicShapeStyle = {
-  light: { gradient: [{ color: "rgba(255,255,255,0.84)", location: 0 }, { color: "#FFFFFF", location: 0.65 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
-  dark: { gradient: [{ color: "rgba(16,17,20,0.82)", location: 0 }, { color: "#101114", location: 0.65 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+  light: { gradient: [{ color: "rgba(244,245,247,0.86)", location: 0 }, { color: "#F4F5F7", location: 0.65 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+  dark: { gradient: [{ color: "rgba(13,15,19,0.86)", location: 0 }, { color: "#0D0F13", location: 0.65 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
 }
-const DETAIL_SURFACE: DynamicShapeStyle = { light: "rgba(255,255,255,0.88)", dark: "rgba(255,255,255,0.07)" }
-const DETAIL_RIM: DynamicShapeStyle = { light: "rgba(96,108,124,0.18)", dark: "rgba(255,255,255,0.12)" }
 
 export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: MissAVVideoDetail; initialTrace?: MissAVDetailTrace; preparation?: MissAVPlaybackPreparation; onHistoryChanged: () => void }) {
   const [detail, setDetail] = useState<MissAVVideoDetail | null>(props.initialDetail ?? null)
@@ -160,7 +157,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   const secondaryMetadata = [detail?.releaseDate, detail?.duration || props.video.duration].filter(Boolean).join(" · ")
   function searchTag(tag: string) { setSelectedTag(tag); tagSearchPresented.setValue(true) }
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={DETAIL_CANVAS}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={PAGE_CANVAS}>
     <DetailBackdrop coverUrl={coverUrl} />
     <ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" onAppear={appear} onDisappear={disappear} refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, content: selectedTag ? <TagSearchPage tag={selectedTag} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
     <VStack frame={{ maxWidth: "infinity" }}>
@@ -228,18 +225,18 @@ function TagButton(props: { title: string; action: () => void }) {
 }
 
 function DetailCapsuleSurface() {
-  return <Capsule fill={DETAIL_SURFACE} stroke={{ shapeStyle: DETAIL_RIM, strokeStyle: { lineWidth: 1 } }} />
+  return <Capsule fill={SECONDARY_SURFACE} stroke={{ shapeStyle: CONTROL_RIM, strokeStyle: { lineWidth: 1 } }} />
 }
 
 function DetailBackdrop(props: { coverUrl: string }) {
-  return <GeometryReader ignoresSafeArea={true}>{geometry => <ZStack frame={{ width: geometry.size.width, height: geometry.size.height }} background={DETAIL_CANVAS} clipped>
+  return <GeometryReader ignoresSafeArea={true}>{geometry => <ZStack frame={{ width: geometry.size.width, height: geometry.size.height }} background={PAGE_CANVAS} clipped>
     {props.coverUrl ? <Image imageUrl={props.coverUrl} resizable aspectRatio={{ contentMode: "fill" }} frame={{ width: geometry.size.width, height: geometry.size.height }} clipped blur={36} /> : undefined}
     <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={DETAIL_BACKGROUND} />
   </ZStack>}</GeometryReader>
 }
 
 function DetailCardSurface() {
-  return <RoundedRectangle cornerRadius={24} fill={DETAIL_SURFACE} stroke={{ shapeStyle: DETAIL_RIM, strokeStyle: { lineWidth: 1 } }} />
+  return <RoundedRectangle cornerRadius={24} fill={SURFACE} stroke={{ shapeStyle: SURFACE_RIM, strokeStyle: { lineWidth: 1 } }} />
 }
 
 function DetailInfoRow(props: { title: string; value: string }) {

@@ -1,17 +1,18 @@
 import { Button, Capsule, Color, Device, HStack, Image, RoundedRectangle, Text, VStack, ZStack, type DynamicShapeStyle } from "scripting"
 
-export const ACCENT: Color = "systemBlue"
-export const PAGE_BACKGROUND: Color = "systemBackground"
+export const ACCENT: DynamicShapeStyle = { light: "#246BCE", dark: "#70A7FF" }
 export const CONTENT_MAX_WIDTH = 1000
 export const READING_MAX_WIDTH = 760
-export const SURFACE: DynamicShapeStyle = { light: "#FFFFFF", dark: "#222429" }
+export const PAGE_CANVAS: DynamicShapeStyle = { light: "#F4F5F7", dark: "#0D0F13" }
+export const SURFACE: DynamicShapeStyle = { light: "#FFFFFF", dark: "#191C22" }
+export const SECONDARY_SURFACE: DynamicShapeStyle = { light: "#ECEFF3", dark: "#22262E" }
 export const SURFACE_RIM: DynamicShapeStyle = {
-  light: { gradient: [{ color: "#FFFFFF", location: 0 }, { color: "rgba(96,108,124,0.25)", location: 1 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
-  dark: { gradient: [{ color: "rgba(255,255,255,0.22)", location: 0 }, { color: "rgba(255,255,255,0.07)", location: 1 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+  light: "rgba(23,26,32,0.08)",
+  dark: "rgba(255,255,255,0.08)",
 }
-const PAGE_CANVAS: DynamicShapeStyle = {
-  light: { gradient: [{ color: "#F0F1F4", location: 0 }, { color: "#FAFAFB", location: 1 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
-  dark: { gradient: [{ color: "#1B1D22", location: 0 }, { color: "#101114", location: 1 }], startPoint: { x: 0.5, y: 0 }, endPoint: { x: 0.5, y: 1 } },
+export const CONTROL_RIM: DynamicShapeStyle = {
+  light: "rgba(23,26,32,0.12)",
+  dark: "rgba(255,255,255,0.10)",
 }
 
 // 4.0 geometry: reading content follows a leading axis; controls and page states
@@ -49,7 +50,7 @@ export function glassButtonStyle(prominent = false): "glass" | "glassProminent" 
 }
 
 export function CapsuleSurface() {
-  return <Capsule fill={SURFACE} stroke={{ shapeStyle: SURFACE_RIM, strokeStyle: { lineWidth: 1.1 } }} />
+  return <Capsule fill={SECONDARY_SURFACE} stroke={{ shapeStyle: CONTROL_RIM, strokeStyle: { lineWidth: 1 } }} />
 }
 
 export function CardSurface() {
