@@ -1,6 +1,6 @@
-import { Button, Capsule, FlowLayout, GeometryReader, HStack, Image, ProgressView, RoundedRectangle, ScrollView, ScrollViewReader, Text, VStack, ZStack, useEffect, useObservable, useRef, useState, type DynamicShapeStyle, type ScrollViewProxy } from "scripting"
+import { Button, Capsule, FlowLayout, GeometryReader, HStack, Image, ProgressView, RoundedRectangle, ScrollView, ScrollViewReader, Text, VStack, ZStack, useEffect, useRef, useState, type DynamicShapeStyle, type ScrollViewProxy } from "scripting"
 import { missavClient, MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem, type MissAVVideoSource } from "../../site/client"
-import { ACCENT, CONTROL_RIM, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_CANVAS, PAGE_PADDING, PRIMARY_ACTION_HEIGHT, READING_MAX_WIDTH, SECONDARY_SURFACE, SURFACE, SURFACE_RIM } from "../design"
+import { ACCENT, CONTROL_RIM, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_CANVAS, PAGE_PADDING, PageBackground, PRIMARY_ACTION_HEIGHT, READING_MAX_WIDTH, SECONDARY_SURFACE, SURFACE, SURFACE_RIM } from "../design"
 import { chooseAndPresentMissAVPlayer } from "../../features/playback/player"
 import { rememberMissAVDetail } from "../../data/storage"
 import { hasMissAVSubtitle, isMissAVSubtitleEnabled, setMissAVSubtitleEnabled } from "../../features/subtitles/subtitles"
@@ -33,7 +33,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   const [subtitleSearchPresented, setSubtitleSearchPresented] = useState(false)
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
   const [selectedTagPath, setSelectedTagPath] = useState("")
-  const tagSearchPresented = useObservable(false)
+  const [tagSearchPresented, setTagSearchPresented] = useState(false)
   const generation = useRef(0)
   const requestScope = useRef<MissAVRequestScope | null>(null)
   const subtitleGeneration = useRef(0)
@@ -154,13 +154,13 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   const title = detail?.title || props.video.title
   const coverUrl = detail?.coverUrl || props.video.coverUrl
   const secondaryMetadata = [detail?.releaseDate, detail?.duration || props.video.duration].filter(Boolean).join(" · ")
-  function searchTag(tag: string, categoryPath: string) { setSelectedTag(tag); setSelectedTagPath(categoryPath); tagSearchPresented.setValue(true) }
+  function searchTag(tag: string, categoryPath: string) { setSelectedTag(tag); setSelectedTagPath(categoryPath); setTagSearchPresented(true) }
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={PAGE_CANVAS}>
     <DetailBackdrop coverUrl={coverUrl} />
-    <ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" onAppear={appear} onDisappear={disappear} refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, content: selectedTag ? <TagSearchPage tag={selectedTag} categoryPath={selectedTagPath} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" onAppear={appear} onDisappear={disappear} refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, onChanged: value => { setTagSearchPresented(value); if (!value) { setSelectedTag(null); setSelectedTagPath("") } }, content: tagSearchPresented && selectedTag ? <TagSearchPage tag={selectedTag} categoryPath={selectedTagPath} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
     <VStack frame={{ maxWidth: "infinity" }}>
-    <VStack spacing={24} alignment="leading" frame={{ maxWidth: 760 }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
+    <VStack spacing={20} alignment="leading" frame={{ maxWidth: 760 }} padding={{ horizontal: PAGE_PADDING, top: 0, bottom: PAGE_BOTTOM_PADDING }}>
       <ZStack frame={{ maxWidth: "infinity", minHeight: 120 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 18, style: "continuous" }}>
         {coverUrl ? <Image imageUrl={coverUrl} resizable aspectRatio={{ contentMode: "fit" }} frame={{ maxWidth: "infinity" }} /> : <Image systemName="photo" font="largeTitle" foregroundStyle="tertiaryLabel" />}
       </ZStack>

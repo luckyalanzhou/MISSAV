@@ -1,22 +1,20 @@
 import { HStack, Image, LazyHStack, LazyVGrid, NavigationLink, ScrollView, Text, VStack, ZStack, useEffect, useRef, useState } from "scripting"
 import { missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "../../site/client"
-import { loadAllMissAVHistory, loadMissAVBrowseHistory } from "../../data/storage"
+import { loadAllMissAVHistory } from "../../data/storage"
 import { formatMissAVContinueWatching } from "../../features/playback/playback-progress"
 import { emptyHomeScreenData, HomeScreenLoader, playbackProgressFraction, type HomeSection } from "../../features/home/home-screen-data"
-import { ActionRow, CardSurface, CapsuleSurface, CONTENT_MAX_WIDTH, SECONDARY_SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
+import { CapsuleSurface, CONTENT_MAX_WIDTH, SECONDARY_SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PAGE_TOP_PADDING, PageBackground, SectionHeading } from "../design"
 import { MediaGridCard, MediaTile } from "../components/media_cards"
 import { ContinueWatchingCard, HOME_QUICK_COLLECTIONS, HomeQuickCollectionChip, HomeSearchEntry } from "../components/home_components"
 import { StateView } from "../components/state_view"
 import { DetailPage } from "./detail"
 import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
 import { DiscoverPage } from "./discover"
-import { RecommendationsPage } from "./recommendations"
 import { SearchPage } from "./search"
 
 export function MediaHomePage(props: { revision: number; accessRevision?: number; onHistoryChanged: () => void; onDiscover: () => void; toolbar?: any }) {
   const [data, setData] = useState(emptyHomeScreenData)
   const loader = useRef<HomeScreenLoader | null>(null)
-  const [recommendationsPresented, setRecommendationsPresented] = useState(false)
   const detailNavigation = useDetailNavigation()
   const selected = detailNavigation.selected
   const detailPresented = detailNavigation.isPresented
@@ -24,7 +22,6 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
   useEffect(() => {
     const owner = new HomeScreenLoader({
       history: () => loadAllMissAVHistory(),
-      recommendationHistory: async () => (await loadMissAVBrowseHistory(1)).length > 0,
       cached: params => missavClient.readCachedVideoPage(params),
       search: (params, scope, forceRefresh) => missavClient.searchVideoPage(params, { scope: scope as MissAVRequestScope, forceRefresh, allowStale: true }),
       scope: () => new MissAVRequestScope(),
@@ -81,10 +78,6 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
 
         {onlineSection("latest", "最近更新", "new")}
         {onlineSection("trending", "今日热门", "today-hot")}
-
-        {data.hasRecommendationHistory ? <VStack spacing={0} alignment="leading" padding={{ horizontal: PAGE_PADDING }}>
-          <VStack padding={{ horizontal: 14 }} background={<CardSurface />}><ActionRow title="为你推荐" subtitle="根据本机的浏览和播放记录生成。" systemImage="sparkles" action={() => setRecommendationsPresented(true)} navigationDestination={{ isPresented: recommendationsPresented, content: <RecommendationsPage revision={props.revision} onHistoryChanged={props.onHistoryChanged} onDiscover={props.onDiscover} /> }} /></VStack>
-        </VStack> : undefined}
 
       </VStack>
     </ScrollView>
