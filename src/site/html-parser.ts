@@ -57,10 +57,27 @@ export function parseMissAVVideoDetail(html: string, videoCode: string, watchUrl
   const durationSeconds = Number(meta(html, "og:video:duration"))
   const releaseDate = meta(html, "og:video:release_date") || undefined
   const actress = meta(html, "og:video:actor") || cleanText(firstMatch(html, /<a\b[^>]*href=["'][^"']*\/actresses\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/i)) || undefined
-  const genres = unique([...html.matchAll(/<a\b[^>]*href=["'][^"']*\/genres\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/gi)].map(match => cleanText(match[1])).filter(Boolean)).slice(0, 30)
+  const genreLinks = uniqueCategories([...html.matchAll(/<a\b[^>]*href=["']([^"']*\/genres\/[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].flatMap(match => {
+    try {
+      const url = new URL(decodeHtml(match[1]), watchUrl)
+      const path = /^\/(?:dm\d+\/)?cn\/genres\/[^/]+\/?$/.test(url.pathname) ? url.pathname : ""
+      const title = cleanText(match[2])
+      return url.origin === new URL(watchUrl).origin && path && title ? [{ title, path }] : []
+    } catch { return [] }
+  })).slice(0, 30)
+  const genres = genreLinks.length ? unique(genreLinks.map(category => category.title)).slice(0, 30) : unique([...html.matchAll(/<a\b[^>]*href=["'][^"']*\/genres\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/gi)].map(match => cleanText(match[1])).filter(Boolean)).slice(0, 30)
   const maker = cleanText(firstMatch(html, /<a\b[^>]*href=["'][^"']*\/makers\/[^"']+["'][^>]*>([\s\S]*?)<\/a>/i)) || undefined
   const sources = parseMissAVSources(html)
-  return { title, videoCode, coverUrl, duration: durationSeconds > 0 ? formatDuration(durationSeconds) : undefined, releaseDate, actress, genres, maker, sources, watchUrl }
+  return { title, videoCode, coverUrl, duration: durationSeconds > 0 ? formatDuration(durationSeconds) : undefined, releaseDate, actress, genres, genreLinks, maker, sources, watchUrl }
+}
+
+function uniqueCategories<T extends { title: string; path: string }>(items: T[]): T[] {
+  const seen = new Set<string>()
+  return items.filter(item => {
+    if (seen.has(item.path)) return false
+    seen.add(item.path)
+    return true
+  })
 }
 
 export type CloudflarePageState = "none" | "challenge" | "blocked"

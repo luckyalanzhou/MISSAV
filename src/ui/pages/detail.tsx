@@ -32,7 +32,7 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   const [subtitleEnabled, setSubtitleEnabled] = useState(true)
   const [subtitleSearchPresented, setSubtitleSearchPresented] = useState(false)
   const [selectedTag, setSelectedTag] = useState<string | null>(null)
-  const [titleExpanded, setTitleExpanded] = useState(false)
+  const [selectedTagPath, setSelectedTagPath] = useState("")
   const tagSearchPresented = useObservable(false)
   const generation = useRef(0)
   const requestScope = useRef<MissAVRequestScope | null>(null)
@@ -96,7 +96,6 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
     if (detail) props.preparation?.prepareSource(detail)
     if (changed) {
       initializedVideo.current = props.video.videoCode
-      setTitleExpanded(false)
       needsReload.current = !props.initialDetail
       setDetail(props.initialDetail ?? null); setLoading(!props.initialDetail); setOpeningSource(null)
       if (props.initialDetail) {
@@ -155,11 +154,11 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
   const title = detail?.title || props.video.title
   const coverUrl = detail?.coverUrl || props.video.coverUrl
   const secondaryMetadata = [detail?.releaseDate, detail?.duration || props.video.duration].filter(Boolean).join(" · ")
-  function searchTag(tag: string) { setSelectedTag(tag); tagSearchPresented.setValue(true) }
+  function searchTag(tag: string, categoryPath: string) { setSelectedTag(tag); setSelectedTagPath(categoryPath); tagSearchPresented.setValue(true) }
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={PAGE_CANVAS}>
     <DetailBackdrop coverUrl={coverUrl} />
-    <ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" onAppear={appear} onDisappear={disappear} refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, content: selectedTag ? <TagSearchPage tag={selectedTag} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
+    <ScrollView navigationTitle="详情" navigationBarTitleDisplayMode="inline" onAppear={appear} onDisappear={disappear} refreshable={load} navigationDestination={{ isPresented: tagSearchPresented, content: selectedTag ? <TagSearchPage tag={selectedTag} categoryPath={selectedTagPath} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
     <VStack frame={{ maxWidth: "infinity" }}>
     <VStack spacing={24} alignment="leading" frame={{ maxWidth: 760 }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>
       <ZStack frame={{ maxWidth: "infinity", minHeight: 120 }} background="tertiarySystemFill" clipShape={{ type: "rect", cornerRadius: 18, style: "continuous" }}>
@@ -168,16 +167,15 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
 
       <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <Text font="caption" fontWeight="bold" foregroundStyle={ACCENT} frame={{ maxWidth: "infinity", alignment: "leading" }}>{code}</Text>
-        <Text font="title3" fontWeight="bold" foregroundStyle="label" lineLimit={titleExpanded ? undefined : 3} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{title}</Text>
-        <Button title={titleExpanded ? "收起标题" : "展开标题"} action={() => setTitleExpanded(!titleExpanded)} buttonStyle="plain" foregroundStyle={ACCENT} font="subheadline" frame={{ minHeight: 44 }} accessibilityLabel={titleExpanded ? "收起作品完整标题" : "展开作品完整标题"} />
+        <Text font="title3" fontWeight="bold" foregroundStyle="label" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{title}</Text>
         {secondaryMetadata ? <Text font="subheadline" foregroundStyle="secondaryLabel" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{secondaryMetadata}</Text> : undefined}
       </VStack>
 
       <VStack spacing={14} alignment="leading" frame={{ maxWidth: "infinity" }}>
-        {primarySource ? <Button action={() => { void play(primarySource) }} disabled={Boolean(openingSource)} buttonStyle={glassButtonStyle(true)} buttonBorderShape="capsule" controlSize="large" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: PRIMARY_ACTION_HEIGHT }} accessibilityLabel={openingSource === primarySource.url ? `正在打开 ${primarySource.label}` : `播放 ${primarySource.label}`}>
+        {primarySource ? <Button action={() => { void play(primarySource) }} disabled={Boolean(openingSource)} buttonStyle={glassButtonStyle(true)} buttonBorderShape="capsule" controlSize="large" tint={ACCENT} frame={{ maxWidth: "infinity", minHeight: PRIMARY_ACTION_HEIGHT }} accessibilityLabel={openingSource === primarySource.url ? "正在打开播放器" : "播放视频"}>
           <HStack spacing={8}>
             {openingSource === primarySource.url ? <ProgressView progressViewStyle="circular" tint="white" /> : <Image systemName="play.fill" />}
-            <Text font="headline" fontWeight="bold">{openingSource === primarySource.url ? "正在打开" : `播放 ${primarySource.label}`}</Text>
+            <Text font="headline" fontWeight="bold">{openingSource === primarySource.url ? "正在打开" : primarySource.label === "自动清晰度" ? "播放视频" : `播放 ${primarySource.label}`}</Text>
           </HStack>
         </Button> : loading ? <StateView title="正在获取播放信息" loading presentation="row" /> : undefined}
         <FlowLayout spacing={10}>
@@ -200,13 +198,13 @@ export function DetailPage(props: { video: MissAVVideoItem; initialDetail?: Miss
       {detailError && !detail ? <StateView title="详情加载失败" description={detailError} kind="error" action={() => { void load() }} /> : undefined}
       {detailError && detail ? <StateView title="刷新失败" description="正在显示上次加载的详情。" kind="error" action={() => { void load() }} presentation="row" /> : undefined}
 
-      {detail && detail.sources.length > 1 ? <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity" }}><Text font="subheadline" foregroundStyle="secondaryLabel">其他清晰度</Text><FlowLayout spacing={8}>{detail.sources.slice(1).map(source => <SourceRow key={`${source.label}-${source.url}`} source={source} openingSource={openingSource} action={() => { void play(source) }} />)}</FlowLayout></VStack> : !loading && detail && !detail.sources.length ? <StateView title="暂无可用播放源" description="请下拉刷新后重试。" kind="empty" systemImage="play.slash" action={() => { void load() }} actionTitle="重新加载" /> : undefined}
+      {!loading && detail && !detail.sources.length ? <StateView title="暂无可用播放源" description="请下拉刷新后重试。" kind="empty" systemImage="play.slash" action={() => { void load() }} actionTitle="重新加载" /> : undefined}
 
       {detail && (detail.maker || detail.actress || detail.genres.length > 0) ? <VStack spacing={16} alignment="leading" padding={18} frame={{ maxWidth: "infinity", alignment: "leading" }} background={<DetailCardSurface />}>
         <Text font="headline" fontWeight="semibold" foregroundStyle="label">作品资料</Text>
         {detail.maker ? <DetailInfoRow title="制作商" value={detail.maker} /> : undefined}
         {detail.actress ? <DetailInfoRow title="出演" value={detail.actress} /> : undefined}
-        {detail.genres.length ? <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="subheadline" foregroundStyle="secondaryLabel">分类 · 点击查看相关作品</Text><FlowLayout spacing={8}>{detail.genres.map(genre => <TagButton key={genre} title={genre} action={() => searchTag(genre)} />)}</FlowLayout></VStack> : undefined}
+        {detail.genres.length ? <VStack spacing={8} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="subheadline" foregroundStyle="secondaryLabel">分类 · 点击查看相关作品</Text><FlowLayout spacing={8}>{detail.genres.map(genre => { const category = detail.genreLinks?.find(link => link.title === genre); return <TagButton key={genre} title={genre} action={() => searchTag(genre, category?.path || "")} /> })}</FlowLayout></VStack> : undefined}
       </VStack> : undefined}
 
       {detailTrace.current || loading || detailError ? <Button title={loading ? "复制当前诊断" : detailError ? "复制失败诊断" : "复制完整诊断"} systemImage="doc.on.doc" buttonStyle={glassButtonStyle()} buttonBorderShape="capsule" controlSize="small" tint="secondarySystemFill" foregroundStyle="label" frame={{ minHeight: 44 }} action={() => { void copyLoadDiagnostics() }} /> : undefined}
@@ -243,7 +241,7 @@ function DetailInfoRow(props: { title: string; value: string }) {
   return <HStack spacing={12} alignment="top" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="subheadline" foregroundStyle="secondaryLabel" frame={{ width: 64, alignment: "leading" }}>{props.title}</Text><Text font="subheadline" foregroundStyle="label" frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{props.value}</Text></HStack>
 }
 
-function TagSearchPage(props: { tag: string; onHistoryChanged: () => void }) {
+function TagSearchPage(props: { tag: string; categoryPath: string; onHistoryChanged: () => void }) {
   const [items, setItems] = useState<MissAVVideoItem[]>([])
   const [page, setPage] = useState(1)
   const [hasNext, setHasNext] = useState(false)
@@ -257,14 +255,14 @@ function TagSearchPage(props: { tag: string; onHistoryChanged: () => void }) {
   const scrollProxy = useRef<ScrollViewProxy | null>(null)
   async function load(nextPage = 1) {
     setLoading(true); setError(null)
-    await listingRequest.current.load({ query: props.tag, page: nextPage, sort: "released_at", filter: "" }, {}, {
+    await listingRequest.current.load({ collection: "genres", ...(props.categoryPath ? { categoryPath: props.categoryPath } : { query: props.tag }), page: nextPage, sort: "released_at", filter: "" }, {}, {
       loaded: result => { setItems(result.items); setPage(result.page); setHasNext(result.hasNext); setResultsRevision(value => value + 1) },
       failed: reason => setError(reason instanceof Error ? reason.message : String(reason)),
       settled: () => setLoading(false),
     })
   }
-  useEffect(() => { void load(1) }, [props.tag])
-  useEffect(() => () => listingRequest.current.cancel(), [props.tag])
+  useEffect(() => { void load(1) }, [props.tag, props.categoryPath])
+  useEffect(() => () => listingRequest.current.cancel(), [props.tag, props.categoryPath])
   useEffect(() => { if (resultsRevision) scrollProxy.current?.scrollTo("tag-results-top", "top") }, [resultsRevision])
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
@@ -281,9 +279,4 @@ function TagSearchPage(props: { tag: string; onHistoryChanged: () => void }) {
       </VStack>
     </ScrollView>}}</ScrollViewReader>
   </ZStack>
-}
-
-function SourceRow(props: { source: MissAVVideoSource; openingSource: string | null; action: () => void }) {
-  const opening = props.openingSource === props.source.url
-  return <Button action={props.action} disabled={Boolean(props.openingSource)} buttonStyle="plain" contentShape="capsule" accessibilityLabel={opening ? `正在打开 ${props.source.label}` : props.openingSource ? `${props.source.label}，正在打开其他清晰度` : `播放 ${props.source.label}`}><HStack spacing={7} padding={{ horizontal: 16, vertical: 8 }} frame={{ minHeight: 44 }} background={<DetailCapsuleSurface />}>{opening ? <ProgressView progressViewStyle="circular" tint={ACCENT} /> : <Image systemName="play.fill" font="caption" foregroundStyle={ACCENT} />}<Text font="subheadline" foregroundStyle="label">{opening ? `正在打开 ${props.source.label}` : props.source.label}</Text></HStack></Button>
 }

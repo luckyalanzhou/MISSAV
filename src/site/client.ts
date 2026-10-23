@@ -34,7 +34,7 @@ const USER_AGENT = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) Apple
 
 export type MissAVVideoItem = { title: string; videoCode: string; detailPath: string; coverUrl: string; duration?: string; badge?: string }
 export type MissAVVideoSource = { label: string; qualityHeight?: number; url: string; type: "application/vnd.apple.mpegurl" | "video/mp4" }
-export type MissAVVideoDetail = { title: string; videoCode: string; coverUrl: string; duration?: string; releaseDate?: string; actress?: string; genres: string[]; maker?: string; sources: MissAVVideoSource[]; watchUrl: string }
+export type MissAVVideoDetail = { title: string; videoCode: string; coverUrl: string; duration?: string; releaseDate?: string; actress?: string; genres: string[]; genreLinks?: MissAVCategoryItem[]; maker?: string; sources: MissAVVideoSource[]; watchUrl: string }
 export type MissAVCategoryItem = { title: string; path: string; coverUrl?: string }
 export type MissAVSearchParams = { collection?: MissAVCollection; query?: string; page?: number; sort?: MissAVSort; filter?: MissAVFilter; categoryPath?: string }
 export type MissAVSearchPage = { items: MissAVVideoItem[]; categories?: MissAVCategoryItem[]; page: number; hasNext: boolean; title: string; cachedAt?: number; stale?: boolean; refreshError?: string }
@@ -570,6 +570,6 @@ function copySearchPage(value: MissAVSearchPage): MissAVSearchPage {
   return { ...value, items: value.items.map(item => ({ ...item })), ...(value.categories ? { categories: value.categories.map(item => ({ ...item })) } : {}) }
 }
 
-function copyVideoDetail(value: MissAVVideoDetail): MissAVVideoDetail { return { ...value, genres: [...value.genres], sources: value.sources.map(source => ({ ...source })) } }
+function copyVideoDetail(value: MissAVVideoDetail): MissAVVideoDetail { return { ...value, genres: [...value.genres], ...(value.genreLinks ? { genreLinks: value.genreLinks.map(category => ({ ...category })) } : {}), sources: value.sources.map(source => ({ ...source })) } }
 
 export const missavClient = new MissAVClient()
