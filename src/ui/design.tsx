@@ -18,7 +18,7 @@ export const CONTROL_RIM: DynamicShapeStyle = {
 // 4.0 geometry: reading content follows a leading axis; controls and page states
 // use their own semantic center or trailing axes instead of forcing one alignment.
 export const PAGE_PADDING = 18
-export const PAGE_TOP_PADDING = 8
+export const PAGE_TOP_PADDING = 0
 export const PAGE_BOTTOM_PADDING = 44
 export const SECTION_SPACING = 28
 export const SECTION_CONTENT_SPACING = 12
