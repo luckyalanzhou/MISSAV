@@ -2,7 +2,7 @@ import { Button, Device, FlowLayout, HStack, Image, LazyVGrid, Menu, ProgressVie
 import { collectionOptionsForGroup, MISSAV_COLLECTION_GROUPS, MISSAV_COLLECTION_OPTIONS, MISSAV_FILTER_OPTIONS, MISSAV_SORT_OPTIONS, defaultMissAVCollectionSort as defaultCollectionSort, isMissAVDirectoryCollection, type MissAVCategoryItem, type MissAVCollection, type MissAVCollectionGroup, type MissAVFilter, type MissAVSort, type MissAVVideoItem } from "../../site/client"
 import { ACCENT, CardSurface, CapsuleSurface, CONTENT_MAX_WIDTH, SECONDARY_SURFACE, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground } from "../design"
 import { DetailPage } from "./detail"
-import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
+import { useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard } from "../components/media_cards"
 import { StateView } from "../components/state_view"
 import { MissAVListingRequest } from "../../site/listing/listing-request"
@@ -101,7 +101,7 @@ export function DiscoverPage(props: { initialCollection?: MissAVCollection; acce
   const sortTitle = sorts.find(item => item.value === sort)?.title ?? "发行日期"
   const glassAvailable = supportsLiquidGlass()
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel}>
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="浏览" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} onAppear={loadOnce} refreshable={() => load({}, true)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="discover-results-top" spacing={20} alignment="leading" frame={{ maxWidth: CONTENT_MAX_WIDTH }} padding={{ top: 8, bottom: PAGE_BOTTOM_PADDING }}>

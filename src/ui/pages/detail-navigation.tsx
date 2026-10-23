@@ -1,9 +1,7 @@
-import { Button, HStack, ProgressView, Text, VStack, useEffect, useObservable, useRef, useState } from "scripting"
+import { useEffect, useObservable, useRef, useState } from "scripting"
 import { MissAVRequestScope, isMissAVRequestCancelled, type MissAVVideoDetail, type MissAVVideoItem } from "../../site/client"
-import { ACCENT, CardSurface, READING_MAX_WIDTH } from "../design"
-import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../../features/detail/detail-loading"
+import { createMissAVDetailTrace, type MissAVDetailTrace } from "../../features/detail/detail-loading"
 import { MissAVPlaybackSelection, type MissAVPlaybackPreparation } from "../../features/playback/playback-preparation"
-import { startPlaybackPolling } from "../../features/playback/playback-polling"
 import { detailPrefetch } from "../../features/detail/detail-prefetch"
 
 // Every list waits for playable detail before changing native navigation state.
@@ -11,13 +9,9 @@ import { detailPrefetch } from "../../features/detail/detail-prefetch"
 export function useDetailNavigation() {
   const [selected, setSelected] = useState<{ video: MissAVVideoItem; detail: MissAVVideoDetail; preparation: MissAVPlaybackPreparation; trace: MissAVDetailTrace; navigationID: number } | null>(null)
   const [pending, setPending] = useState<MissAVVideoItem | null>(null)
-  const [progress, setProgress] = useState<MissAVDetailProgress | null>(null)
-  const [clock, setClock] = useState(Date.now())
   const isPresented = useObservable(false)
   const generation = useRef(0)
-  const requestStartedAt = useRef<number | null>(null)
   const request = useRef<{ path: string; scope: MissAVRequestScope; preparation: MissAVPlaybackPreparation; trace: MissAVDetailTrace } | null>(null)
-  const latestTrace = useRef<MissAVDetailTrace | null>(null)
   const selection = useRef(new MissAVPlaybackSelection())
   function cancel() {
     ++generation.current
@@ -25,9 +19,7 @@ export function useDetailNavigation() {
     request.current?.scope.cancel()
     if (request.current) selection.current.abandon(request.current.preparation)
     request.current = null
-    requestStartedAt.current = null
     setPending(null)
-    setProgress(null)
   }
   async function open(video: MissAVVideoItem) {
     if (request.current?.path === video.detailPath) return
@@ -35,14 +27,9 @@ export function useDetailNavigation() {
     const current = generation.current
     const scope = new MissAVRequestScope()
     const preparation = selection.current.begin(video)
-    const startedAt = Date.now()
-    requestStartedAt.current = startedAt
-    setClock(startedAt)
-    const trace = createMissAVDetailTrace(video.detailPath, value => { if (current === generation.current) setProgress(value) })
-    latestTrace.current = trace
+    const trace = createMissAVDetailTrace(video.detailPath)
     request.current = { path: video.detailPath, scope, preparation, trace }
     setPending(video)
-    setProgress(null)
     trace.mark("entered")
     try {
       const detail = await detailPrefetch.load(video, { scope, trace })
@@ -62,37 +49,9 @@ export function useDetailNavigation() {
         await Dialog.alert({ title: "作品加载失败", message: reason instanceof Error ? reason.message : String(reason) })
       }
     } finally {
-      if (current === generation.current) { request.current = null; requestStartedAt.current = null; setPending(null) }
+      if (current === generation.current) { request.current = null; setPending(null) }
     }
   }
-  async function copyDiagnostics(videoCode: string) {
-    try {
-      await copyMissAVDetailReport(latestTrace.current, videoCode)
-      await Dialog.alert({ title: "诊断已复制", message: "已复制当前阶段记录。加载完成后，详情页也可复制包含完整耗时的报告；回到对话粘贴即可发送。" })
-    } catch (reason) {
-      await Dialog.alert({ title: "复制诊断失败", message: reason instanceof Error ? reason.message : String(reason) })
-    }
-  }
-  useEffect(() => {
-    if (!pending) return
-    return startPlaybackPolling(() => setClock(Date.now()), 1000)
-  }, [pending?.detailPath])
   useEffect(() => () => { cancel(); selection.current.dispose() }, [])
-  const elapsedMs = pending && requestStartedAt.current !== null ? Math.max(0, clock - requestStartedAt.current) : progress?.elapsedMs ?? 0
-  return { selected, pending, progress, elapsedMs, isPresented, open, cancel, copyDiagnostics }
-}
-
-export function DetailPreparationStatus({ navigation }: { navigation: ReturnType<typeof useDetailNavigation> }) {
-  if (!navigation.pending) return <VStack />
-  return <VStack frame={{ maxWidth: "infinity", maxHeight: "infinity", alignment: "bottom" }} padding={{ horizontal: 20, bottom: 24 }}>
-    <HStack spacing={12} padding={14} frame={{ maxWidth: READING_MAX_WIDTH }} background={<CardSurface />}>
-      <ProgressView tint={ACCENT} />
-      <VStack spacing={2} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-        <Text font="subheadline">{`正在准备 ${navigation.pending.videoCode.toUpperCase()}`}</Text>
-        <Text font="footnote" foregroundStyle="secondaryLabel">{`${navigation.progress ? MISSAV_DETAIL_STAGE_LABELS[navigation.progress.stage] : "正在开始请求…"} · ${(navigation.elapsedMs / 1000).toFixed(1)} 秒`}</Text>
-      </VStack>
-      <Button title="复制" systemImage="doc.on.doc" buttonStyle="plain" frame={{ minWidth: 44, minHeight: 44 }} action={() => { void navigation.copyDiagnostics(navigation.pending.videoCode) }} />
-      <Button title="取消" frame={{ minWidth: 44, minHeight: 44 }} action={navigation.cancel} />
-    </HStack>
-  </VStack>
+  return { selected, pending, isPresented, open, cancel }
 }

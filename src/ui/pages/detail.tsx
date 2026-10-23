@@ -8,7 +8,7 @@ import { StateView } from "../components/state_view"
 import { VideoRowList } from "../components/video_row"
 import { SubtitleSearchPage } from "./subtitle-search"
 import { copyMissAVDetailReport, createMissAVDetailTrace, MISSAV_DETAIL_STAGE_LABELS, type MissAVDetailProgress, type MissAVDetailTrace } from "../../features/detail/detail-loading"
-import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
+import { useDetailNavigation } from "./detail-navigation"
 import type { MissAVPlaybackPreparation } from "../../features/playback/playback-preparation"
 import { startPlaybackPolling } from "../../features/playback/playback-polling"
 import { MissAVListingRequest } from "../../site/listing/listing-request"
@@ -265,7 +265,7 @@ function TagSearchPage(props: { tag: string; categoryPath: string; onHistoryChan
   useEffect(() => () => listingRequest.current.cancel(), [props.tag, props.categoryPath])
   useEffect(() => { if (resultsRevision) scrollProxy.current?.scrollTo("tag-results-top", "top") }, [resultsRevision])
   function open(video: MissAVVideoItem) { void detailNavigation.open(video) }
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel}>
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle={props.tag} navigationBarTitleDisplayMode="inline" refreshable={() => load(page)} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="tag-results-top" spacing={24} alignment="leading" frame={{ maxWidth: READING_MAX_WIDTH }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>

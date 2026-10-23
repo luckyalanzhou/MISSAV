@@ -11,7 +11,7 @@ import {
   type MissAVPlaybackRecord,
 } from "../../data/storage"
 import { DetailPage } from "./detail"
-import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
+import { useDetailNavigation } from "./detail-navigation"
 import { DestructiveMenu } from "../components/destructive_menu"
 import { StateView } from "../components/state_view"
 import { VideoRowList } from "../components/video_row"
@@ -158,7 +158,7 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
       : undefined
   const statusSystemImage = segment === "playback" ? "play.circle" : segment === "browse" ? "eye" : undefined
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel}>
     <PageBackground />
     <ScrollView
       navigationTitle="资料库"

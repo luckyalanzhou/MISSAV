@@ -2,7 +2,7 @@ import { Button, HStack, Image, LazyHStack, LazyVStack, Picker, ProgressView, Sc
 import { defaultMissAVCollectionSort, missavClient, MissAVRequestScope, type MissAVCollection, type MissAVVideoItem } from "../../site/client"
 import { ACCENT, CardSurface, CapsuleSurface, READING_MAX_WIDTH, SECONDARY_SURFACE, glassButtonStyle, PAGE_BOTTOM_PADDING, PAGE_PADDING, PageBackground, SECTION_SPACING } from "../design"
 import { DetailPage } from "./detail"
-import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
+import { useDetailNavigation } from "./detail-navigation"
 import { MediaGridCard, MediaTile } from "../components/media_cards"
 import { VideoRowList } from "../components/video_row"
 import { StateView } from "../components/state_view"
@@ -103,7 +103,7 @@ export function SearchPage(props: { onHistoryChanged: () => void; toolbar?: any 
 
   const resultTitle = source?.kind === "query" ? `“${source.query}”` : source?.title
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel}>
     <PageBackground />
     <ScrollViewReader>{proxy => { scrollProxy.current = proxy; return <ScrollView navigationTitle="搜索" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} scrollDismissesKeyboard="interactively" onAppear={() => { void loadDiscoveryOnce() }} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack key="results-top" spacing={SECTION_SPACING} alignment="leading" frame={{ maxWidth: READING_MAX_WIDTH }} padding={{ horizontal: PAGE_PADDING, top: 8, bottom: PAGE_BOTTOM_PADDING }}>

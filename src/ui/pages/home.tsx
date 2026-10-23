@@ -8,7 +8,7 @@ import { MediaGridCard, MediaTile } from "../components/media_cards"
 import { ContinueWatchingCard, HOME_QUICK_COLLECTIONS, HomeQuickCollectionChip, HomeSearchEntry } from "../components/home_components"
 import { StateView } from "../components/state_view"
 import { DetailPage } from "./detail"
-import { DetailPreparationStatus, useDetailNavigation } from "./detail-navigation"
+import { useDetailNavigation } from "./detail-navigation"
 import { DiscoverPage } from "./discover"
 import { SearchPage } from "./search"
 
@@ -58,7 +58,7 @@ export function MediaHomePage(props: { revision: number; accessRevision?: number
     </VStack>
   }
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel} overlay={<DetailPreparationStatus navigation={detailNavigation} />}>
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onDisappear={detailNavigation.cancel}>
     <PageBackground />
     <ScrollView navigationTitle="首页" navigationBarTitleDisplayMode="inline" toolbar={props.toolbar} refreshable={refresh} navigationDestination={{ isPresented: detailPresented, content: selected ? <DetailPage key={`${selected.detail.watchUrl}:${selected.navigationID}`} video={selected.video} initialDetail={selected.detail} initialTrace={selected.trace} preparation={selected.preparation} onHistoryChanged={props.onHistoryChanged} /> : <VStack /> }}>
       <VStack spacing={28} alignment="leading" frame={{ maxWidth: CONTENT_MAX_WIDTH }} padding={{ top: PAGE_TOP_PADDING, bottom: PAGE_BOTTOM_PADDING }}>
