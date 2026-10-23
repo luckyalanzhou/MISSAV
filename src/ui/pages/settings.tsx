@@ -93,6 +93,14 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     <PageBackground />
     <List listStyle="insetGroup" scrollContentBackground="hidden" navigationTitle="设置" navigationBarTitleDisplayMode="inline" frame={{ maxWidth: READING_MAX_WIDTH }}>
     <Section header={<Text>访问站点</Text>} footer={<Text>线路检查仅确认测试栏目可访问。切换域名会应用于浏览、搜索、详情和播放。</Text>}>
+      <HStack spacing={16}>
+        <Image systemName="network" foregroundStyle={ACCENT} frame={{ width: 28 }} />
+        <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy} frame={{ maxWidth: "infinity" }}>
+          {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
+        </Picker>
+      </HStack>
+      <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} disabled={operationBusy} frame={{ minHeight: 44 }} action={() => { void Safari.openURL(getMissAVLandingURL(domain)) }} />
+      <Button title={accessBusy ? "正在验证访问线路" : "验证访问线路"} systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} frame={{ minHeight: 44 }} action={() => { void verifySiteAccess() }} />
       <VStack spacing={4} alignment="leading" padding={{ vertical: 6 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
         <HStack spacing={16}>
           <Image systemName="globe" foregroundStyle="secondaryLabel" frame={{ width: 28 }} />
@@ -105,14 +113,6 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
         {lastCheckedAt ? <Text font="footnote" foregroundStyle="secondaryLabel">{`本次运行最近检查：${new Date(lastCheckedAt).toLocaleString()}${lastCheckMs !== null ? ` · ${(lastCheckMs / 1000).toFixed(1)} 秒` : ""}`}</Text> : undefined}
         {accessMessage ? <Text font="footnote" foregroundStyle="secondaryLabel">{accessMessage}</Text> : undefined}
       </VStack>
-      <Button title={accessBusy ? "正在验证访问线路" : "验证访问线路"} systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} frame={{ minHeight: 44 }} action={() => { void verifySiteAccess() }} />
-      <HStack spacing={16}>
-        <Image systemName="network" foregroundStyle={ACCENT} frame={{ width: 28 }} />
-        <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy} frame={{ maxWidth: "infinity" }}>
-          {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
-        </Picker>
-      </HStack>
-      <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} disabled={operationBusy} frame={{ minHeight: 44 }} action={() => { void Safari.openURL(getMissAVLandingURL(domain)) }} />
     </Section>
 
     <Section header={<Text>诊断与帮助</Text>} footer={<Text>栏目提示需要验证时，先检查访问线路；遇到问题可复制诊断。</Text>}>
