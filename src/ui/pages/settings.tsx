@@ -1,7 +1,7 @@
-import { Button, Dialog, HStack, Image, List, Pasteboard, Picker, ProgressView, Script, Section, Text, VStack, ZStack, useState } from "scripting"
+import { Button, Dialog, HStack, Image, List, Pasteboard, Picker, ProgressView, RoundedRectangle, Script, Section, Text, VStack, ZStack, useState } from "scripting"
 import { getMissAVAccessDiagnostics, type MissAVAccessDiagnostic } from "../../site/access/access-diagnostics"
 import { openMissAVSiteVerification } from "../../site/access/site-verification"
-import { ACCENT, CardSurface, PageBackground, READING_MAX_WIDTH } from "../design"
+import { ACCENT, CardSurface, CONTROL_RIM, PageBackground, READING_MAX_WIDTH, SECONDARY_SURFACE } from "../design"
 import { getMissAVBaseURL, getMissAVLandingURL, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../../site/domain"
 
 type VerificationState = "checking" | "accessible" | "incomplete" | "blocked" | "unavailable" | "load-error"
@@ -105,18 +105,15 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
       </HStack>
       <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} disabled={operationBusy} frame={{ minHeight: 44 }} action={() => { void Safari.openURL(getMissAVLandingURL(domain)) }} />
       <Button title={accessBusy ? "正在验证访问线路" : "验证访问线路"} systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} frame={{ minHeight: 44 }} action={() => { void verifySiteAccess() }} />
-      <VStack spacing={4} alignment="leading" padding={{ vertical: 6 }} frame={{ maxWidth: "infinity", alignment: "leading" }}>
-        <HStack spacing={16}>
-          <Image systemName="globe" foregroundStyle="secondaryLabel" frame={{ width: 28 }} />
-          <Text font="caption" foregroundStyle="secondaryLabel">{new URL(domain).hostname}</Text>
-        </HStack>
-        <HStack spacing={16}>
-          {accessBusy ? <ProgressView progressViewStyle="circular" frame={{ width: 28 }} /> : verificationIcon ? <Image systemName={verificationIcon} foregroundStyle={verificationColor} frame={{ width: 28 }} /> : <VStack frame={{ width: 28 }} />}
-          <Text font="subheadline" fontWeight="semibold" foregroundStyle={verificationColor}>{verificationLabel}</Text>
-        </HStack>
-        {lastCheckedAt ? <Text font="footnote" foregroundStyle="secondaryLabel">{`本次运行最近检查：${new Date(lastCheckedAt).toLocaleString()}${lastCheckMs !== null ? ` · ${(lastCheckMs / 1000).toFixed(1)} 秒` : ""}`}</Text> : undefined}
-        {accessMessage ? <Text font="footnote" foregroundStyle="secondaryLabel">{accessMessage}</Text> : undefined}
-      </VStack>
+      <HStack spacing={12} alignment="top" padding={12} frame={{ maxWidth: "infinity", alignment: "leading" }} background={<RoundedRectangle cornerRadius={12} fill={SECONDARY_SURFACE} stroke={{ shapeStyle: CONTROL_RIM, strokeStyle: { lineWidth: 1 } }} />}>
+        {accessBusy ? <ProgressView progressViewStyle="circular" frame={{ width: 24, height: 24 }} /> : verificationIcon ? <Image systemName={verificationIcon} foregroundStyle={verificationColor} frame={{ width: 24, height: 24 }} /> : <VStack frame={{ width: 24, height: 24 }} />}
+        <VStack spacing={3} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+          <Text font="caption" fontWeight="semibold" foregroundStyle="secondaryLabel">当前线路</Text>
+          <Text font="subheadline" fontWeight="semibold" foregroundStyle={verificationColor} lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{verificationLabel}</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{`${new URL(domain).hostname}${lastCheckedAt ? ` · 最近检查 ${new Date(lastCheckedAt).toLocaleTimeString()}${lastCheckMs !== null ? ` · ${(lastCheckMs / 1000).toFixed(1)} 秒` : ""}` : " · 尚未检查"}`}</Text>
+          {accessMessage ? <Text font="footnote" foregroundStyle="secondaryLabel" lineLimit={3} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{accessMessage}</Text> : undefined}
+        </VStack>
+      </HStack>
     </Section>
 
     <Section header={<Text>诊断与帮助</Text>} footer={<Text>栏目提示需要验证时，先检查访问线路；遇到问题可复制诊断。</Text>}>
