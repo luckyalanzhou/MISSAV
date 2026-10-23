@@ -120,7 +120,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
     </Section>
 
     <Section header={<Text>关于</Text>}>
-      <HStack spacing={10} padding={{ vertical: 4 }} frame={{ minHeight: 56 }}><Image systemName="play.rectangle.fill" font="title3" foregroundStyle={ACCENT} frame={{ width: 36, height: 36 }} background={<CardSurface />} /><VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="headline" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{`版本 ${version}`}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{`作者 ${author}`}</Text></VStack></HStack>
+      <HStack spacing={8} padding={{ vertical: 2 }} frame={{ minHeight: 50 }}><Image systemName="play.rectangle.fill" font="title3" foregroundStyle={ACCENT} frame={{ width: 32, height: 32 }} background={<CardSurface />} /><VStack spacing={1} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="headline" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{`版本 ${version}`}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{`作者 ${author}`}</Text></VStack></HStack>
     </Section>
   </List></ZStack>
 }
@@ -137,9 +137,9 @@ function formatDiagnostic(entry: MissAVAccessDiagnostic): string {
 }
 
 function InfoRow(props: { icon: string; title: string; detail: string }) {
-  return <HStack spacing={10} padding={{ vertical: 4 }} frame={{ minHeight: 50 }}>
+  return <HStack spacing={8} padding={{ vertical: 2 }} frame={{ minHeight: 44 }}>
     <Image systemName={props.icon} foregroundStyle={ACCENT} frame={{ width: 28 }} />
-    <VStack spacing={2} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+    <VStack spacing={0} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
       <Text font="body" fontWeight="semibold">{props.title}</Text>
       <Text font="footnote" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{props.detail}</Text>
     </VStack>
