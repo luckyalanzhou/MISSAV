@@ -29,8 +29,8 @@ export function HomePage(props: { onClose: () => void }) {
     </ToolbarItem> : null}
   </Toolbar>
   const localRevision = historyRevision.value
-  return <NavigationStack>
-    <TabView selection={selection} tint={ACCENT} tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="onScrollDown" toolbar={toolbar} toolbarBackground={{ style: PAGE_CANVAS, bars: ["tabBar"] }} toolbarBackgroundVisibility={{ visibility: "visible", bars: ["tabBar"] }}>
+  return <NavigationStack toolbarBackground={{ style: PAGE_CANVAS, bars: ["tabBar"] }} toolbarBackgroundVisibility={{ visibility: "visible", bars: ["tabBar"] }}>
+    <TabView selection={selection} tint={ACCENT} tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="never" toolbar={toolbar}>
       <Tab title="首页" systemImage="house" value={0}><MediaHomePage key={`home-${domainRevision.value}`} accessRevision={accessRevision.value} revision={localRevision} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
       <Tab title="浏览" systemImage="square.grid.2x2" value={1}><DiscoverPage key={`discover-${domainRevision.value}`} accessRevision={accessRevision.value} onHistoryChanged={bumpHistory} /></Tab>
       <Tab title="资料库" systemImage="play.square.stack" value={2}><LibraryPage historyRevision={historyRevision.value} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
