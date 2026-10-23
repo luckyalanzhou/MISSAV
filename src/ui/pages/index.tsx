@@ -1,4 +1,4 @@
-import { Button, HStack, Image, NavigationStack, Script, Tab, TabView, Text, Toolbar, ToolbarItem, VStack, useObservable } from "scripting"
+import { Button, Image, NavigationStack, Script, Tab, TabView, Text, Toolbar, ToolbarItem, useObservable } from "scripting"
 import { MediaHomePage } from "./home"
 import { DiscoverPage } from "./discover"
 import { LibraryPage } from "./library"
@@ -30,30 +30,11 @@ export function HomePage(props: { onClose: () => void }) {
   </Toolbar>
   const localRevision = historyRevision.value
   return <NavigationStack toolbar={toolbar}>
-    <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }} background={PAGE_CANVAS}>
-    <TabView selection={selection} tint={ACCENT} tabViewStyle="sidebarAdaptable" tabBarVisibility="hidden" frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+    <TabView selection={selection} tint={ACCENT} tabViewStyle="sidebarAdaptable" tabBarMinimizeBehavior="never" tabBarVisibility="visible" toolbarBackground={{ style: PAGE_CANVAS, bars: ["tabBar"] }} toolbarBackgroundVisibility={{ visibility: "visible", bars: ["tabBar"] }}>
       <Tab title="首页" systemImage="house" value={0}><MediaHomePage key={`home-${domainRevision.value}`} accessRevision={accessRevision.value} revision={localRevision} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
       <Tab title="浏览" systemImage="square.grid.2x2" value={1}><DiscoverPage key={`discover-${domainRevision.value}`} accessRevision={accessRevision.value} onHistoryChanged={bumpHistory} /></Tab>
       <Tab title="资料库" systemImage="play.square.stack" value={2}><LibraryPage historyRevision={historyRevision.value} onHistoryChanged={bumpHistory} onDiscover={() => selection.setValue(1)} /></Tab>
       <Tab title="搜索" systemImage="magnifyingglass" role="search" value={3}><SearchPage key={`search-${domainRevision.value}`} onHistoryChanged={bumpHistory} /></Tab>
     </TabView>
-    <HStack spacing={0} frame={{ maxWidth: "infinity", minHeight: 60 }} background={PAGE_CANVAS}>
-      {[
-        { title: "首页", image: "house", value: 0 },
-        { title: "浏览", image: "square.grid.2x2", value: 1 },
-        { title: "资料库", image: "play.square.stack", value: 2 },
-        { title: "搜索", image: "magnifyingglass", value: 3 },
-      ].map(item => {
-        const active = selection.value === item.value
-        const color = active ? ACCENT : "secondaryLabel"
-        return <Button key={item.value} action={() => selection.setValue(item.value)} buttonStyle="plain" frame={{ maxWidth: "infinity", minHeight: 60 }} contentShape="rect" accessibilityLabel={item.title}>
-          <VStack spacing={3} alignment="center" frame={{ maxWidth: "infinity", minHeight: 60 }}>
-            <Image systemName={item.image} font="body" foregroundStyle={color} />
-            <Text font="caption2" fontWeight={active ? "semibold" : "regular"} foregroundStyle={color}>{item.title}</Text>
-          </VStack>
-        </Button>
-      })}
-    </HStack>
-    </VStack>
   </NavigationStack>
 }
