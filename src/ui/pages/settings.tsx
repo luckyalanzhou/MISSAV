@@ -84,7 +84,11 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
   const verificationIcon = verificationState === "checking" ? undefined
     : verificationState === "accessible" ? "checkmark.circle.fill"
       : lastCheckedAt ? "exclamationmark.triangle.fill" : "questionmark.circle"
-  const verificationColor = verificationState === "accessible" ? ACCENT : "secondaryLabel"
+  const verificationColor = verificationState === "accessible" ? "systemGreen"
+    : verificationState === "checking" ? ACCENT
+      : verificationState === "incomplete" || verificationState === "unavailable" ? "systemOrange"
+        : verificationState === "blocked" || verificationState === "load-error" ? "systemRed"
+          : "secondaryLabel"
   const scriptMetadata = Script.metadata
   const version = scriptMetadata.version || "未知"
   const author = scriptMetadata.author?.name || "未设置"
