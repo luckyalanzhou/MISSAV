@@ -121,7 +121,7 @@ export function SubtitleSearchPage(props: { videoCode: string; onDownloaded: (vi
     }
   }, [])
 
-  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} navigationTitle="按番号搜索字幕" navigationBarTitleDisplayMode="inline">
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }} navigationTitle="按番号搜索字幕" navigationBarTitleDisplayMode="inline" toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["navigationBar"] }}>
     <PageBackground />
     <VStack spacing={0} frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
       <ScrollView frame={{ maxWidth: "infinity", maxHeight: "infinity" }} onAppear={appear} onDisappear={disappear}>

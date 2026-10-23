@@ -163,6 +163,7 @@ export function LibraryPage(props: { historyRevision: number; onHistoryChanged: 
     <ScrollView
       navigationTitle="资料库"
       navigationBarTitleDisplayMode="inline"
+      toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["navigationBar"] }}
       toolbar={props.toolbar}
       refreshable={refresh}
       navigationDestination={{

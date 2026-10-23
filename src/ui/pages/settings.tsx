@@ -95,7 +95,7 @@ export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerif
 
   return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
     <PageBackground />
-    <List listStyle="insetGroup" scrollContentBackground="hidden" navigationTitle="设置" navigationBarTitleDisplayMode="inline" frame={{ maxWidth: READING_MAX_WIDTH }}>
+    <List listStyle="insetGroup" scrollContentBackground="hidden" navigationTitle="设置" navigationBarTitleDisplayMode="inline" toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["navigationBar"] }} frame={{ maxWidth: READING_MAX_WIDTH }}>
     <Section header={<Text>访问站点</Text>} footer={<Text>线路检查仅确认测试栏目可访问。切换域名会应用于浏览、搜索、详情和播放。</Text>}>
       <HStack spacing={16}>
         <Image systemName="network" foregroundStyle={ACCENT} frame={{ width: 28 }} />
