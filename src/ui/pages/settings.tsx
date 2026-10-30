@@ -1,0 +1,153 @@
+import { Button, Dialog, HStack, Image, List, Pasteboard, Picker, ProgressView, Script, Section, Text, VStack, ZStack, useState } from "scripting"
+import { getMissAVAccessDiagnostics, type MissAVAccessDiagnostic } from "../../site/access/access-diagnostics"
+import { openMissAVSiteVerification } from "../../site/access/site-verification"
+import { ACCENT, CardSurface, PageBackground, READING_MAX_WIDTH } from "../design"
+import { getMissAVBaseURL, getMissAVLandingURL, MISSAV_DOMAIN_OPTIONS, setMissAVBaseURL, type MissAVBaseURL } from "../../site/domain"
+
+type VerificationState = "checking" | "accessible" | "incomplete" | "blocked" | "unavailable" | "load-error"
+
+export function SettingsPage(props: { onDomainChanged: () => void; onAccessVerified?: () => void }) {
+  const [domain, setDomain] = useState<MissAVBaseURL>(() => getMissAVBaseURL())
+  const initialVerification = latestVerification(new URL(domain).hostname)
+  const [accessBusy, setAccessBusy] = useState(false)
+  const [accessMessage, setAccessMessage] = useState<string | null>(null)
+  const [verificationState, setVerificationState] = useState<VerificationState>(initialVerification?.state === "accessible" || initialVerification?.state === "incomplete" || initialVerification?.state === "blocked" || initialVerification?.state === "unavailable" || initialVerification?.state === "load-error" ? initialVerification.state : "unavailable")
+  const [lastCheckedAt, setLastCheckedAt] = useState<number | null>(initialVerification?.at ?? null)
+  const [lastCheckMs, setLastCheckMs] = useState<number | null>(initialVerification?.elapsedMs ?? null)
+  const operationBusy = accessBusy
+
+  function changeDomain(value: string) {
+    if (operationBusy) return
+    const next = value as MissAVBaseURL
+    if (next === domain || !MISSAV_DOMAIN_OPTIONS.some(option => option.value === next)) return
+    setMissAVBaseURL(next)
+    setDomain(next)
+    setAccessMessage(null)
+    setVerificationState("unavailable")
+    setLastCheckedAt(null)
+    setLastCheckMs(null)
+    props.onDomainChanged()
+  }
+
+  async function verifySiteAccess() {
+    if (operationBusy) return
+    setAccessBusy(true)
+    setVerificationState("checking")
+    setAccessMessage(null)
+    const started = Date.now()
+    try {
+      const result = await openMissAVSiteVerification()
+      setVerificationState(result.status)
+      setLastCheckedAt(Date.now())
+      setLastCheckMs(Date.now() - started)
+      setAccessMessage(result.status === "accessible"
+        ? result.challengeCompleted
+          ? `Cloudflare 验证完成；测试栏目“${result.probe.title}”已可访问，正在刷新首页和浏览页。`
+          : `测试栏目“${result.probe.title}”已可访问，无需完成 Cloudflare 验证。正在刷新首页和浏览页。`
+        : result.status === "blocked"
+          ? `测试栏目“${result.probe.title}”被站点拒绝访问，不等同于待完成的验证。请检查网络或切换域名后重试。`
+          : result.status === "incomplete"
+            ? `测试栏目“${result.probe.title}”仍显示 Cloudflare 验证。请在弹出的页面完成验证，页面确认载入作品后会自动关闭。`
+            : `测试栏目“${result.probe.title}”未返回可识别的作品列表。请检查网络或切换域名后重试。`)
+      if (result.status === "accessible") props.onAccessVerified?.()
+    } catch (reason) {
+      setVerificationState("load-error")
+      setLastCheckedAt(Date.now())
+      setLastCheckMs(Date.now() - started)
+      setAccessMessage(reason instanceof Error ? reason.message : "访问线路验证窗口当前无法打开。")
+    } finally { setAccessBusy(false) }
+  }
+
+  async function copyDiagnostics() {
+    const entries = getMissAVAccessDiagnostics().slice(-20)
+    if (!entries.length) {
+      await Dialog.alert({ title: "暂无线路诊断", message: "先点击“验证访问线路”检查当前站点，再复制诊断信息。" })
+      return
+    }
+    const report = ["MISSAV 线路诊断（最近 20 条以内）", ...entries.map(formatDiagnostic)].join("\n")
+    try {
+      // Diagnostics are plain text; use the dedicated text API for reliable
+      // clipboard writes across Scripting runtime versions.
+      await Pasteboard.setString(report)
+      await Dialog.alert({ title: "诊断已复制", message: "已复制脱敏的线路状态、栏目和耗时；不包含 Cookie、账号信息或页面内容。" })
+    } catch (reason) {
+      await Dialog.alert({ title: "复制诊断失败", message: reason instanceof Error ? reason.message : "请稍后重试。" })
+    }
+  }
+
+  const verificationLabel = verificationState === "checking" ? "正在检查当前线路…"
+    : verificationState === "accessible" ? "测试栏目可访问"
+      : verificationState === "incomplete" ? "仍需要完成 Cloudflare 验证"
+        : verificationState === "blocked" ? "站点拒绝了本次请求"
+          : verificationState === "load-error" ? "线路检查遇到错误"
+            : lastCheckedAt ? "未能确认测试栏目可访问" : "尚未检查当前线路"
+  const verificationIcon = verificationState === "checking" ? undefined
+    : verificationState === "accessible" ? "checkmark.circle.fill"
+      : lastCheckedAt ? "exclamationmark.triangle.fill" : "questionmark.circle"
+  const verificationColor = verificationState === "accessible" ? "systemGreen"
+    : verificationState === "checking" ? ACCENT
+      : verificationState === "incomplete" || verificationState === "unavailable" ? "systemOrange"
+        : verificationState === "blocked" || verificationState === "load-error" ? "systemRed"
+          : "secondaryLabel"
+  const scriptMetadata = Script.metadata
+  const version = scriptMetadata.version || "未知"
+  const author = scriptMetadata.author?.name || "未设置"
+
+  return <ZStack frame={{ maxWidth: "infinity", maxHeight: "infinity" }}>
+    <PageBackground />
+    <List listStyle="insetGroup" scrollContentBackground="hidden" navigationTitle="设置" navigationBarTitleDisplayMode="inline" toolbarBackgroundVisibility={{ visibility: "hidden", bars: ["navigationBar"] }} frame={{ maxWidth: READING_MAX_WIDTH }}>
+    <Section header={<Text>访问站点</Text>} footer={<Text>线路检查仅确认测试栏目可访问。切换域名会应用于浏览、搜索、详情和播放。</Text>}>
+      <HStack spacing={16}>
+        <Image systemName="network" foregroundStyle={ACCENT} frame={{ width: 28 }} />
+        <Picker title="站点域名" value={domain} onChanged={changeDomain} disabled={operationBusy} frame={{ maxWidth: "infinity" }}>
+          {MISSAV_DOMAIN_OPTIONS.map(option => <Text key={option.value} tag={option.value}>{option.title}</Text>)}
+        </Picker>
+      </HStack>
+      <Button title="在 Safari 中打开" systemImage="safari" tint={ACCENT} disabled={operationBusy} frame={{ minHeight: 44 }} action={() => { void Safari.openURL(getMissAVLandingURL(domain)) }} />
+      <Button title={accessBusy ? "正在验证访问线路" : "验证访问线路"} systemImage="checkmark.shield" disabled={operationBusy} tint={ACCENT} frame={{ minHeight: 44 }} action={() => { void verifySiteAccess() }} />
+      <HStack spacing={12} alignment="top" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        {accessBusy ? <ProgressView progressViewStyle="circular" frame={{ width: 28, height: 28 }} /> : verificationIcon ? <Image systemName={verificationIcon} foregroundStyle={verificationColor} frame={{ width: 28, height: 28 }} /> : <VStack frame={{ width: 28, height: 28 }} />}
+        <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+          <Text font="subheadline" fontWeight="semibold" foregroundStyle={verificationColor} lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{verificationLabel}</Text>
+          <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{`${new URL(domain).hostname}${lastCheckedAt ? ` · 最近检查 ${new Date(lastCheckedAt).toLocaleTimeString()}${lastCheckMs !== null ? ` · ${(lastCheckMs / 1000).toFixed(1)} 秒` : ""}` : " · 尚未检查"}`}</Text>
+          {accessMessage ? <Text font="footnote" foregroundStyle="secondaryLabel" lineLimit={3} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{accessMessage}</Text> : undefined}
+        </VStack>
+      </HStack>
+    </Section>
+
+    <Section header={<Text>诊断与帮助</Text>} footer={<Text>栏目提示需要验证时，先检查访问线路；遇到问题可复制诊断。</Text>}>
+      <Button title="复制线路诊断" systemImage="doc.on.doc" tint={ACCENT} frame={{ minHeight: 44 }} action={() => { void copyDiagnostics() }} />
+    </Section>
+
+    <Section header={<Text>本机数据</Text>} footer={<Text>浏览记录、播放记录和下载字幕仅保存在本机。清除浏览或播放记录请前往资料库；字幕文件夹目前由脚本自动管理。</Text>}>
+      <InfoRow icon="iphone" title="浏览与播放记录" detail="仅保存在本机，不会上传" />
+      <InfoRow icon="captions.bubble" title="下载字幕" detail="本机文稿目录 / MISSAV Subtitles；更新脚本后保留" />
+      <InfoRow icon="arrow.triangle.2.circlepath" title="播放信息" detail="每次打开播放器前获取当前可用画质" />
+    </Section>
+
+    <Section header={<Text>关于</Text>}>
+      <HStack spacing={8} padding={{ vertical: 2 }} frame={{ minHeight: 50 }}><Image systemName="play.rectangle.fill" font="title3" foregroundStyle={ACCENT} frame={{ width: 32, height: 32 }} background={<CardSurface />} /><VStack spacing={1} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}><Text font="headline" fontWeight="semibold">MISSAV</Text><Text font="subheadline" foregroundStyle="secondaryLabel">{`版本 ${version}`}</Text><Text font="footnote" foregroundStyle="secondaryLabel">{`作者 ${author}`}</Text></VStack></HStack>
+    </Section>
+  </List></ZStack>
+}
+
+function latestVerification(host: string): MissAVAccessDiagnostic | undefined {
+  return [...getMissAVAccessDiagnostics()].reverse().find(entry => entry.event === "verification" && entry.host === host && entry.state !== "started")
+}
+
+function formatDiagnostic(entry: MissAVAccessDiagnostic): string {
+  const time = new Date(entry.at).toLocaleString()
+  const duration = entry.elapsedMs !== undefined ? ` · ${(entry.elapsedMs / 1000).toFixed(1)} 秒` : ""
+  const extra = [entry.phase, entry.detailStage, entry.cookieState ? `Cookie:${entry.cookieState}` : "", entry.challengeObserved ? "观察到验证页" : ""].filter(Boolean).join(" · ")
+  return `${time} · ${entry.event} · ${entry.host}/${entry.route} · ${entry.state}${duration}${extra ? ` · ${extra}` : ""}`
+}
+
+function InfoRow(props: { icon: string; title: string; detail: string }) {
+  return <HStack spacing={8} padding={{ vertical: 2 }} frame={{ minHeight: 44 }}>
+    <Image systemName={props.icon} foregroundStyle={ACCENT} frame={{ width: 28 }} />
+    <VStack spacing={0} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+      <Text font="body" fontWeight="semibold">{props.title}</Text>
+      <Text font="footnote" foregroundStyle="secondaryLabel" multilineTextAlignment="leading">{props.detail}</Text>
+    </VStack>
+  </HStack>
+}

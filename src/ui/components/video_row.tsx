@@ -1,0 +1,25 @@
+import { Button, HStack, Image, LazyVStack, Text, VStack } from "scripting"
+import type { MissAVVideoItem } from "../../site/client"
+import { ACCESSORY_ALIGNMENT_WIDTH, ACCENT, CardSurface, MEDIA_ROW_HEIGHT, MEDIA_ROW_RADIUS, MEDIA_ROW_WIDTH } from "../design"
+import { MediaArtwork } from "./media_cards"
+
+export function VideoRowList(props: { items: MissAVVideoItem[]; status?: (video: MissAVVideoItem) => string | undefined; statusSystemImage?: string; onOpen: (video: MissAVVideoItem) => void; onLastItemAppear?: () => void }) {
+  return <LazyVStack spacing={10} frame={{ maxWidth: "infinity" }}>{props.items.map((video, index) => index === props.items.length - 1 && props.onLastItemAppear
+    ? <VStack key={video.videoCode} onAppear={props.onLastItemAppear}><VideoRow video={video} status={props.status?.(video)} statusSystemImage={props.statusSystemImage} onOpen={props.onOpen} /></VStack>
+    : <VideoRow key={video.videoCode} video={video} status={props.status?.(video)} statusSystemImage={props.statusSystemImage} onOpen={props.onOpen} />)}</LazyVStack>
+}
+
+export function VideoRow(props: { video: MissAVVideoItem; status?: string; statusSystemImage?: string; onOpen: (video: MissAVVideoItem) => void }) {
+  const metadata = [props.video.videoCode.toUpperCase(), props.video.duration].filter(Boolean).join(" · ")
+  return <Button action={() => props.onOpen(props.video)} buttonStyle="plain" frame={{ maxWidth: "infinity" }} contentShape="rect" accessibilityLabel={[props.video.title, metadata, props.status, "打开详情"].filter(Boolean).join("，")}>
+    <HStack spacing={10} alignment="center" padding={12} frame={{ maxWidth: "infinity", minHeight: 96 }} background={<CardSurface />}>
+      <MediaArtwork video={props.video} width={MEDIA_ROW_WIDTH} height={MEDIA_ROW_HEIGHT} radius={MEDIA_ROW_RADIUS} />
+      <VStack spacing={4} alignment="leading" frame={{ maxWidth: "infinity", alignment: "leading" }}>
+        <Text font="subheadline" fontWeight="semibold" lineLimit={3} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{props.video.title}</Text>
+        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1} frame={{ maxWidth: "infinity", alignment: "leading" }}>{metadata}</Text>
+        {props.status ? <HStack spacing={5} frame={{ maxWidth: "infinity", alignment: "leading" }}><Image systemName={props.statusSystemImage || "clock.arrow.circlepath"} font="caption2" foregroundStyle={ACCENT} /><Text font="caption" fontWeight="semibold" lineLimit={2} frame={{ maxWidth: "infinity", alignment: "leading" }} multilineTextAlignment="leading">{props.status}</Text></HStack> : props.video.badge ? <HStack spacing={5} frame={{ maxWidth: "infinity", alignment: "leading" }}><Image systemName="sparkles" font="caption2" foregroundStyle={ACCENT} /><Text font="caption" fontWeight="semibold" lineLimit={1}>{props.video.badge}</Text></HStack> : undefined}
+      </VStack>
+      <Image systemName="chevron.right" font="caption" foregroundStyle="tertiaryLabel" frame={{ width: ACCESSORY_ALIGNMENT_WIDTH, maxHeight: "infinity", alignment: "center" }} />
+    </HStack>
+  </Button>
+}

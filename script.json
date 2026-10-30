@@ -1,0 +1,31 @@
+{
+  "contributors" : [
+
+  ],
+  "intentInputTypes" : [
+
+  ],
+  "localizedDescriptions" : {
+    "zh" : "浏览、搜索、播放 MISSAV 内容并关联本地字幕。",
+    "en" : "Browse, search and play MISSAV content with local subtitles."
+  },
+  "color" : "rgba(36, 107, 206, 1.00)",
+  "permissions" : null,
+  "remoteResource" : null,
+  "entry" : "index.tsx",
+  "iconImage" : null,
+  "description" : "浏览、搜索、播放 MISSAV 内容并关联本地字幕。",
+  "name" : "MISSAV",
+  "icon" : "flame.fill",
+  "localizedNames" : {
+    "en" : "MISSAV",
+    "zh" : "MISSAV"
+  },
+  "runInApp" : false,
+  "author" : {
+    "name" : "luckyalanzhou",
+    "email" : null,
+    "homepage" : "https:\/\/github.com\/luckyalanzhou"
+  },
+  "version" : "1.0.0"
+}
